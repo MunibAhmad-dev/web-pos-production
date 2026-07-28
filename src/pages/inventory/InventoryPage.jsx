@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -32,7 +33,7 @@ const fadeUp = {
   hidden: { opacity: 0, y: 18 },
   visible: (i = 0) => ({
     opacity: 1, y: 0,
-    transition: { duration: 0.4, delay: i * 0.06, ease: [0.23, 1, 0.32, 1] }
+    transition: { duration: 0.4, delay: Math.min(i, 5) * 0.06, ease: [0.23, 1, 0.32, 1] }
   }),
 };
 
@@ -247,6 +248,8 @@ export default function InventoryPage() {
   }, [allProducts, searchTerm, sortBy]);
 
   const lowStockItems = filteredProducts.filter((p) => (p.stock || 0) < threshold && (p.stock || 0) > 0);
+
+  const { paged: pagedInventory, page: invPage, pageCount: invPageCount, setPage: setInvPage } = usePagination(filteredProducts, 50);
 
   const categories = useMemo(() => [...new Set(filteredProducts.map((p) => p.category).filter(Boolean))], [filteredProducts]);
   const byCategory = useMemo(() => {
@@ -481,8 +484,9 @@ export default function InventoryPage() {
                       No products found matching &ldquo;{searchTerm}&rdquo;.
                     </div>
                   ) : (
+                    <>
                     <div className="divide-y divide-border/40">
-                      {filteredProducts.map((p) => (
+                      {pagedInventory.map((p) => (
                         <div
                           key={p.id}
                           onClick={() => openProduct(p)}
@@ -515,6 +519,18 @@ export default function InventoryPage() {
                         </div>
                       ))}
                     </div>
+                    {invPageCount > 1 && (
+                      <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 bg-muted/20">
+                        <span className="text-xs text-muted-foreground">{filteredProducts.length} products · page {invPage} of {invPageCount}</span>
+                        <div className="flex gap-1">
+                          <button onClick={() => setInvPage(p => Math.max(1, p - 1))} disabled={invPage === 1}
+                            className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+                          <button onClick={() => setInvPage(p => Math.min(invPageCount, p + 1))} disabled={invPage === invPageCount}
+                            className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+                        </div>
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               ) : (

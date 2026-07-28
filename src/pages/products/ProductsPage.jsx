@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -22,7 +23,7 @@ const fadeUp = {
   hidden: { opacity: 0, y: 18 },
   visible: (i = 0) => ({
     opacity: 1, y: 0,
-    transition: { duration: 0.4, delay: i * 0.055, ease: [0.23, 1, 0.32, 1] },
+    transition: { duration: 0.4, delay: Math.min(i, 5) * 0.055, ease: [0.23, 1, 0.32, 1] },
   }),
 };
 
@@ -681,15 +682,17 @@ export default function ProductsPage() {
     );
   }, [products, searchTerm]);
 
-  // Grouped by category
+  const { paged: pagedProducts, page: prodPage, pageCount: prodPageCount, setPage: setProdPage } = usePagination(filtered, 50);
+
+  // Grouped by category (from current page only)
   const grouped = useMemo(() => {
-    return filtered.reduce((acc, p) => {
+    return pagedProducts.reduce((acc, p) => {
       const cat = p.category || 'Uncategorized';
       if (!acc[cat]) acc[cat] = [];
       acc[cat].push(p);
       return acc;
     }, {});
-  }, [filtered]);
+  }, [pagedProducts]);
 
   // KPI stats
   const stats = useMemo(() => {
@@ -1091,6 +1094,17 @@ export default function ProductsPage() {
               </tbody>
             </table>
           </div>
+          {prodPageCount > 1 && (
+            <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 shrink-0 bg-muted/20">
+              <span className="text-xs text-muted-foreground">{filtered.length} products · page {prodPage} of {prodPageCount}</span>
+              <div className="flex gap-1">
+                <button onClick={() => setProdPage(p => Math.max(1, p - 1))} disabled={prodPage === 1}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+                <button onClick={() => setProdPage(p => Math.min(prodPageCount, p + 1))} disabled={prodPage === prodPageCount}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
 

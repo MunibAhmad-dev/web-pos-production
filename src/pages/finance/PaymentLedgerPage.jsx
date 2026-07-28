@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import { useMemo, useState } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, Store, Eye, HandCoins, X, DollarSign, ChevronRight,
@@ -15,7 +16,7 @@ const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PK', { day: '2-dig
 
 const fadeUp = {
   hidden: { opacity: 0, y: 18 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: i * 0.055, ease: [0.23, 1, 0.32, 1] } }),
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: Math.min(i, 5) * 0.055, ease: [0.23, 1, 0.32, 1] } }),
 };
 
 const GRADIENTS = ['from-purple-500 to-indigo-500', 'from-pink-500 to-rose-500', 'from-amber-500 to-orange-500', 'from-emerald-500 to-teal-500', 'from-blue-500 to-cyan-500', 'from-red-500 to-pink-500'];
@@ -61,30 +62,65 @@ export default function PaymentLedgerPage() {
 
   const rows = useMemo(() => {
     if (party === 'customer') {
+      const salesByC = new Map();
+      for (const s of list('sale')) {
+        if (s.status === 'Cancelled') continue;
+        const cid = String(s.customer_id);
+        salesByC.set(cid, (salesByC.get(cid) || 0) + Number(s.total || 0));
+      }
+      const paidByC = new Map();
+      for (const p of customerPayments) {
+        const cid = String(p.customer_id);
+        paidByC.set(cid, (paidByC.get(cid) || 0) + Number(p.amount || 0));
+      }
+      const txnsByC = new Map();
+      for (const t of ledger) {
+        if (!t.customer_id) continue;
+        const cid = String(t.customer_id);
+        if (!txnsByC.has(cid)) txnsByC.set(cid, []);
+        txnsByC.get(cid).push(t);
+      }
       return customers
         .filter((c) => !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search))
         .map((c) => {
-          const txns = ledger.filter((t) => String(t.customer_id) === String(c.id));
-          const sales = list('sale').filter((s) => String(s.customer_id) === String(c.id) && s.status !== 'Cancelled');
-          const paid = customerPayments.filter((p) => String(p.customer_id) === String(c.id)).reduce((s, p) => s + Number(p.amount || 0), 0);
-          const totalBilled = sales.reduce((s, sale) => s + Number(sale.total || 0), 0);
-          const balance = Math.max(0, totalBilled - paid);
-          return { party: c, balance, transactions: txns };
+          const cid = String(c.id);
+          const balance = Math.max(0, (salesByC.get(cid) || 0) - (paidByC.get(cid) || 0));
+          return { party: c, balance, transactions: txnsByC.get(cid) || [] };
         });
+    }
+    const owedByV = new Map();
+    for (const p of purchases) {
+      if (p.status === 'cancelled' || p.status === 'Cancelled') continue;
+      const vid = String(p.vendor_id);
+      owedByV.set(vid, (owedByV.get(vid) || 0) + Number(p.total || 0));
+    }
+    const paidByV = new Map();
+    for (const p of vendorPayments) {
+      const vid = String(p.vendor_id);
+      paidByV.set(vid, (paidByV.get(vid) || 0) + Number(p.amount || 0));
+    }
+    const returnedByV = new Map();
+    for (const r of purchaseReturns) {
+      const vid = String(r.vendor_id);
+      returnedByV.set(vid, (returnedByV.get(vid) || 0) + Number(r.total || 0));
+    }
+    const txnsByV = new Map();
+    for (const t of ledger) {
+      if (!t.vendor_id) continue;
+      const vid = String(t.vendor_id);
+      if (!txnsByV.has(vid)) txnsByV.set(vid, []);
+      txnsByV.get(vid).push(t);
     }
     return vendors
       .filter((v) => !search || v.name?.toLowerCase().includes(search.toLowerCase()) || v.phone?.includes(search))
       .map((v) => {
-        const owed = purchases
-          .filter((p) => String(p.vendor_id) === String(v.id) && p.status !== 'cancelled' && p.status !== 'Cancelled')
-          .reduce((s, p) => s + Number(p.total || 0), 0);
-        const paid = vendorPayments.filter((p) => String(p.vendor_id) === String(v.id)).reduce((s, p) => s + Number(p.amount || 0), 0);
-        const returned = purchaseReturns.filter((r) => String(r.vendor_id) === String(v.id)).reduce((s, r) => s + Number(r.total || 0), 0);
-        const balance = Math.max(0, owed - paid - returned);
-        const txns = ledger.filter((t) => String(t.vendor_id) === String(v.id));
-        return { party: v, balance, transactions: txns };
+        const vid = String(v.id);
+        const balance = Math.max(0, (owedByV.get(vid) || 0) - (paidByV.get(vid) || 0) - (returnedByV.get(vid) || 0));
+        return { party: v, balance, transactions: txnsByV.get(vid) || [] };
       });
   }, [party, customers, vendors, purchases, vendorPayments, purchaseReturns, customerPayments, ledger, search, list]);
+
+  const { paged: pagedRows, page: ledgerPage, pageCount: ledgerPageCount, setPage: setLedgerPage } = usePagination(rows, 30);
 
   const totalOutstanding = rows.reduce((s, r) => s + r.balance, 0);
   const withBalance = rows.filter((r) => r.balance > 0).length;
@@ -178,7 +214,7 @@ export default function PaymentLedgerPage() {
                   <th className="text-right text-xs font-semibold text-muted-foreground py-3 pr-5">Actions</th>
                 </tr></thead>
                 <tbody>
-                  {rows.map((row) => (
+                  {pagedRows.map((row) => (
                     <tr key={row.party.id} className="border-b border-border/20 last:border-0 hover:bg-muted/20 transition-colors">
                       <td className="py-3 pl-5">
                         <div className="flex items-center gap-2.5">
@@ -211,6 +247,17 @@ export default function PaymentLedgerPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {ledgerPageCount > 1 && (
+            <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 bg-muted/20">
+              <span className="text-xs text-muted-foreground">{rows.length} records · page {ledgerPage} of {ledgerPageCount}</span>
+              <div className="flex gap-1">
+                <button onClick={() => setLedgerPage(p => Math.max(1, p - 1))} disabled={ledgerPage === 1}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+                <button onClick={() => setLedgerPage(p => Math.min(ledgerPageCount, p + 1))} disabled={ledgerPage === ledgerPageCount}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+              </div>
             </div>
           )}
         </div>

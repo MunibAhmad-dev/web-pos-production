@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, Plus, Trash2, FileText, Activity,
@@ -15,7 +16,7 @@ const fadeUp = {
   hidden: { opacity: 0, y: 16 },
   show: (i = 0) => ({
     opacity: 1, y: 0,
-    transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1], delay: i * 0.06 },
+    transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1], delay: Math.min(i, 5) * 0.06 },
   }),
 };
 
@@ -102,6 +103,8 @@ export default function ExpensesPage() {
     () => allExpenses.filter(e => isInRange(e.date_created, dateFilter, fromDate, toDate)),
     [allExpenses, dateFilter, fromDate, toDate],
   );
+
+  const { paged: pagedExpenses, page: expPage, pageCount: expPageCount, setPage: setExpPage } = usePagination(expenses, 40);
 
   /* ── KPI computations ── */
   const now = new Date();
@@ -475,7 +478,7 @@ export default function ExpensesPage() {
             </div>
           ) : (
             <AnimatePresence initial={false}>
-              {expenses.map((e, idx) => {
+              {pagedExpenses.map((e, idx) => {
                 const catStyle = getCategoryStyle(e.category);
                 const isOnline = e.payment_method === 'online';
                 return (
@@ -535,6 +538,17 @@ export default function ExpensesPage() {
           <div className="px-5 py-3 border-t border-border/40 bg-muted/10 flex justify-between items-center">
             <span className="text-xs text-muted-foreground">Period total</span>
             <span className="text-sm font-bold font-mono text-rose-500">{formatCurrency(totalFiltered)}</span>
+          </div>
+        )}
+        {expPageCount > 1 && (
+          <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 shrink-0 bg-muted/20">
+            <span className="text-xs text-muted-foreground">{expenses.length} records · page {expPage} of {expPageCount}</span>
+            <div className="flex gap-1">
+              <button onClick={() => setExpPage(p => Math.max(1, p - 1))} disabled={expPage === 1}
+                className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+              <button onClick={() => setExpPage(p => Math.min(expPageCount, p + 1))} disabled={expPage === expPageCount}
+                className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+            </div>
           </div>
         )}
       </motion.div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
@@ -15,7 +16,7 @@ const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PK', { day: '2-dig
 
 const fadeUp = {
   hidden: { opacity: 0, y: 18 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: i * 0.055, ease: [0.23, 1, 0.32, 1] } }),
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: Math.min(i, 5) * 0.055, ease: [0.23, 1, 0.32, 1] } }),
 };
 
 const TYPE_OPTIONS = ['sale', 'sale_return', 'purchase_return', 'expense', 'cash_in', 'cash_out', 'customer_payment', 'vendor_payment'];
@@ -67,6 +68,8 @@ export default function TransactionsPage() {
       })
       .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
   }, [ledger, type, from, to]);
+
+  const { paged, page, pageCount, setPage } = usePagination(filtered, 40);
 
   const totalIn = filtered.filter((t) => t.direction === 'in').reduce((s, t) => s + t.amount, 0);
   const totalOut = filtered.filter((t) => t.direction === 'out').reduce((s, t) => s + t.amount, 0);
@@ -161,7 +164,7 @@ export default function TransactionsPage() {
                   <th className="text-right text-xs font-semibold text-muted-foreground py-3 pr-5"></th>
                 </tr></thead>
                 <tbody>
-                  {filtered.map((t, idx) => (
+                  {paged.map((t, idx) => (
                     <tr key={t.key || idx} className="border-b border-border/20 last:border-0 hover:bg-muted/20 transition-colors">
                       <td className="py-3 pl-5">
                         <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border', TYPE_COLORS[t.type] || 'bg-muted text-muted-foreground border-border')}>
@@ -189,6 +192,17 @@ export default function TransactionsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {filtered.length > 0 && pageCount > 1 && (
+            <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 bg-muted/20">
+              <span className="text-xs text-muted-foreground">{filtered.length} records · page {page} of {pageCount}</span>
+              <div className="flex gap-1">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+                <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={page === pageCount}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+              </div>
             </div>
           )}
         </div>

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -45,7 +46,7 @@ function StatCard({ icon: Icon, label, value, sub, tint }) {
 
 const fadeUp = {
   hidden: { opacity: 0, y: 18 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: i * 0.055, ease: [0.23, 1, 0.32, 1] } }),
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: Math.min(i, 5) * 0.055, ease: [0.23, 1, 0.32, 1] } }),
 };
 
 // ─── Checkout Modal ───────────────────────────────────────────────────────────
@@ -469,11 +470,17 @@ export default function PurchasesPage() {
   // History rows
   const historyRows = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
+    const payByPO = new Map();
+    for (const vp of vendorPayments) {
+      const pid = String(vp.purchase_id);
+      payByPO.set(pid, (payByPO.get(pid) || 0) + Number(vp.amount || 0));
+    }
+    const vendorMap = new Map(vendors.map((v) => [String(v.id), v]));
     return purchases
       .map((p) => {
-        const paid = vendorPayments.filter((vp) => String(vp.purchase_id) === String(p.id)).reduce((s, vp) => s + Number(vp.amount || 0), 0);
+        const paid = payByPO.get(String(p.id)) || 0;
         const due = Math.max(0, Number(p.grand_total || p.total || 0) - paid);
-        const vendor = vendors.find((v) => String(v.id) === String(p.vendor_id));
+        const vendor = vendorMap.get(String(p.vendor_id));
         return { ...p, amountPaid: paid, due, vendorName: vendor?.name || '—' };
       })
       .filter((p) => {
@@ -489,6 +496,8 @@ export default function PurchasesPage() {
       })
       .sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
   }, [purchases, vendorPayments, vendors, historySearch, historyStatusFilter]);
+
+  const { paged: pagedHistory, page: histPage, pageCount: histPageCount, setPage: setHistPage } = usePagination(historyRows, 30);
 
   return (
     <div className="flex flex-col gap-6 w-full">
@@ -680,7 +689,7 @@ export default function PurchasesPage() {
                     <tr><td colSpan={8} className="h-40 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground"><Truck size={28} className="opacity-20" /><p className="text-sm">No purchase orders found</p></div>
                     </td></tr>
-                  ) : historyRows.map((p) => (
+                  ) : pagedHistory.map((p) => (
                     <tr key={p.id} className="hover:bg-muted/25 transition-colors border-b border-border/30 last:border-0 group">
                       <td className="py-3 pl-5">
                         <p className="font-bold text-sm font-mono">{fmtPoRef(p.id, p.date_created)}</p>
@@ -729,6 +738,17 @@ export default function PurchasesPage() {
                 </tbody>
               </table>
             </div>
+            {histPageCount > 1 && (
+              <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 bg-muted/20">
+                <span className="text-xs text-muted-foreground">{historyRows.length} orders · page {histPage} of {histPageCount}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => setHistPage(p => Math.max(1, p - 1))} disabled={histPage === 1}
+                    className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+                  <button onClick={() => setHistPage(p => Math.min(histPageCount, p + 1))} disabled={histPage === histPageCount}
+                    className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       )}

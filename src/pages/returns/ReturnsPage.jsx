@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -17,7 +18,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: '2-dig
 
 const fadeUp = {
   hidden: { opacity: 0, y: 14 },
-  show: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.34, ease: [0.22, 1, 0.36, 1], delay: i * 0.05 } }),
+  show: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.34, ease: [0.22, 1, 0.36, 1], delay: Math.min(i, 5) * 0.05} }),
 };
 
 const DATE_FILTERS = [
@@ -219,6 +220,9 @@ export default function ReturnsPage() {
       return pool.includes(q);
     }).sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
   }, [purchaseReturns, dateFilter, fromDate, toDate, historySearch, vendorById]);
+
+  const { paged: pagedSaleReturns, page: srPage, pageCount: srPageCount, setPage: setSrPage } = usePagination(filteredSaleReturns, 30);
+  const { paged: pagedPurchaseReturns, page: prPage, pageCount: prPageCount, setPage: setPrPage } = usePagination(filteredPurchaseReturns, 30);
 
   // Form: returnable documents
   const returnableSales = useMemo(() => sales.filter((s) => s.status === 'Completed' || s.status === 'completed'), [sales]);
@@ -442,13 +446,31 @@ export default function ReturnsPage() {
                 <tr><td colSpan={6} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground"><RotateCcw size={28} className="opacity-20" /><p className="text-sm">No returns recorded</p></div>
                 </td></tr>
-              ) : (historyTab === 'sale' ? filteredSaleReturns : filteredPurchaseReturns).map((ret) => (
+              ) : (historyTab === 'sale' ? pagedSaleReturns : pagedPurchaseReturns).map((ret) => (
                 <ReturnRow key={ret.id} ret={ret} type={historyTab}
                   getItems={getItems} customerById={customerById} vendorById={vendorById} saleById={saleById} purchaseById={purchaseById} />
               ))}
             </tbody>
           </table>
         </div>
+        {(() => {
+          const count = historyTab === 'sale' ? filteredSaleReturns.length : filteredPurchaseReturns.length;
+          const pg = historyTab === 'sale' ? srPage : prPage;
+          const pgCount = historyTab === 'sale' ? srPageCount : prPageCount;
+          const setPg = historyTab === 'sale' ? setSrPage : setPrPage;
+          if (pgCount <= 1) return null;
+          return (
+            <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 bg-muted/20">
+              <span className="text-xs text-muted-foreground">{count} returns · page {pg} of {pgCount}</span>
+              <div className="flex gap-1">
+                <button onClick={() => setPg(p => Math.max(1, p - 1))} disabled={pg === 1}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+                <button onClick={() => setPg(p => Math.min(pgCount, p + 1))} disabled={pg === pgCount}
+                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

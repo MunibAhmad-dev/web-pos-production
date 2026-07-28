@@ -16,7 +16,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: '2-dig
 
 const fadeUp = {
   hidden: { opacity: 0, y: 18 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: i * 0.055, ease: [0.23, 1, 0.32, 1] } }),
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: Math.min(i, 5) * 0.055, ease: [0.23, 1, 0.32, 1] } }),
 };
 
 function computeCashMovement(session, sales, expenses, financialTxns) {

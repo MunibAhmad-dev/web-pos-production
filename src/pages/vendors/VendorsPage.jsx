@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
+import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -19,7 +20,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: '2-dig
 // ─── Animations ───────────────────────────────────────────────────────────────
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.38, delay: i * 0.045, ease: [0.23, 1, 0.32, 1] } }),
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.38, delay: Math.min(i, 5) * 0.045, ease: [0.23, 1, 0.32, 1] } }),
 };
 const slideIn = {
   hidden: { opacity: 0, x: 24 },
@@ -153,14 +154,17 @@ export default function VendorsPage() {
   const allPayments = list('vendor_payment');
   const allReturns = list('purchase_return');
 
-  // Compute balance per vendor for list display
-  const computeBalance = (vendorId) => {
-    const vid = String(vendorId);
-    const total = allPurchases.filter((p) => String(p.vendor_id) === vid && p.status !== 'Cancelled').reduce((s, p) => s + Number(p.total || 0), 0);
-    const paid = allPayments.filter((p) => String(p.vendor_id) === vid).reduce((s, p) => s + Number(p.amount || 0), 0);
-    const ret = allReturns.filter((r) => String(r.vendor_id) === vid).reduce((s, r) => s + Number(r.total_returned || 0), 0);
-    return Math.max(0, total - paid - ret);
-  };
+  const vendorBalanceMap = useMemo(() => {
+    const m = new Map();
+    for (const v of vendors) {
+      const vid = String(v.id);
+      const total = allPurchases.filter((p) => String(p.vendor_id) === vid && p.status !== 'Cancelled').reduce((s, p) => s + Number(p.total || 0), 0);
+      const paid  = allPayments.filter((p) => String(p.vendor_id) === vid).reduce((s, p) => s + Number(p.amount || 0), 0);
+      const ret   = allReturns.filter((r) => String(r.vendor_id) === vid).reduce((s, r) => s + Number(r.total_returned || 0), 0);
+      m.set(vid, Math.max(0, total - paid - ret));
+    }
+    return m;
+  }, [vendors, allPurchases, allPayments, allReturns]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -168,6 +172,8 @@ export default function VendorsPage() {
       .filter((v) => !q || v.name?.toLowerCase().includes(q) || v.phone?.includes(q))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [vendors, search]);
+
+  const { paged, page, pageCount, setPage } = usePagination(filtered, 30);
 
   // Compute full details for selected vendor
   const vendorDetails = useMemo(() => {
@@ -281,8 +287,8 @@ export default function VendorsPage() {
             </div>
           ) : (
             <div>
-              {filtered.map((v, i) => {
-                const balance = computeBalance(v.id);
+              {paged.map((v, i) => {
+                const balance = vendorBalanceMap.get(String(v.id)) || 0;
                 const isSelected = String(selectedVendor?.id) === String(v.id);
                 return (
                   <motion.div
@@ -340,6 +346,17 @@ export default function VendorsPage() {
             </div>
           )}
         </div>
+        {pageCount > 1 && (
+          <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 shrink-0 bg-muted/20">
+            <span className="text-xs text-muted-foreground">{filtered.length} vendors · page {page} of {pageCount}</span>
+            <div className="flex gap-1">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+              <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={page === pageCount}
+                className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Right: Vendor Detail Panel ── */}

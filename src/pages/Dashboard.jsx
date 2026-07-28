@@ -79,7 +79,7 @@ function buildPnl(analyticsData, saleItems, sales) {
 
 const fadeUp = {
   hidden:  { opacity: 0, y: 18 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.38, delay: i * 0.06, ease: [0.22, 1, 0.36, 1] } }),
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.38, delay: Math.min(i, 5) * 0.06, ease: [0.22, 1, 0.36, 1] } }),
 };
 
 const PERIOD_OPTS = [['today', 'Today'], ['week', '7 Days'], ['month', 'Month'], ['year', 'Year'], ['custom', 'Custom']];

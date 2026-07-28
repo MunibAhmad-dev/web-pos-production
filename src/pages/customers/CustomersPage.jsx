@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
+import { usePagination } from '../../hooks/usePagination';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -18,7 +19,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: '2-dig
 // ─── Animations ───────────────────────────────────────────────────────────────
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.38, delay: i * 0.045, ease: [0.23, 1, 0.32, 1] } }),
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.38, delay: Math.min(i, 5) * 0.045, ease: [0.23, 1, 0.32, 1] } }),
 };
 const slideIn = {
   hidden: { opacity: 0, x: 24 },
@@ -197,6 +198,21 @@ export default function CustomersPage() {
   }, [selectedCustomer, allSales, allPayments, allReturns]);
 
   const openAdd = () => { setFormInitial({ name: '', phone: '', email: '', address: '' }); setIsEditing(false); setShowForm(true); };
+  // Precompute all customer balances once — avoids O(n²) per-row filter in the render loop
+  const balanceMap = useMemo(() => {
+    const m = new Map();
+    for (const c of customers) {
+      const cid = String(c.id);
+      const taken = allSales.filter(s => String(s.customer_id) === cid && s.status !== 'cancelled').reduce((a, s) => a + (Number(s.total) || 0), 0);
+      const paid  = allPayments.filter(p => String(p.customer_id) === cid).reduce((a, p) => a + (Number(p.amount) || 0), 0);
+      const ret   = allReturns.filter(r => String(r.customer_id) === cid).reduce((a, r) => a + (Number(r.total_returned) || 0), 0);
+      m.set(cid, Math.max(0, taken - paid - ret));
+    }
+    return m;
+  }, [customers, allSales, allPayments, allReturns]);
+
+  const { paged, page, pageCount, setPage } = usePagination(filtered, 30);
+
   const openEdit = (c, e) => { e?.stopPropagation(); setFormInitial({ ...c }); setIsEditing(true); setShowForm(true); };
   const openCustomer = (c) => { setSelectedCustomer(c); setPayAmount(''); setPayTargetSaleId(null); };
   const closeCustomer = () => { setSelectedCustomer(null); setPayAmount(''); setPayTargetSaleId(null); };
@@ -287,15 +303,10 @@ export default function CustomersPage() {
               </div>
             </div>
           ) : (
-            <div>
-              {filtered.map((c, i) => {
-                const balance = (() => {
-                  const cid = String(c.id);
-                  const taken = allSales.filter((s) => String(s.customer_id) === cid && s.status !== 'cancelled').reduce((a, s) => a + (Number(s.total) || 0), 0);
-                  const paid = allPayments.filter((p) => String(p.customer_id) === cid).reduce((a, p) => a + (Number(p.amount) || 0), 0);
-                  const ret = allReturns.filter((r) => String(r.customer_id) === cid).reduce((a, r) => a + (Number(r.total_returned) || 0), 0);
-                  return Math.max(0, taken - paid - ret);
-                })();
+            <>
+              <div>
+              {paged.map((c, i) => {
+                const balance = balanceMap.get(String(c.id)) || 0;
                 const isSelected = String(selectedCustomer?.id) === String(c.id);
                 return (
                   <motion.div
@@ -337,7 +348,19 @@ export default function CustomersPage() {
                   </motion.div>
                 );
               })}
-            </div>
+              </div>
+              {pageCount > 1 && (
+                <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 shrink-0 bg-muted/20">
+                  <span className="text-xs text-muted-foreground">{filtered.length} customers · page {page} of {pageCount}</span>
+                  <div className="flex gap-1">
+                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                      className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
+                    <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={page === pageCount}
+                      className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

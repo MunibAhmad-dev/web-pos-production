@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataStoreProvider } from './store/dataStore';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './components/theme-provider';
@@ -35,12 +35,23 @@ import BalanceSheetPage from './pages/reports/BalanceSheetPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import NotFound from './pages/NotFound';
 
+// Remounts DataStoreProvider (wiping all in-memory data) whenever the logged-in
+// instance changes — this is the only guard against cross-account data leakage.
+function DataStoreWrapper({ children }) {
+  const { user } = useAuth();
+  return (
+    <DataStoreProvider key={user?.instance_id ?? 'anon'}>
+      {children}
+    </DataStoreProvider>
+  );
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
         <AuthProvider>
-          <DataStoreProvider>
+          <DataStoreWrapper>
           <ToastProvider>
             <TooltipProvider delayDuration={200}>
               <Routes>
@@ -83,7 +94,7 @@ export default function App() {
               </Routes>
             </TooltipProvider>
           </ToastProvider>
-          </DataStoreProvider>
+          </DataStoreWrapper>
         </AuthProvider>
       </BrowserRouter>
       <Toaster position="top-right" richColors />
