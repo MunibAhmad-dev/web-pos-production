@@ -1,0 +1,154 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Matches the desktop (Electron) app's font stack for visual parity. */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --color-brand-blue: #2f6fed;
+  --color-brand-green: #16a34a;
+  --color-brand-purple: #7c5cff;
+  --color-brand-orange: #f59e0b;
+  --color-brand-red: #ef4444;
+
+  --color-surface: var(--card);
+  --color-canvas: var(--background);
+  --color-ink: var(--foreground);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    @apply bg-background text-foreground;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Palette matches the desktop (Electron) app's index.css exactly, so the web
+   app reads as the same product rather than a different-looking clone. */
+:root {
+  --background: hsl(220 16% 96%);
+  --foreground: hsl(222 40% 13%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222 40% 13%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(222 40% 13%);
+  --primary: hsl(207 88% 44%);
+  --primary-foreground: hsl(210 40% 99%);
+  --secondary: hsl(214 18% 92%);
+  --secondary-foreground: hsl(222 35% 20%);
+  --muted: hsl(214 18% 92%);
+  --muted-foreground: hsl(215 14% 45%);
+  --accent: hsl(210 40% 90%);
+  --accent-foreground: hsl(222 40% 16%);
+  --destructive: hsl(0 75% 52%);
+  --border: hsl(214 20% 88%);
+  --input: hsl(214 20% 88%);
+  --ring: hsl(207 88% 44%);
+  --chart-1: hsl(207 88% 44%);
+  --chart-2: hsl(155 60% 40%);
+  --chart-3: hsl(262 58% 58%);
+  --chart-4: hsl(32 90% 55%);
+  --chart-5: hsl(0 75% 52%);
+  --radius: 0.9rem;
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+.dark {
+  --background: hsl(224 26% 9%);
+  --foreground: hsl(210 22% 94%);
+  --card: hsl(222 24% 13%);
+  --card-foreground: hsl(210 22% 94%);
+  --popover: hsl(222 24% 14%);
+  --popover-foreground: hsl(210 22% 94%);
+  --primary: hsl(200 96% 60%);
+  --primary-foreground: hsl(222 47% 12%);
+  --secondary: hsl(220 18% 19%);
+  --secondary-foreground: hsl(210 20% 92%);
+  --muted: hsl(220 18% 18%);
+  --muted-foreground: hsl(215 14% 68%);
+  --accent: hsl(218 22% 22%);
+  --accent-foreground: hsl(210 20% 95%);
+  --destructive: hsl(0 62% 44%);
+  --border: hsl(220 18% 22%);
+  --input: hsl(220 18% 22%);
+  --ring: hsl(200 96% 60%);
+  --chart-1: hsl(200 96% 60%);
+  --chart-2: hsl(155 55% 50%);
+  --chart-3: hsl(262 60% 68%);
+  --chart-4: hsl(32 90% 60%);
+  --chart-5: hsl(0 62% 55%);
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}

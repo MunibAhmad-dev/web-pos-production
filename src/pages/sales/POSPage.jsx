@@ -1,0 +1,487 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Minus, Trash2, ShoppingCart, Sparkles, History } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useDataStore } from '../../store/dataStore';
+import { useToast } from '../../context/ToastContext';
+import Button from '@/components/ui/action-button';
+import { Input } from '@/components/form/fields';
+import { Switch } from '@/components/ui/switch';
+import SearchInput from '@/components/form/search-input';
+import CustomItemModal from '@/components/sales/CustomItemModal';
+import CheckoutModal from '@/components/sales/CheckoutModal';
+import ReceiptModal from '../../components/sales/ReceiptModal';
+import CustomerFormModal from '../../components/customers/CustomerFormModal';
+import { formatCurrency } from '../../utils/format';
+import { useLowStockThreshold } from '../../hooks/useLowStockThreshold';
+import { cn } from '@/lib/utils';
+
+const BARCODE_MODE_KEY = 'osatech_barcode_mode';
+
+export default function POSPage() {
+  const { user } = useAuth();
+  const { list, pushBatch, pushEntity, nextId } = useDataStore();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const currency = 'PKR';
+  const LOW_STOCK_THRESHOLD = useLowStockThreshold();
+
+  const products = list('product');
+  const customers = list('customer');
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(products.map((p) => p.category).filter(Boolean))).sort(),
+    [products]
+  );
+
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [barcodeMode, setBarcodeMode] = useState(() => {
+    try {
+      const stored = localStorage.getItem(BARCODE_MODE_KEY);
+      return stored == null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [cart, setCart] = useState([]);
+  const [discount, setDiscount] = useState('');
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [customItemModalOpen, setCustomItemModalOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [receiptSale, setReceiptSale] = useState(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BARCODE_MODE_KEY, String(barcodeMode));
+    } catch {
+      /* ignore */
+    }
+  }, [barcodeMode]);
+
+  const filteredProducts = useMemo(() => {
+    let rows = products;
+    if (categoryFilter === 'uncategorized') {
+      rows = rows.filter((p) => !p.category);
+    } else if (categoryFilter !== 'all') {
+      rows = rows.filter((p) => p.category === categoryFilter);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      rows = rows.filter(
+        (p) => p.name?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q) || p.barcode2?.toLowerCase().includes(q)
+      );
+    }
+    return rows;
+  }, [products, categoryFilter, search]);
+
+  const addToCart = (product) => {
+    // Matches the desktop app: stock is never a hard limit — selling into
+    // negative stock is allowed, only a warning toast is shown.
+    const stock = Number(product.stock || 0);
+    setCart((prev) => {
+      const existing = prev.find((i) => i.key === String(product.id));
+      if (existing) {
+        const nextQty = existing.qty + 1;
+        if (nextQty > stock) {
+          showToast(`Only ${stock} in stock — selling into negative`, 'warning');
+        }
+        return prev.map((i) => (i.key === String(product.id) ? { ...i, qty: nextQty } : i));
+      }
+      if (stock <= 0) {
+        showToast(`${product.name} has no stock recorded — selling into negative`, 'warning');
+      }
+      return [
+        ...prev,
+        {
+          key: String(product.id),
+          product: product.id,
+          name: product.name,
+          unitPrice: Number(product.price || 0),
+          unitCost: Number(product.purchase_price || 0),
+          qty: 1,
+          stockQty: stock,
+        },
+      ];
+    });
+  };
+
+  const addCustomItem = ({ name, unitPrice, qty }) => {
+    setCart((prev) => [
+      ...prev,
+      { key: `custom-${Date.now()}`, isCustom: true, name, unitPrice, unitCost: 0, qty, stockQty: Infinity },
+    ]);
+  };
+
+  const handleBarcodeEnter = (e) => {
+    if (e.key !== 'Enter' || !barcodeMode) return;
+    const value = search.trim().toLowerCase();
+    if (!value) return;
+    const match = products.find((p) => p.barcode?.toLowerCase() === value || p.barcode2?.toLowerCase() === value);
+    if (match) {
+      addToCart(match);
+      setSearch('');
+    } else {
+      showToast('Barcode not found — showing similar products', 'error');
+    }
+  };
+
+  const updateQty = (key, delta) => {
+    setCart((prev) =>
+      prev
+        .map((i) => {
+          if (i.key !== key) return i;
+          const nextQty = i.qty + delta;
+          if (nextQty > i.stockQty && i.stockQty >= 0) {
+            showToast(`Only ${i.stockQty} in stock`, 'warning');
+          }
+          return { ...i, qty: nextQty };
+        })
+        .filter((i) => i.qty > 0)
+    );
+  };
+
+  const removeFromCart = (key) => setCart((prev) => prev.filter((i) => i.key !== key));
+
+  const subtotal = useMemo(() => cart.reduce((sum, i) => sum + i.unitPrice * i.qty, 0), [cart]);
+  const discountAmount = Math.min(Number(discount) || 0, subtotal);
+  const total = Math.max(subtotal - discountAmount, 0);
+
+  const resetCart = () => {
+    setCart([]);
+    setDiscount('');
+  };
+
+  const handleConfirmCheckout = async ({ paymentMethod, customerId, amountPaid }) => {
+    const now = new Date().toISOString();
+    const saleId = nextId();
+    const dueAmount = Math.max(0, total - amountPaid);
+
+    const saleItemsPayloads = cart.map((item) => ({
+      id: nextId(),
+      sale_id: saleId,
+      product_id: item.isCustom ? null : Number(item.product),
+      product_name: item.name,
+      quantity: item.qty,
+      price: item.unitPrice,
+      purchase_price: item.unitCost,
+      is_custom: Boolean(item.isCustom),
+      created_at: now,
+    }));
+
+    const salePayload = {
+      id: saleId,
+      customer_id: customerId ? Number(customerId) : null,
+      total,
+      discount: discountAmount,
+      tax: 0,
+      subtotal,
+      date_created: now,
+      payment_method: paymentMethod,
+      payment_status: dueAmount > 0.01 ? 'Pending' : 'Paid',
+      status: 'Completed',
+      notes: '',
+      // Not a desktop schema column — tracked here so cancellation/AR reporting
+      // can reverse the exact amount added to the customer's credit balance,
+      // since partial payment is allowed on any payment method, not just Udhaar.
+      due_amount: dueAmount,
+    };
+
+    const events = [
+      { entityType: 'sale', operation: 'create', payload: salePayload },
+      ...saleItemsPayloads.map((p) => ({ entityType: 'sale_item', operation: 'create', payload: p })),
+    ];
+
+    for (const item of cart) {
+      if (item.isCustom) continue;
+      const product = products.find((p) => String(p.id) === String(item.product));
+      if (!product) continue;
+      const newStock = Math.max(0, Number(product.stock || 0) - item.qty);
+      events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: newStock, updated_at: now } });
+    }
+
+    // Any unpaid remainder (partial payment or full Udhaar) goes to the
+    // customer's credit balance — this applies on ANY payment method, not
+    // just Udhaar, matching the desktop's checkout modal.
+    if (dueAmount > 0.01 && customerId) {
+      const customer = customers.find((c) => String(c.id) === String(customerId));
+      if (customer) {
+        const newBalance = Number(customer.outstanding_balance || 0) + dueAmount;
+        events.push({
+          entityType: 'customer',
+          operation: 'update',
+          payload: { ...customer, outstanding_balance: newBalance, updated_at: now },
+        });
+      }
+    }
+
+    await pushBatch(events);
+
+    setReceiptSale({
+      invoiceNo: `INV-${String(saleId).slice(-6)}`,
+      createdAt: now,
+      items: saleItemsPayloads.map((p) => ({ product: p.product_id, name: p.product_name, qty: p.quantity, lineTotal: p.price * p.quantity })),
+      subtotal,
+      discount: discountAmount,
+      tax: 0,
+      total,
+      paymentMethod,
+      amountPaid,
+      dueAmount,
+    });
+    resetCart();
+  };
+
+  const handleAddCustomer = async (payload) => {
+    const now = new Date().toISOString();
+    const created = await pushEntity('customer', 'create', {
+      name: payload.name,
+      phone: payload.phone || '',
+      email: payload.email || '',
+      address: payload.address || '',
+      outstanding_balance: 0,
+      created_at: now,
+      updated_at: now,
+    });
+    showToast('Customer added');
+    return created;
+  };
+
+  const cartCount = cart.reduce((sum, i) => sum + i.qty, 0);
+
+  return (
+    <div className="flex flex-col gap-4 xl:flex-row">
+      <div className="min-w-0 flex-1">
+        <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <ShoppingCart size={18} />
+            </div>
+            <div>
+              <h2 className="font-heading text-lg font-semibold text-foreground">Point of Sale</h2>
+              <p className="text-xs text-muted-foreground">
+                {filteredProducts.length} products · {cartCount === 0 ? 'Cart empty' : `${cartCount} item(s) in cart`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => navigate('/sales/history')}>
+              <History size={15} /> History
+            </Button>
+            <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+              <Switch checked={barcodeMode} onCheckedChange={setBarcodeMode} />
+              <span className="text-sm text-muted-foreground">Barcode Mode</span>
+            </div>
+            <Button variant="secondary" onClick={() => setCustomItemModalOpen(true)}>
+              <Sparkles size={15} /> Custom Item
+            </Button>
+          </div>
+        </div>
+
+        <SearchInput
+          className="mb-3 h-11"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={handleBarcodeEnter}
+          placeholder={barcodeMode ? 'Scan barcode — Enter auto-adds to cart…' : 'Search by name, category or barcode…'}
+        />
+
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => setCategoryFilter('all')}
+            className={cn(
+              'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              categoryFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+            )}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setCategoryFilter('uncategorized')}
+            className={cn(
+              'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              categoryFilter === 'uncategorized' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+            )}
+          >
+            None
+          </button>
+          {categoryOptions.map((c) => (
+            <button
+              key={c}
+              onClick={() => setCategoryFilter(c)}
+              className={cn(
+                'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                categoryFilter === c ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            <span>Product</span>
+            <span className="w-20 text-right">Category</span>
+            <span className="w-16 text-right">Stock</span>
+            <span className="w-24 text-right">Price</span>
+            <span className="w-8" />
+          </div>
+          <div className="divide-y divide-border">
+            {filteredProducts.map((p) => {
+              const stock = Number(p.stock || 0);
+              const alreadyInCart = cart.find((i) => i.key === String(p.id));
+              let stockTone = 'bg-brand-green/10 text-brand-green';
+              let stockLabel = String(stock);
+              if (stock < 0) {
+                stockTone = 'bg-brand-red/15 text-brand-red';
+              } else if (stock === 0) {
+                stockTone = 'bg-muted text-muted-foreground';
+                stockLabel = 'OUT';
+              } else if (stock <= LOW_STOCK_THRESHOLD) {
+                stockTone = 'bg-brand-orange/10 text-brand-orange';
+              }
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => addToCart(p)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      addToCart(p);
+                    }
+                  }}
+                  className="grid cursor-pointer grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 px-4 py-2.5 transition-colors hover:bg-muted/60"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                      {p.name?.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={cn('truncate text-sm font-medium', alreadyInCart ? 'text-primary' : 'text-foreground')}>
+                        {p.name}
+                        {alreadyInCart ? ` ×${alreadyInCart.qty}` : ''}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {p.barcode || 'No barcode'} · {p.unit || 'pcs'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="w-20 truncate text-right text-xs text-muted-foreground">{p.category || 'none'}</span>
+                  <span className={cn('w-16 rounded-full px-2 py-0.5 text-right text-xs font-semibold', stockTone)}>{stockLabel}</span>
+                  <span className="w-24 text-right text-sm font-semibold text-foreground">{formatCurrency(p.price, currency)}</span>
+                  <div className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Plus size={15} />
+                  </div>
+                </div>
+              );
+            })}
+            {filteredProducts.length === 0 && (
+              <p className="py-10 text-center text-sm text-muted-foreground">No products found.</p>
+            )}
+          </div>
+          <div className="border-t border-border px-4 py-2 text-xs text-muted-foreground">Showing {filteredProducts.length}</div>
+        </div>
+      </div>
+
+      <div className="w-full shrink-0 xl:w-96">
+        <div className="sticky top-20 flex flex-col rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+            <ShoppingCart size={16} className="text-muted-foreground" />
+            <h3 className="font-heading text-sm font-semibold text-foreground">Current Order</h3>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-3" style={{ maxHeight: 340, minHeight: 160 }}>
+            {cart.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <ShoppingCart size={22} className="text-muted-foreground" />
+                </div>
+                <p className="text-sm font-medium text-foreground">Cart is empty</p>
+                <p className="text-xs text-muted-foreground">Tap a product to add it</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {cart.map((item) => (
+                  <div key={item.key} className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {item.name}
+                        {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom item</span>}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)} each</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1 hover:bg-muted">
+                        <Minus size={12} />
+                      </button>
+                      <span className="w-5 text-center text-sm">{item.qty}</span>
+                      <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1 hover:bg-muted">
+                        <Plus size={12} />
+                      </button>
+                      <button onClick={() => removeFromCart(item.key)} className="ml-1 rounded-md p-1 text-destructive hover:bg-destructive/10">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-border px-4 py-3">
+            <Input
+              label="Discount"
+              type="number"
+              min="0"
+              max={subtotal}
+              placeholder="0"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+            />
+
+            <div className="flex flex-col gap-1 text-sm">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Subtotal</span>
+                <span>{formatCurrency(subtotal, currency)}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Discount</span>
+                  <span>-{formatCurrency(discountAmount, currency)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-border pt-1 text-2xl font-black text-primary">
+                <span className="text-base font-semibold text-foreground">Total</span>
+                <span>{formatCurrency(total, currency)}</span>
+              </div>
+            </div>
+
+            <Button className="w-full justify-center" disabled={cart.length === 0} onClick={() => setCheckoutOpen(true)}>
+              Checkout · {formatCurrency(total, currency)}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <CustomItemModal open={customItemModalOpen} onClose={() => setCustomItemModalOpen(false)} onAdd={addCustomItem} />
+      <CustomerFormModal open={customerModalOpen} onClose={() => setCustomerModalOpen(false)} onSubmit={handleAddCustomer} />
+      <CheckoutModal
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        onConfirm={handleConfirmCheckout}
+        total={total}
+        customers={customers}
+        onAddCustomer={() => setCustomerModalOpen(true)}
+      />
+      <ReceiptModal
+        open={Boolean(receiptSale)}
+        onClose={() => setReceiptSale(null)}
+        sale={receiptSale}
+        businessName={user?.store_name}
+        currency={currency}
+      />
+    </div>
+  );
+}
