@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Boxes, Package, ShoppingCart, Wallet, FileBarChart,
   Settings as SettingsIcon, Wind, Truck, Users, ShoppingBag, Sun, Moon,
-  Receipt, AlertTriangle, FileText, LogOut, ChevronRight,
+  Receipt, FileText, LogOut, ChevronRight, Info, Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
@@ -31,6 +31,8 @@ const sections = [
   ]},
   { label: 'System', items: [
     { to: '/manufacturing/settings', label: 'Settings', icon: SettingsIcon },
+    { to: '/manufacturing/license',  label: 'License',  icon: Shield },
+    { to: '/manufacturing/about',    label: 'About',    icon: Info },
   ]},
 ];
 

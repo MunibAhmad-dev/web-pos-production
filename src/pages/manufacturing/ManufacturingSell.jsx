@@ -138,25 +138,43 @@ export default function ManufacturingSell() {
     if (cart.length === 0) return;
     setSubmitting(true);
     try {
-      const paidAmt  = Number(form.paid_amount || 0);
-      const status   = paidAmt >= total ? 'Completed' : paidAmt > 0 ? 'Partial' : 'Due';
+      const paidAmt = Number(form.paid_amount || 0);
+      const status  = paidAmt >= total ? 'Completed' : paidAmt > 0 ? 'Partial' : 'Due';
+
+      // Build stock decrement events for every cart item
+      const stockUpdates = cart.map(item => {
+        const sourceList = item.type === 'products' ? products : parts;
+        const full = sourceList.find(p => String(p.id) === String(item.id));
+        if (!full) return null;
+        return {
+          entity_type: item.type === 'products' ? 'product' : 'part',
+          payload: { ...full, stock: Math.max(0, Number(full.stock || 0) - item.qty) },
+        };
+      }).filter(Boolean);
 
       await mfgCreateSale({
-        created_at:     new Date().toISOString(),
-        customer_name:  form.customer_name.trim(),
-        customer_phone: form.customer_phone.trim(),
+        created_at:       new Date().toISOString(),
+        customer_name:    form.customer_name.trim(),
+        customer_phone:   form.customer_phone.trim(),
         customer_address: '',
         subtotal,
-        discount:       discountAmt,
-        tax:            taxAmt,
+        discount:         discountAmt,
+        tax:              taxAmt,
         total,
-        paid_amount:    paidAmt,
-        payment_method: form.payment_method,
+        paid_amount:      paidAmt,
+        payment_method:   form.payment_method,
         status,
-        items_count:    cart.length,
-        note:           form.notes.trim(),
-        source:         'web',
-      });
+        items_count:      cart.length,
+        note:             form.notes.trim(),
+        source:           'web',
+      }, stockUpdates);
+
+      // Reflect decremented stock in local state immediately
+      if (stockUpdates.length > 0) {
+        const newStockMap = new Map(stockUpdates.map(u => [String(u.payload.id), u.payload.stock]));
+        setProducts(prev => prev.map(p => newStockMap.has(String(p.id)) ? { ...p, stock: newStockMap.get(String(p.id)) } : p));
+        setParts(prev => prev.map(p => newStockMap.has(String(p.id)) ? { ...p, stock: newStockMap.get(String(p.id)) } : p));
+      }
 
       toast.success('Sale recorded successfully!');
       setCheckoutOpen(false);

@@ -82,21 +82,156 @@ export async function mfgGetSellItems({ search } = {}) {
   return request(`/sell-items${qs ? `?${qs}` : ''}`);
 }
 
-export async function mfgCreateSale(payload) {
+export async function mfgCreateSale(payload, stockUpdates = []) {
   const id = Date.now(); // timestamp-based — safely above Electron's SQLite sequential IDs
   const fullPayload = { ...payload, id };
+  const items = [
+    { entity_type: 'sale', operation: 'create', payload: fullPayload, local_id: id },
+    ...stockUpdates.map(u => ({
+      entity_type: u.entity_type,
+      operation: 'update',
+      payload: u.payload,
+      local_id: Number(u.payload.id),
+    })),
+  ];
   const result = await request('/sync', {
     method: 'POST',
-    body: JSON.stringify({
-      items: [{
-        entity_type: 'sale',
-        operation: 'create',
-        payload: fullPayload,
-        local_id: id,
-      }],
-    }),
+    body: JSON.stringify({ items }),
   });
   return { ...result, sale_id: id };
+}
+
+export async function mfgCreatePurchase(payload, stockUpdates = []) {
+  const items = [];
+  if (payload) {
+    const id = Date.now();
+    items.push({ entity_type: 'purchase', operation: 'create', payload: { ...payload, id }, local_id: id });
+  }
+  items.push(...stockUpdates.map(u => ({
+    entity_type: u.entity_type,
+    operation:   'update',
+    payload:     u.payload,
+    local_id:    Number(u.payload.id),
+  })));
+  return request('/sync', { method: 'POST', body: JSON.stringify({ items }) });
+}
+
+// ─── Parts CRUD ────────────────────────────────────────────────────────────────
+export async function mfgGetParts({ search } = {}) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const qs = params.toString();
+  return request(`/parts${qs ? `?${qs}` : ''}`);
+}
+
+export async function mfgCreatePart(payload) {
+  return request('/parts', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function mfgUpdatePart(id, payload) {
+  return request(`/parts/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function mfgAdjustPartStock(id, stock) {
+  return request(`/parts/${id}/stock`, { method: 'PATCH', body: JSON.stringify({ stock }) });
+}
+
+export async function mfgDeletePart(id) {
+  return request(`/parts/${id}`, { method: 'DELETE' });
+}
+
+// ─── Products (Air Coolers) CRUD ───────────────────────────────────────────────
+export async function mfgGetProducts({ search } = {}) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const qs = params.toString();
+  return request(`/products${qs ? `?${qs}` : ''}`);
+}
+
+export async function mfgCreateProduct(payload) {
+  return request('/products', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function mfgUpdateProduct(id, payload) {
+  return request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function mfgDeleteProduct(id) {
+  return request(`/products/${id}`, { method: 'DELETE' });
+}
+
+// ─── Vendors ───────────────────────────────────────────────────────────────────
+export async function mfgGetVendors({ search } = {}) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const qs = params.toString();
+  return request(`/vendors${qs ? `?${qs}` : ''}`);
+}
+export async function mfgGetVendorProfile(id) {
+  return request(`/vendors/${id}/profile`);
+}
+export async function mfgCreateVendor(payload) {
+  return request('/vendors', { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function mfgUpdateVendor(id, payload) {
+  return request(`/vendors/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+export async function mfgDeleteVendor(id) {
+  return request(`/vendors/${id}`, { method: 'DELETE' });
+}
+
+// ─── Customers ─────────────────────────────────────────────────────────────────
+export async function mfgGetCustomers({ search } = {}) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const qs = params.toString();
+  return request(`/customers${qs ? `?${qs}` : ''}`);
+}
+export async function mfgGetCustomerProfile(id) {
+  return request(`/customers/${id}/profile`);
+}
+export async function mfgCreateCustomer(payload) {
+  return request('/customers', { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function mfgUpdateCustomer(id, payload) {
+  return request(`/customers/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+export async function mfgDeleteCustomer(id) {
+  return request(`/customers/${id}`, { method: 'DELETE' });
+}
+
+// ─── Accounts / Accounting ─────────────────────────────────────────────────────
+export async function mfgGetAccounts() {
+  return request('/accounts');
+}
+export async function mfgCreateAccount(payload) {
+  return request('/accounts', { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function mfgUpdateAccount(id, payload) {
+  return request(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+export async function mfgDeleteAccount(id) {
+  return request(`/accounts/${id}`, { method: 'DELETE' });
+}
+export async function mfgTransfer(payload) {
+  return request('/accounts/transfer', { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function mfgGetLedger({ limit = 50, offset = 0 } = {}) {
+  return request(`/accounting/ledger?limit=${limit}&offset=${offset}`);
+}
+
+// ─── Expenses ──────────────────────────────────────────────────────────────────
+export async function mfgGetExpenses({ search } = {}) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const qs = params.toString();
+  return request(`/expenses${qs ? `?${qs}` : ''}`);
+}
+export async function mfgCreateExpense(payload) {
+  return request('/expenses', { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function mfgDeleteExpense(id) {
+  return request(`/expenses/${id}`, { method: 'DELETE' });
 }
 
 // ─── Invoices ──────────────────────────────────────────────────────────────────

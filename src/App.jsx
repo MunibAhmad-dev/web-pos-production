@@ -44,6 +44,16 @@ import ManufacturingComingSoon from './pages/manufacturing/ManufacturingComingSo
 import ManufacturingInvoices from './pages/manufacturing/ManufacturingInvoices';
 import ManufacturingReports from './pages/manufacturing/ManufacturingReports';
 import ManufacturingSell from './pages/manufacturing/ManufacturingSell';
+import ManufacturingBuyStock from './pages/manufacturing/ManufacturingBuyStock';
+import ManufacturingPartsInventory from './pages/manufacturing/ManufacturingPartsInventory';
+import ManufacturingProducts from './pages/manufacturing/ManufacturingProducts';
+import ManufacturingVendors from './pages/manufacturing/ManufacturingVendors';
+import ManufacturingCustomers from './pages/manufacturing/ManufacturingCustomers';
+import ManufacturingAccounting from './pages/manufacturing/ManufacturingAccounting';
+import ManufacturingExpenses from './pages/manufacturing/ManufacturingExpenses';
+import ManufacturingSettings from './pages/manufacturing/ManufacturingSettings';
+import ManufacturingAbout from './pages/manufacturing/ManufacturingAbout';
+import ManufacturingLicense from './pages/manufacturing/ManufacturingLicense';
 import NotFound from './pages/NotFound';
 
 // Remounts DataStoreProvider (wiping all in-memory data) whenever the logged-in
@@ -80,16 +90,18 @@ export default function App() {
                   <Route element={<ManufacturingLayout />}>
                     <Route path="/manufacturing/dashboard" element={<ManufacturingDashboard />} />
                     <Route path="/manufacturing/sales"     element={<ManufacturingSell />} />
-                    <Route path="/manufacturing/purchases" element={<ManufacturingComingSoon title="Buy Stock" />} />
-                    <Route path="/manufacturing/parts"     element={<ManufacturingComingSoon title="Parts Inventory" />} />
-                    <Route path="/manufacturing/products"  element={<ManufacturingComingSoon title="Products" />} />
-                    <Route path="/manufacturing/vendors"   element={<ManufacturingComingSoon title="Vendors" />} />
-                    <Route path="/manufacturing/customers" element={<ManufacturingComingSoon title="Customers" />} />
+                    <Route path="/manufacturing/purchases" element={<ManufacturingBuyStock />} />
+                    <Route path="/manufacturing/parts"     element={<ManufacturingPartsInventory />} />
+                    <Route path="/manufacturing/products"  element={<ManufacturingProducts />} />
+                    <Route path="/manufacturing/vendors"   element={<ManufacturingVendors />} />
+                    <Route path="/manufacturing/customers" element={<ManufacturingCustomers />} />
                     <Route path="/manufacturing/invoices"  element={<ManufacturingInvoices />} />
-                    <Route path="/manufacturing/accounting"element={<ManufacturingComingSoon title="Accounting" />} />
-                    <Route path="/manufacturing/expenses"  element={<ManufacturingComingSoon title="Expenses" />} />
+                    <Route path="/manufacturing/accounting" element={<ManufacturingAccounting />} />
+                    <Route path="/manufacturing/expenses"  element={<ManufacturingExpenses />} />
                     <Route path="/manufacturing/reports"   element={<ManufacturingReports />} />
-                    <Route path="/manufacturing/settings"  element={<ManufacturingComingSoon title="Settings" />} />
+                    <Route path="/manufacturing/settings"  element={<ManufacturingSettings />} />
+                    <Route path="/manufacturing/license"   element={<ManufacturingLicense />} />
+                    <Route path="/manufacturing/about"     element={<ManufacturingAbout />} />
                   </Route>
                 </Route>
 

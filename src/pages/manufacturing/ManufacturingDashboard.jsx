@@ -82,7 +82,7 @@ export default function ManufacturingDashboard() {
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
   const greeting = getGreeting();
-  const ownerName = mfgUser?.company_name || mfgUser?.mobile || '';
+  const ownerName = mfgUser?.company_name?.trim() || '';
 
   // Build chart data — always 7 days regardless of period filter
   const salesTrend = data?.sales_trend?.map(d => ({
