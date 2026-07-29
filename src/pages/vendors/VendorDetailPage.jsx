@@ -18,8 +18,18 @@ const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: '
 
 const GRADIENTS = ['from-indigo-500 to-blue-500', 'from-violet-500 to-purple-500', 'from-orange-500 to-amber-500', 'from-teal-500 to-emerald-500', 'from-rose-500 to-pink-500'];
 const getGrad = (name = '') => GRADIENTS[name.charCodeAt(0) % GRADIENTS.length];
-// gram products: stock is in grams, price is per-kg — divide by 1000 for value calculations
-const stockBaseQty = (p) => p.unit_type === 'gram' ? Number(p.stock || 0) / 1000 : Number(p.stock || 0);
+// gram products: stock is in grams, price is per-kg — divide by 1000 for value calculations.
+// Also caps raw stock to guard against astronomically wrong cloud data.
+const stockBaseQty = (p) => {
+  const raw = Math.max(0, Number(p.stock || 0));
+  return p.unit_type === 'gram' ? Math.min(raw, 100_000_000) / 1000 : Math.min(raw, 1_000_000);
+};
+// stock cost value per product, capped at 5M PKR (mirrors Electron guard)
+const stockProductVal = (p) => {
+  const retailPP = Math.min(Number(p.price || 0), 500_000);
+  const pp = Math.min(Number(p.purchase_price || 0), retailPP);
+  return Math.min(stockBaseQty(p) * pp, 5_000_000);
+};
 
 function poStatus(po) {
   if (po.status === 'Cancelled') return { label: 'Cancelled', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
@@ -90,10 +100,7 @@ export default function VendorDetailPage() {
       return { ...po, items, linkedPayments, linkedReturns, amountPaid, amountReturned, remaining };
     });
 
-    const stockCostValue = vendorProducts.reduce((s, p) => {
-      const pp = Math.min(Number(p.purchase_price || 0), Number(p.price || 0));
-      return s + pp * stockBaseQty(p);
-    }, 0);
+    const stockCostValue = vendorProducts.reduce((s, p) => s + stockProductVal(p), 0);
     const totalStock = vendorProducts.reduce((s, p) => s + stockBaseQty(p), 0);
 
     const activity = [
@@ -444,7 +451,7 @@ export default function VendorDetailPage() {
                   </div>
                   <div className="divide-y divide-border/20 mt-1">
                     {products.map((p) => {
-                      const stockValue = Number(p.purchase_price || 0) * stockBaseQty(p);
+                      const stockValue = stockProductVal(p);
                       const totalBought = allPurchaseItems
                         .filter((i) => String(i.product_id) === String(p.id))
                         .reduce((s, i) => s + Number(i.quantity || 0), 0);

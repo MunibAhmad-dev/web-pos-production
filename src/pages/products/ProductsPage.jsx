@@ -729,9 +729,15 @@ export default function ProductsPage() {
         productSales[pid].profit += profit;
       });
 
-    const stockQty = (p) => p.unit_type === 'gram' ? Math.max(0, p.stock || 0) / 1000 : Math.max(0, p.stock || 0);
-    const totalStockValue = products.reduce((s, p) => s + stockQty(p) * (p.purchase_price || 0), 0);
-    const totalRetailValue = products.reduce((s, p) => s + stockQty(p) * (p.price || 0), 0);
+    const stockQty = (p) => {
+      const isGram = p.unit_type === 'gram';
+      const raw = Math.max(0, p.stock || 0);
+      return isGram ? Math.min(raw, 100_000_000) / 1000 : Math.min(raw, 1_000_000);
+    };
+    const productVal = (p) => Math.min(stockQty(p) * Math.min(p.purchase_price || 0, p.price || 0, 500_000), 5_000_000);
+    const productRetail = (p) => Math.min(stockQty(p) * Math.min(p.price || 0, 500_000), 5_000_000);
+    const totalStockValue = products.reduce((s, p) => s + productVal(p), 0);
+    const totalRetailValue = products.reduce((s, p) => s + productRetail(p), 0);
     const totalProfit = Object.values(productSales).reduce((s, v) => s + v.profit, 0);
 
     const topProfitable = [...products]
@@ -748,8 +754,8 @@ export default function ProductsPage() {
       products.reduce((acc, p) => {
         const cat = p.category || 'Uncategorized';
         if (!acc[cat]) acc[cat] = { value: 0, retail: 0, count: 0 };
-        acc[cat].value += stockQty(p) * (p.purchase_price || 0);
-        acc[cat].retail += stockQty(p) * (p.price || 0);
+        acc[cat].value += productVal(p);
+        acc[cat].retail += productRetail(p);
         acc[cat].count++;
         return acc;
       }, {})

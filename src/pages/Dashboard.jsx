@@ -48,12 +48,16 @@ function rangeForPeriod(period, from, to) {
   return { date_from: start.toISOString(), date_to: end.toISOString() };
 }
 
-// For gram-unit products: stock is in grams, purchase_price is per-kg
-// so we must divide gram quantities by 1000 before multiplying by price.
-function gramCorrectedCost(qty, purchasePrice, unitType) {
+// For gram-unit products: stock is in grams, purchase_price is per-kg.
+// Also caps purchase_price at the product's retail price and at 500,000 PKR —
+// the cloud still has pre-migration corrupt values for some products and we
+// cannot fix that server-side, so we guard here.
+function gramCorrectedCost(qty, purchasePrice, unitType, retailPrice) {
+  const cap = (retailPrice > 0) ? Math.min(Number(retailPrice), 500_000) : 500_000;
+  const pp  = Math.min(Number(purchasePrice) || 0, cap);
   return unitType === 'gram'
-    ? (Number(qty) / 1000) * Number(purchasePrice)
-    : Number(qty) * Number(purchasePrice);
+    ? (Number(qty) / 1000) * pp
+    : Number(qty) * pp;
 }
 
 function buildPnl(analyticsData, saleItems, sales, productById = {}) {
@@ -64,7 +68,7 @@ function buildPnl(analyticsData, saleItems, sales, productById = {}) {
     const day = dayOf[String(item.sale_id)];
     if (!day) continue;
     const product = productById[String(item.product_id ?? '')];
-    const cogs = gramCorrectedCost(item.quantity ?? 0, item.purchase_price ?? 0, product?.unit_type);
+    const cogs = gramCorrectedCost(item.quantity ?? 0, item.purchase_price ?? 0, product?.unit_type, product?.price);
     cogsByDay[day] = (cogsByDay[day] || 0) + cogs;
   }
   const revenueByDay = {};
@@ -249,11 +253,15 @@ export default function Dashboard() {
       const stock = Number(p.stock || 0);
       // gram products: stock is in grams, price is per-kg — divide by 1000
       const isGram = p.unit_type === 'gram';
-      const qty = isGram ? stock / 1000 : stock;
-      // cap cost at retail so stockValue never exceeds retailStockValue
-      const pp = Math.min(Number(p.purchase_price || 0), Number(p.price || 0));
-      stockValue       += qty * pp;
-      retailStockValue += qty * Number(p.price || 0);
+      // guard against astronomically wrong stock counts from cloud (pre-migration)
+      const cappedStock = Math.min(Math.max(0, stock), isGram ? 100_000_000 : 1_000_000);
+      const qty = isGram ? cappedStock / 1000 : cappedStock;
+      // cap unit prices at 500,000 PKR, cost ≤ retail, then cap per-product at
+      // 5,000,000 PKR — mirrors the Electron dashboard's MIN(..., 5000000) guard
+      const retailPP = Math.min(Number(p.price || 0), 500_000);
+      const pp = Math.min(Number(p.purchase_price || 0), retailPP);
+      stockValue       += Math.min(qty * pp,       5_000_000);
+      retailStockValue += Math.min(qty * retailPP, 5_000_000);
       if (stock <= 0)                           { outOfStockCount++; }
       else if (stock <= LOW_STOCK_THRESHOLD)    { lowStockCount++;   lowStockProducts.push(p); }
       else                                       { inStockCount++; }
