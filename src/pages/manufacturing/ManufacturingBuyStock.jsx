@@ -75,8 +75,8 @@ export default function ManufacturingBuyStock() {
 
   function addToCart(item) {
     const unit_cost = tab === 'parts'
-      ? Number(item.cost_price || 0)
-      : Number(item.purchase_price || item.price || 0);
+      ? Number(item.cost_price || item.purchase_price || item.price || 0)
+      : Number(item.purchase_price || item.cost_price || item.price || 0);
     setCart(prev => {
       const key    = `${tab}-${item.id}`;
       const exists = prev.find(c => c._key === key);
@@ -328,8 +328,8 @@ export default function ManufacturingBuyStock() {
               <tbody>
                 {displayItems.map(item => {
                   const cost  = tab === 'parts'
-                    ? Number(item.cost_price || 0)
-                    : Number(item.purchase_price || item.price || 0);
+                    ? Number(item.cost_price || item.purchase_price || item.price || 0)
+                    : Number(item.purchase_price || item.cost_price || item.price || 0);
                   const inCart = !!cart.find(c => c._key === `${tab}-${item.id}`);
                   return (
                     <tr

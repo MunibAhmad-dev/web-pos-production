@@ -92,7 +92,9 @@ export default function ManufacturingSell() {
 
   // ── cart actions ─────────────────────────────────────────────────────────────
   function addToCart(item) {
-    const price = tab === 'products' ? (item.price || 0) : (item.cost_price || 0);
+    const price = tab === 'products'
+      ? (item.price || item.selling_price || 0)
+      : (item.selling_price || item.cost_price || 0);
     setCart(prev => {
       const key = `${tab}-${item.id}`;
       const exists = prev.find(c => c._key === key);
@@ -291,7 +293,9 @@ export default function ManufacturingSell() {
               <tbody>
                 {displayItems.map(item => {
                   const badge = stockBadge(item.stock, item.low_stock_threshold);
-                  const price = tab === 'products' ? item.price : item.cost_price;
+                  const price = tab === 'products'
+                    ? (item.price || item.selling_price || 0)
+                    : (item.selling_price || item.cost_price || 0);
                   const inCart = cart.find(c => c._key === `${tab}-${item.id}`);
                   return (
                     <tr
