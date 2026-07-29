@@ -214,7 +214,11 @@ export default function InventoryPage() {
   const prodStats = useMemo(() => {
     const lowStock = allProducts.filter((p) => Number(p.stock || 0) > 0 && Number(p.stock || 0) < threshold).length;
     const outOfStock = allProducts.filter((p) => Number(p.stock || 0) <= 0).length;
-    const totalStock = allProducts.reduce((sum, p) => sum + Number(p.stock || 0), 0);
+    // gram products track stock in grams; convert to kg so the total is meaningful
+    const totalStock = allProducts.reduce((sum, p) => {
+      const s = Number(p.stock || 0);
+      return sum + (p.unit_type === 'gram' ? s / 1000 : s);
+    }, 0);
     return { lowStock, outOfStock, totalStock };
   }, [allProducts, threshold]);
 

@@ -48,14 +48,24 @@ function rangeForPeriod(period, from, to) {
   return { date_from: start.toISOString(), date_to: end.toISOString() };
 }
 
-function buildPnl(analyticsData, saleItems, sales) {
+// For gram-unit products: stock is in grams, purchase_price is per-kg
+// so we must divide gram quantities by 1000 before multiplying by price.
+function gramCorrectedCost(qty, purchasePrice, unitType) {
+  return unitType === 'gram'
+    ? (Number(qty) / 1000) * Number(purchasePrice)
+    : Number(qty) * Number(purchasePrice);
+}
+
+function buildPnl(analyticsData, saleItems, sales, productById = {}) {
   const dayOf = {};
   for (const s of sales) if (s.date_created) dayOf[String(s.id)] = String(s.date_created).slice(0, 10);
   const cogsByDay = {};
   for (const item of saleItems) {
     const day = dayOf[String(item.sale_id)];
     if (!day) continue;
-    cogsByDay[day] = (cogsByDay[day] || 0) + Number(item.quantity ?? 0) * Number(item.purchase_price ?? 0);
+    const product = productById[String(item.product_id ?? '')];
+    const cogs = gramCorrectedCost(item.quantity ?? 0, item.purchase_price ?? 0, product?.unit_type);
+    cogsByDay[day] = (cogsByDay[day] || 0) + cogs;
   }
   const revenueByDay = {};
   for (const d of analyticsData?.salesByDay || []) revenueByDay[d.day] = d.revenue;
@@ -223,6 +233,13 @@ export default function Dashboard() {
   const accounts    = list('account');
   const accountTxns = list('account_txn');
 
+  // productById for unit_type lookup in COGS and stock value calculations
+  const productById = useMemo(() => {
+    const m = {};
+    for (const p of products) m[String(p.id)] = p;
+    return m;
+  }, [products]);
+
   // Stock stats + donut
   const stockStats = useMemo(() => {
     let stockValue = 0, retailStockValue = 0;
@@ -230,8 +247,13 @@ export default function Dashboard() {
     const lowStockProducts = [];
     for (const p of products) {
       const stock = Number(p.stock || 0);
-      stockValue       += stock * Number(p.purchase_price || 0);
-      retailStockValue += stock * Number(p.price || 0);
+      // gram products: stock is in grams, price is per-kg — divide by 1000
+      const isGram = p.unit_type === 'gram';
+      const qty = isGram ? stock / 1000 : stock;
+      // cap cost at retail so stockValue never exceeds retailStockValue
+      const pp = Math.min(Number(p.purchase_price || 0), Number(p.price || 0));
+      stockValue       += qty * pp;
+      retailStockValue += qty * Number(p.price || 0);
       if (stock <= 0)                           { outOfStockCount++; }
       else if (stock <= LOW_STOCK_THRESHOLD)    { lowStockCount++;   lowStockProducts.push(p); }
       else                                       { inStockCount++; }
@@ -275,7 +297,7 @@ export default function Dashboard() {
     }).filter((v) => v.balance > 0.01).sort((a, b) => b.balance - a.balance);
   }, [vendors, purchases, vendorPayments, purchaseReturns]);
 
-  const pnl = useMemo(() => buildPnl(analytics, saleItems, sales), [analytics, saleItems, sales]);
+  const pnl = useMemo(() => buildPnl(analytics, saleItems, sales, productById), [analytics, saleItems, sales, productById]);
 
   // Payment method breakdown from local sales filtered by period
   const paymentBreakdown = useMemo(() => {

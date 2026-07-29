@@ -18,6 +18,8 @@ const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: '
 
 const GRADIENTS = ['from-indigo-500 to-blue-500', 'from-violet-500 to-purple-500', 'from-orange-500 to-amber-500', 'from-teal-500 to-emerald-500', 'from-rose-500 to-pink-500'];
 const getGrad = (name = '') => GRADIENTS[name.charCodeAt(0) % GRADIENTS.length];
+// gram products: stock is in grams, price is per-kg — divide by 1000 for value calculations
+const stockBaseQty = (p) => p.unit_type === 'gram' ? Number(p.stock || 0) / 1000 : Number(p.stock || 0);
 
 function poStatus(po) {
   if (po.status === 'Cancelled') return { label: 'Cancelled', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
@@ -88,8 +90,11 @@ export default function VendorDetailPage() {
       return { ...po, items, linkedPayments, linkedReturns, amountPaid, amountReturned, remaining };
     });
 
-    const stockCostValue = vendorProducts.reduce((s, p) => s + Number(p.purchase_price || 0) * Number(p.stock || 0), 0);
-    const totalStock = vendorProducts.reduce((s, p) => s + Number(p.stock || 0), 0);
+    const stockCostValue = vendorProducts.reduce((s, p) => {
+      const pp = Math.min(Number(p.purchase_price || 0), Number(p.price || 0));
+      return s + pp * stockBaseQty(p);
+    }, 0);
+    const totalStock = vendorProducts.reduce((s, p) => s + stockBaseQty(p), 0);
 
     const activity = [
       ...vendPurchases.map((p) => ({ type: 'PURCHASE', date: p.date_created, notes: `Purchase Order — ${fmtPKR(p.total)}`, amount: Number(p.total || 0), id: p.id })),
@@ -439,7 +444,7 @@ export default function VendorDetailPage() {
                   </div>
                   <div className="divide-y divide-border/20 mt-1">
                     {products.map((p) => {
-                      const stockValue = Number(p.purchase_price || 0) * Number(p.stock || 0);
+                      const stockValue = Number(p.purchase_price || 0) * stockBaseQty(p);
                       const totalBought = allPurchaseItems
                         .filter((i) => String(i.product_id) === String(p.id))
                         .reduce((s, i) => s + Number(i.quantity || 0), 0);

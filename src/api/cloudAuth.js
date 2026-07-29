@@ -57,6 +57,15 @@ export async function loginShop({ mobile, password }) {
   });
   if (!data.success) throw new Error(data.error || 'Login failed');
 
+  // The backend creates a new pending account whenever the mobile isn't found
+  // (backwards-compat for old desktop clients). Guard against that in the web
+  // signin flow: if the response lacks the 'Already registered' marker the
+  // mobile simply doesn't exist — show a clear error instead of redirecting
+  // to the pending-approval page.
+  if (data.message !== 'Already registered') {
+    throw new Error('No account found for this mobile number. Please register your store first.');
+  }
+
   localStorage.setItem(API_KEY, data.api_key);
   return saveSession({
     instance_id: data.instance_id,

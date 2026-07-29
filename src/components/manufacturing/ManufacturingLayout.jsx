@@ -69,7 +69,7 @@ export default function ManufacturingLayout() {
           </div>
           <div className="min-w-0">
             <div className="font-bold text-sm leading-tight tracking-tight truncate">
-              {mfgUser?.factoryName || 'Factory ERP'}
+              {mfgUser?.company_name || 'Factory ERP'}
             </div>
             <div className="text-[10px] text-muted-foreground">Manufacturing</div>
           </div>
@@ -115,9 +115,9 @@ export default function ManufacturingLayout() {
 
         {/* User + footer */}
         <div className="px-3 py-3 border-t border-border/60 space-y-1">
-          {mfgUser?.ownerName && (
+          {mfgUser?.mobile && (
             <div className="px-2 py-1.5 text-xs text-muted-foreground truncate">
-              Logged in as <span className="font-semibold text-foreground">{mfgUser.ownerName}</span>
+              Logged in as <span className="font-semibold text-foreground">{mfgUser.mobile}</span>
             </div>
           )}
           <button

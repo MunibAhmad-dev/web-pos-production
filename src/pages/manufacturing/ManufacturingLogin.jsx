@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   Factory, Phone, Lock, Eye, EyeOff,
   ArrowLeft, Cpu, Package2, Wrench,
@@ -134,8 +134,13 @@ function FactoryPreviewCard() {
 }
 
 export default function ManufacturingLogin() {
-  const { mfgLogin } = useMfgAuth();
+  const { mfgUser, mfgLogin } = useMfgAuth();
   const navigate = useNavigate();
+
+  // Already logged in — skip the login form entirely
+  if (mfgUser) {
+    return <Navigate to={mfgUser.approval_status === 'approved' ? '/manufacturing/dashboard' : '/manufacturing/pending'} replace />;
+  }
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const [form, setForm] = useState({ mobile: '', password: '' });
   const [error, setError] = useState('');
