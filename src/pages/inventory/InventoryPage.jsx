@@ -180,6 +180,17 @@ export default function InventoryPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [sortBy, setSortBy] = useState('name');
   const [showStockReport, setShowStockReport] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState(new Set());
+
+  const CAT_PAGE_SIZE = 24;
+
+  function toggleCategoryExpand(name) {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  }
 
   // Product detail drawer state
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -561,7 +572,7 @@ export default function InventoryPage() {
                       {/* Product grid */}
                       <div className="p-5">
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                          {group.items.map((p) => {
+                          {(expandedCategories.has(group.name) ? group.items : group.items.slice(0, CAT_PAGE_SIZE)).map((p) => {
                             const stockQty = p.stock || 0;
                             const isOut = stockQty === 0;
                             const isLow = !isOut && stockQty < threshold;
@@ -604,6 +615,16 @@ export default function InventoryPage() {
                             );
                           })}
                         </div>
+                        {group.items.length > CAT_PAGE_SIZE && (
+                          <button
+                            onClick={() => toggleCategoryExpand(group.name)}
+                            className="mt-3 w-full rounded-xl border border-dashed border-border/60 py-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted/30 transition-colors"
+                          >
+                            {expandedCategories.has(group.name)
+                              ? `Show less ↑`
+                              : `Show ${group.items.length - CAT_PAGE_SIZE} more in ${group.name}…`}
+                          </button>
+                        )}
                       </div>
                     </motion.div>
                   ))}

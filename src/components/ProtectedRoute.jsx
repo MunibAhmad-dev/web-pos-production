@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDataStore } from '../store/dataStore';
+import LoadingScreen from './LoadingScreen';
 
 export default function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -16,7 +17,7 @@ export default function ProtectedRoute({ children }) {
   }, [approved, bootstrapped, bootstrap]);
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+    return <LoadingScreen message="Verifying session…" submessage="Checking your account status" />;
   }
 
   if (!user) {
@@ -28,7 +29,7 @@ export default function ProtectedRoute({ children }) {
   }
 
   if (!bootstrapped) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading store data…</div>;
+    return <LoadingScreen message="Loading store data…" submessage="Syncing products, customers & sales" />;
   }
 
   return children;

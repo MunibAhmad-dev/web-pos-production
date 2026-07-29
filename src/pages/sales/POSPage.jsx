@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Minus, Trash2, ShoppingCart, Sparkles, History } from 'lucide-react';
+import { Plus, Minus, Trash2, ShoppingCart, Sparkles, History, ChevronLeft, ChevronRight } from 'lucide-react';
+import { usePagination } from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -248,6 +249,8 @@ export default function POSPage() {
 
   const cartCount = cart.reduce((sum, i) => sum + i.qty, 0);
 
+  const { paged: pagedProducts, page: posPage, pageCount: posPageCount, setPage: setPosPage } = usePagination(filteredProducts, 50);
+
   return (
     <div className="flex flex-col gap-4 xl:flex-row">
       <div className="min-w-0 flex-1">
@@ -327,7 +330,7 @@ export default function POSPage() {
             <span className="w-8" />
           </div>
           <div className="divide-y divide-border">
-            {filteredProducts.map((p) => {
+            {pagedProducts.map((p) => {
               const stock = Number(p.stock || 0);
               const alreadyInCart = cart.find((i) => i.key === String(p.id));
               let stockTone = 'bg-brand-green/10 text-brand-green';
@@ -381,7 +384,51 @@ export default function POSPage() {
               <p className="py-10 text-center text-sm text-muted-foreground">No products found.</p>
             )}
           </div>
-          <div className="border-t border-border px-4 py-2 text-xs text-muted-foreground">Showing {filteredProducts.length}</div>
+          <div className="flex items-center justify-between border-t border-border px-4 py-2">
+            <span className="text-xs text-muted-foreground">
+              {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+              {posPageCount > 1 && ` · page ${posPage} of ${posPageCount}`}
+            </span>
+            {posPageCount > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPosPage(p => Math.max(1, p - 1))}
+                  disabled={posPage === 1}
+                  className="h-7 w-7 rounded-lg border border-border flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors"
+                >
+                  <ChevronLeft size={13} />
+                </button>
+                {Array.from({ length: posPageCount }, (_, i) => i + 1)
+                  .filter(n => n === 1 || n === posPageCount || Math.abs(n - posPage) <= 1)
+                  .reduce((acc, n, i, arr) => {
+                    if (i > 0 && n - arr[i - 1] > 1) acc.push('…');
+                    acc.push(n);
+                    return acc;
+                  }, [])
+                  .map((n, i) =>
+                    n === '…'
+                      ? <span key={`ellipsis-${i}`} className="text-xs text-muted-foreground px-1">…</span>
+                      : <button
+                          key={n}
+                          onClick={() => setPosPage(n)}
+                          className={`h-7 w-7 rounded-lg text-xs font-medium transition-colors ${
+                            n === posPage
+                              ? 'bg-primary text-primary-foreground'
+                              : 'border border-border hover:bg-muted'
+                          }`}
+                        >{n}</button>
+                  )
+                }
+                <button
+                  onClick={() => setPosPage(p => Math.min(posPageCount, p + 1))}
+                  disabled={posPage === posPageCount}
+                  className="h-7 w-7 rounded-lg border border-border flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors"
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

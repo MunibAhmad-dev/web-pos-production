@@ -152,14 +152,14 @@ function ProductCard({ eyebrow, icon: Icon, iconBg, name, desc, features, tags, 
       </div>
 
       {cta && (
-        <Link to="/login" style={{
+        <Link to={cta.link || "/login"} style={{
           display: 'inline-flex', alignItems: 'center', gap: 7,
-          background: '#FF4E7D', color: 'white',
+          background: cta.bg || '#FF4E7D', color: 'white',
           borderRadius: 12, padding: '12px 22px',
           fontSize: 13, fontWeight: 700, textDecoration: 'none',
-          alignSelf: 'flex-start', boxShadow: '0 6px 20px rgba(255,78,125,0.3)',
+          alignSelf: 'flex-start', boxShadow: `0 6px 20px ${cta.shadow || 'rgba(255,78,125,0.3)'}`,
         }}>
-          <Store size={14} /> Login to Web POS
+          {cta.icon ? <cta.icon size={14} /> : <Store size={14} />} {cta.text || 'Login to Web POS'}
         </Link>
       )}
     </div>
@@ -312,8 +312,18 @@ export default function HomePage() {
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <ThemeBtn />
+            {isDesktop && (
+              <Link to="/manufacturing/login" style={{
+                background: 'rgba(124,58,237,0.1)', color: '#7C3AED', borderRadius: 50,
+                padding: '10px 20px', fontSize: 13, fontWeight: 700,
+                textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6,
+                border: '1px solid rgba(124,58,237,0.25)',
+              }}>
+                <Factory size={13} /> Manufacturing
+              </Link>
+            )}
             <Link to="/login" style={{
               background: '#FF4E7D', color: 'white', borderRadius: 50,
               padding: isDesktop ? '10px 26px' : '9px 18px', fontSize: 13, fontWeight: 700,
@@ -369,6 +379,14 @@ export default function HomePage() {
                 boxShadow: '0 10px 30px rgba(255,78,125,0.38)',
               }}>
                 <Store size={16} /> Login to Web POS
+              </Link>
+              <Link to="/manufacturing/login" style={{
+                background: '#7C3AED', color: 'white', borderRadius: 16,
+                padding: '13px 28px', fontSize: 14, fontWeight: 700,
+                textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 9,
+                boxShadow: '0 10px 30px rgba(124,58,237,0.35)',
+              }}>
+                <Factory size={16} /> Login to Manufacturing
               </Link>
               <Link to="/register" style={{
                 background: 'rgba(255,255,255,0.8)', color: '#333',
@@ -444,6 +462,7 @@ export default function HomePage() {
                 'Dashboard: buildable stock & open payables',
               ]}
               tags={['Air Cooler Assembly', 'Light Manufacturing', 'Workshop', 'Made-to-Order']}
+              cta={{ link: '/manufacturing/login', bg: '#7C3AED', shadow: 'rgba(124,58,237,0.3)', text: 'Login to Factory ERP', icon: Factory }}
             />
             <ProductCard
               eyebrow="Desktop Application"
@@ -516,11 +535,14 @@ export default function HomePage() {
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 32 }}>
               {['Air Cooler Assembly', 'Light Manufacturing', 'Workshop', 'Made-to-Order'].map(t => (
                 <span key={t} style={{ fontSize: 11, padding: '5px 13px', borderRadius: 50, background: '#F3EEFF', border: '1px solid #DDD0FF', color: '#6D28D9' }}>{t}</span>
               ))}
             </div>
+            <Link to="/manufacturing/login" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#7C3AED', color: 'white', borderRadius: 14, padding: '13px 26px', fontSize: 14, fontWeight: 700, textDecoration: 'none', boxShadow: '0 8px 24px rgba(124,58,237,0.32)' }}>
+              <Factory size={15} /> Login to Factory ERP
+            </Link>
           </div>
           {!isDesktop && (
             <div style={{ borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.06)' }}>

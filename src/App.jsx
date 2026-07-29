@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ManufacturingAuthProvider } from './context/ManufacturingAuthContext';
 import { DataStoreProvider } from './store/dataStore';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './components/theme-provider';
@@ -7,6 +8,8 @@ import { TooltipProvider } from './components/ui/tooltip';
 import { Toaster } from './components/ui/sonner';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/layout/Layout';
+import ManufacturingProtectedRoute from './components/manufacturing/ManufacturingProtectedRoute';
+import ManufacturingLayout from './components/manufacturing/ManufacturingLayout';
 
 import HomePage from './pages/HomePage';
 import Login from './pages/auth/Login';
@@ -33,6 +36,14 @@ import TransactionsPage from './pages/finance/TransactionsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import BalanceSheetPage from './pages/reports/BalanceSheetPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import ManufacturingLogin from './pages/manufacturing/ManufacturingLogin';
+import ManufacturingRegister from './pages/manufacturing/ManufacturingRegister';
+import ManufacturingPendingApproval from './pages/manufacturing/ManufacturingPendingApproval';
+import ManufacturingDashboard from './pages/manufacturing/ManufacturingDashboard';
+import ManufacturingComingSoon from './pages/manufacturing/ManufacturingComingSoon';
+import ManufacturingInvoices from './pages/manufacturing/ManufacturingInvoices';
+import ManufacturingReports from './pages/manufacturing/ManufacturingReports';
+import ManufacturingSell from './pages/manufacturing/ManufacturingSell';
 import NotFound from './pages/NotFound';
 
 // Remounts DataStoreProvider (wiping all in-memory data) whenever the logged-in
@@ -50,6 +61,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
+        <ManufacturingAuthProvider>
         <AuthProvider>
           <DataStoreWrapper>
           <ToastProvider>
@@ -59,6 +71,27 @@ export default function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/pending-approval" element={<PendingApproval />} />
+                <Route path="/manufacturing/login" element={<ManufacturingLogin />} />
+                <Route path="/manufacturing/register" element={<ManufacturingRegister />} />
+                <Route path="/manufacturing/pending" element={<ManufacturingPendingApproval />} />
+
+                {/* Manufacturing protected routes */}
+                <Route element={<ManufacturingProtectedRoute />}>
+                  <Route element={<ManufacturingLayout />}>
+                    <Route path="/manufacturing/dashboard" element={<ManufacturingDashboard />} />
+                    <Route path="/manufacturing/sales"     element={<ManufacturingSell />} />
+                    <Route path="/manufacturing/purchases" element={<ManufacturingComingSoon title="Buy Stock" />} />
+                    <Route path="/manufacturing/parts"     element={<ManufacturingComingSoon title="Parts Inventory" />} />
+                    <Route path="/manufacturing/products"  element={<ManufacturingComingSoon title="Products" />} />
+                    <Route path="/manufacturing/vendors"   element={<ManufacturingComingSoon title="Vendors" />} />
+                    <Route path="/manufacturing/customers" element={<ManufacturingComingSoon title="Customers" />} />
+                    <Route path="/manufacturing/invoices"  element={<ManufacturingInvoices />} />
+                    <Route path="/manufacturing/accounting"element={<ManufacturingComingSoon title="Accounting" />} />
+                    <Route path="/manufacturing/expenses"  element={<ManufacturingComingSoon title="Expenses" />} />
+                    <Route path="/manufacturing/reports"   element={<ManufacturingReports />} />
+                    <Route path="/manufacturing/settings"  element={<ManufacturingComingSoon title="Settings" />} />
+                  </Route>
+                </Route>
 
                 <Route
                   element={
@@ -96,6 +129,7 @@ export default function App() {
           </ToastProvider>
           </DataStoreWrapper>
         </AuthProvider>
+        </ManufacturingAuthProvider>
       </BrowserRouter>
       <Toaster position="top-right" richColors />
     </ThemeProvider>
