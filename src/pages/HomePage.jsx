@@ -9,7 +9,7 @@ import {
   CheckCircle2, ShoppingBag, MessageCircle,
 } from 'lucide-react';
 
-const WHATSAPP_NUMBER = '923001234567'; // ← replace with your WhatsApp number (country code + number, no +)
+const WHATSAPP_NUMBER = '923298748232';
 
 /* ── Inline theme toggle ──────────────────────────────── */
 function ThemeBtn() {
