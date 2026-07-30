@@ -6,8 +6,10 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import {
   Sun, Moon, Store, ArrowRight, TrendingUp,
   AlertTriangle, Package, Scissors, Factory,
-  CheckCircle2, ShoppingBag,
+  CheckCircle2, ShoppingBag, MessageCircle,
 } from 'lucide-react';
+
+const WHATSAPP_NUMBER = '923001234567'; // ← replace with your WhatsApp number (country code + number, no +)
 
 /* ── Inline theme toggle ──────────────────────────────── */
 function ThemeBtn() {
@@ -353,7 +355,7 @@ export default function HomePage() {
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.6)',
             }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#FF4E7D', display: 'inline-block' }} />
-              Business software · Built in Pakistan
+              Cloud business software · Works worldwide
             </div>
 
             <h1 style={{
@@ -363,12 +365,12 @@ export default function HomePage() {
             }}>
               Complete business<br />
               software for every<br />
-              <span style={{ color: '#FF4E7D' }}>Pakistani shop.</span>
+              <span style={{ color: '#FF4E7D' }}>shop worldwide.</span>
             </h1>
 
             <p style={{ fontSize: isDesktop ? 16 : 15, color: '#555', lineHeight: 1.8, maxWidth: '44ch', marginBottom: 32 }}>
               Three purpose-built applications — retail POS, manufacturing ERP, and tailor
-              management. Offline-first. PKR native. Designed for how Pakistani businesses actually work.
+              management. Offline-first. Multi-currency. Designed for how real businesses actually work.
             </p>
 
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -399,7 +401,7 @@ export default function HomePage() {
             </div>
 
             <div style={{ display: 'flex', gap: isDesktop ? 40 : 28, marginTop: 40, paddingTop: 32, borderTop: '1px solid rgba(0,0,0,0.08)' }}>
-              {[['3', 'Applications'], ['10+', 'Business types'], ['PKR', 'Native currency']].map(([v, l]) => (
+              {[['3', 'Applications'], ['10+', 'Business types'], ['Cloud', 'Sync anywhere']].map(([v, l]) => (
                 <div key={l}>
                   <div style={{ fontSize: 24, fontWeight: 900, color: '#111' }}>{v}</div>
                   <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>{l}</div>
@@ -590,12 +592,12 @@ export default function HomePage() {
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: isDesktop ? 80 : 48, position: 'relative', zIndex: 2 }}>
           <div>
             <p style={{ fontSize: 11, color: '#FF4E7D', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 14 }}>About</p>
-            <h2 style={{ fontSize: 'clamp(1.6rem,2.5vw,2.2rem)', fontWeight: 900, color: '#111', letterSpacing: '-0.02em', marginBottom: 22 }}>Built in Pakistan, for Pakistan</h2>
+            <h2 style={{ fontSize: 'clamp(1.6rem,2.5vw,2.2rem)', fontWeight: 900, color: '#111', letterSpacing: '-0.02em', marginBottom: 22 }}>Built for businesses worldwide</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {[
-                'These applications are designed by a Pakistani developer with hands-on experience in local retail and manufacturing businesses. Every flow reflects how these businesses actually operate — not textbook theory.',
-                'All three applications are built with Electron and React, targeting Windows — the platform Pakistani SMEs already use. No server to manage, no subscription to pay.',
-                'Offline-first is a requirement. In markets where connectivity drops without warning, a business cannot afford software that stops when the signal does.',
+                'These applications are designed with hands-on experience in retail and manufacturing businesses. Every flow reflects how real shops and factories actually operate — not textbook theory.',
+                'All three applications are built with Electron and React, targeting Windows — the platform most SMEs already run. No complex server setup, no IT department required.',
+                'Offline-first is a core requirement. A business cannot afford software that stops when the internet does — every app continues working without a connection.',
               ].map((p, i) => (
                 <p key={i} style={{ fontSize: 15, color: '#444', lineHeight: 1.8 }}>{p}</p>
               ))}
@@ -604,7 +606,7 @@ export default function HomePage() {
           <div>
             <p style={{ fontSize: 11, color: '#6B7280', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 22 }}>Get in touch</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {[['Email', 'munibahmadvfx@gmail.com'], ['Location', 'Pakistan'], ['Stack', 'Electron · React · SQLite · Node.js · Tailwind CSS']].map(([l, v]) => (
+              {[['Email', 'munibahmad4735@gmail.com'], ['Available', 'Worldwide'], ['Stack', 'Electron · React · SQLite · Node.js · Tailwind CSS']].map(([l, v]) => (
                 <div key={l} style={{ display: 'flex', gap: 20, paddingBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
                   <span style={{ width: 72, flexShrink: 0, fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', paddingTop: 2 }}>{l}</span>
                   <span style={{ fontSize: 14, color: '#333' }}>{v}</span>
@@ -635,12 +637,33 @@ export default function HomePage() {
           </div>
           <span style={{ fontSize: 13, color: '#666' }}>OsaTech · 2025</span>
         </div>
-        {isDesktop && <span style={{ fontSize: 12, color: '#444', fontStyle: 'italic' }}>Local roots. Professional software.</span>}
+        {isDesktop && <span style={{ fontSize: 12, color: '#444', fontStyle: 'italic' }}>Designed for real businesses. Works worldwide.</span>}
         <div style={{ display: 'flex', gap: 20 }}>
           <Link to="/register" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Register store</Link>
           <Link to="/login" style={{ fontSize: 12, color: '#FF4E7D', textDecoration: 'none', fontWeight: 600 }}>Login →</Link>
         </div>
       </footer>
+
+      {/* ══ WHATSAPP FLOATING BUTTON ══════════════════════ */}
+      <a
+        href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hi, I\'m interested in OsaTech POS.')}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Chat on WhatsApp"
+        style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 999,
+          width: 56, height: 56, borderRadius: '50%',
+          background: '#25D366',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 6px 24px rgba(37,211,102,0.45)',
+          textDecoration: 'none', color: 'white',
+          transition: 'transform 0.2s, box-shadow 0.2s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(37,211,102,0.55)'; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(37,211,102,0.45)'; }}
+      >
+        <MessageCircle size={26} fill="white" color="white" />
+      </a>
 
     </div>
   );
