@@ -5,9 +5,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import {
-  DollarSign, TrendingUp, Package, AlertTriangle, Layers, Wallet,
+  DollarSign, TrendingUp, Package, AlertTriangle, Wallet,
   Boxes, ShoppingCart, Users, Truck, ShoppingBag, BarChart3, HandCoins,
-  RefreshCw,
+  RefreshCw, CheckCircle2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -94,20 +94,16 @@ export default function ManufacturingDashboard() {
   const stats = data?.stats || {};
   const period = data?.period || {};
   const topDebtors = stats.top_debtors || [];
-  const topProductsTotal = 0; // not available from current API
 
   const cards = [
-    { label: 'Sales (Period)',    value: period.sales_count ?? 0,        icon: ShoppingCart, color: 'bg-blue-500/10 text-blue-600' },
-    { label: 'Revenue (Period)',  value: fmt(period.revenue),            icon: DollarSign,   color: 'bg-emerald-500/10 text-emerald-600' },
-    { label: 'Total Revenue',     value: fmt(stats.total_revenue),       icon: TrendingUp,   color: 'bg-teal-500/10 text-teal-600' },
-    { label: 'Total Sales',       value: stats.total_sales ?? 0,         icon: TrendingUp,   color: 'bg-green-500/10 text-green-600' },
-    { label: 'Accounts Receivable',value: fmt(stats.accounts_receivable),icon: Wallet,       color: 'bg-red-500/10 text-red-600' },
-    { label: 'Products',          value: stats.total_products ?? 0,      icon: Package,      color: 'bg-purple-500/10 text-purple-600' },
-    { label: 'Parts',             value: stats.total_parts ?? 0,         icon: Boxes,        color: 'bg-amber-500/10 text-amber-600' },
-    { label: 'Low Stock Items',   value: stats.low_stock_items ?? 0,     icon: AlertTriangle,color: 'bg-orange-500/10 text-orange-600' },
-    { label: 'Customers',         value: stats.total_customers ?? 0,     icon: Users,        color: 'bg-indigo-500/10 text-indigo-600' },
-    { label: 'Vendors',           value: stats.total_vendors ?? 0,       icon: Truck,        color: 'bg-cyan-500/10 text-cyan-600' },
-    { label: 'Purchases',         value: stats.total_purchases ?? 0,     icon: ShoppingBag,  color: 'bg-rose-500/10 text-rose-600' },
+    { label: 'Total Sales',        value: stats.total_sales ?? 0,          icon: ShoppingCart, color: 'bg-blue-500/10 text-blue-600' },
+    { label: 'Total Revenue',      value: fmt(stats.total_revenue),         icon: DollarSign,   color: 'bg-emerald-500/10 text-emerald-600' },
+    { label: 'Accounts Receivable',value: fmt(stats.accounts_receivable),   icon: Wallet,       color: 'bg-red-500/10 text-red-600' },
+    { label: 'Products',           value: stats.total_products ?? 0,        icon: Package,      color: 'bg-purple-500/10 text-purple-600' },
+    { label: 'Parts',              value: stats.total_parts ?? 0,           icon: Boxes,        color: 'bg-amber-500/10 text-amber-600' },
+    { label: 'Low Stock Items',    value: stats.low_stock_items ?? 0,       icon: AlertTriangle,color: 'bg-orange-500/10 text-orange-600' },
+    { label: 'Customers',          value: stats.total_customers ?? 0,       icon: Users,        color: 'bg-indigo-500/10 text-indigo-600' },
+    { label: 'Vendors',            value: stats.total_vendors ?? 0,         icon: Truck,        color: 'bg-cyan-500/10 text-cyan-600' },
   ];
 
   return (
@@ -180,13 +176,13 @@ export default function ManufacturingDashboard() {
         </div>
       )}
 
-      {/* AR card */}
+      {/* AR / AP cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Receivable */}
         <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
           <div className="h-[3px] bg-gradient-to-r from-emerald-600 to-emerald-400" />
           <div className="p-5">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600"><Users size={18} /></div>
                 <div>
@@ -197,16 +193,21 @@ export default function ManufacturingDashboard() {
               <p className="text-xl font-black text-emerald-600">{fmt(stats.accounts_receivable)}</p>
             </div>
             {topDebtors.length > 0 ? (
-              <div className="space-y-1.5">
-                {topDebtors.map((d, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="text-muted-foreground truncate">{d.customer_name}</span>
-                    <span className="font-semibold">{fmt(d.due)}</span>
+              <div className="space-y-2">
+                {topDebtors.slice(0, 5).map((d, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-700 text-[10px] font-bold flex items-center justify-center shrink-0">{i + 1}</div>
+                      <span className="text-xs text-muted-foreground truncate">{d.customer_name}</span>
+                    </div>
+                    <span className="text-xs font-bold tabular-nums shrink-0 ml-2">{fmt(d.due)}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground italic">No outstanding receivables</p>
+              <div className="flex items-center gap-2 text-xs text-emerald-600 font-medium">
+                <CheckCircle2 size={13} /> No outstanding receivables
+              </div>
             )}
           </div>
         </div>
@@ -232,6 +233,14 @@ export default function ManufacturingDashboard() {
               <div className="bg-muted/40 rounded-xl p-3">
                 <p className="text-xs text-muted-foreground mb-1">Revenue</p>
                 <p className="text-lg font-black text-violet-600">{fmt(period.revenue)}</p>
+              </div>
+              <div className="bg-muted/40 rounded-xl p-3">
+                <p className="text-xs text-muted-foreground mb-1">Total Sales (All Time)</p>
+                <p className="text-lg font-black text-foreground">{stats.total_sales ?? 0}</p>
+              </div>
+              <div className="bg-muted/40 rounded-xl p-3">
+                <p className="text-xs text-muted-foreground mb-1">Total Revenue (All Time)</p>
+                <p className="text-sm font-black text-teal-600 tabular-nums">{fmt(stats.total_revenue)}</p>
               </div>
             </div>
           </div>

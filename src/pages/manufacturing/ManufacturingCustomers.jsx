@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 import {
   Users, Plus, Search, X, RefreshCw, AlertCircle,
   MoreVertical, Eye, Pencil, Trash2, Phone,
   MapPin, FileText, CheckCircle2,
-  ShoppingBag, Banknote, TrendingUp, Clock, MessageCircle,
+  ShoppingBag, Banknote, TrendingUp, Clock, MessageCircle, CreditCard,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -225,10 +226,20 @@ export default function ManufacturingCustomers() {
 
       {/* Profile side panel */}
       {profile.open && (
-        <div className="fixed right-0 top-0 bottom-0 w-[400px] border-l bg-background shadow-2xl z-30 flex flex-col" style={{ top: '56px' }}>
-          <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
-            <h2 className="font-semibold">Customer Profile</h2>
-            <button onClick={() => setProfile({ open: false, data: null, loading: false })} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
+        <div className="fixed right-0 top-0 bottom-0 w-[420px] border-l bg-background shadow-2xl z-30 flex flex-col" style={{ top: '56px' }}>
+          {/* Header: name + phone */}
+          <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0">
+            <div className="min-w-0">
+              <h2 className="font-bold text-base truncate">{profile.data?.customer?.name || 'Customer Profile'}</h2>
+              {profile.data?.customer?.phone && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                  <Phone size={10} /> {profile.data.customer.phone}
+                </p>
+              )}
+            </div>
+            <button onClick={() => setProfile({ open: false, data: null, loading: false })} className="ml-3 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0">
+              <X size={16} />
+            </button>
           </div>
 
           {profile.loading ? (
@@ -237,44 +248,62 @@ export default function ManufacturingCustomers() {
             </div>
           ) : profile.data && (
             <div className="flex-1 overflow-y-auto">
-              {/* Customer info */}
-              <div className="px-5 py-4 border-b">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-bold text-lg">{profile.data.customer.name}</h3>
-                    {profile.data.customer.city && <p className="text-sm text-muted-foreground">{profile.data.customer.city}</p>}
-                  </div>
-                  <button onClick={() => openEdit(profile.data.customer)} className="p-1.5 rounded text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30"><Pencil size={14} /></button>
+
+              {/* Action buttons */}
+              <div className="px-4 pt-4 pb-3 grid grid-cols-2 gap-2">
+                <Link to="/manufacturing/sales">
+                  <button className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}>
+                    <Plus size={14} /> New Sale
+                  </button>
+                </Link>
+                <button
+                  onClick={() => toast.info('Record a payment in the Sales page')}
+                  className="flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold border border-border hover:bg-muted/50 transition-colors"
+                >
+                  <CreditCard size={14} /> Record Payment
+                </button>
+              </div>
+
+              {/* 3 stat cards */}
+              <div className="px-4 pb-3 grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-muted/40 p-3 text-center">
+                  <div className="text-xl font-black">{profile.data.analytics.totalOrders}</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Orders</div>
                 </div>
-                <div className="mt-3 space-y-1.5 text-sm text-muted-foreground">
-                  {profile.data.customer.phone   && <div className="flex items-center gap-2"><Phone size={12} /> {profile.data.customer.phone}</div>}
-                  {profile.data.customer.address && <div className="flex items-center gap-2"><MapPin size={12} /> {profile.data.customer.address}</div>}
-                  {profile.data.customer.notes   && <div className="flex items-center gap-2"><FileText size={12} /> {profile.data.customer.notes}</div>}
+                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.18)' }}>
+                  <div className="text-sm font-black text-indigo-600 truncate tabular-nums">{Rs(profile.data.analytics.lifetimeValue)}</div>
+                  <div className="text-[10px] text-indigo-500/80 uppercase tracking-wide mt-0.5">Lifetime</div>
+                </div>
+                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.18)' }}>
+                  <div className="text-sm font-black text-emerald-600 truncate tabular-nums">{Rs(profile.data.analytics.totalPaid)}</div>
+                  <div className="text-[10px] text-emerald-500/80 uppercase tracking-wide mt-0.5">Paid</div>
                 </div>
               </div>
 
-              {/* Stats */}
-              <div className="px-5 py-4 border-b">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Analytics</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label: 'Orders', value: profile.data.analytics.totalOrders, icon: ShoppingBag, color: 'text-blue-600' },
-                    { label: 'Lifetime Value', value: Rs(profile.data.analytics.lifetimeValue), icon: TrendingUp, color: 'text-indigo-600' },
-                    { label: 'Total Paid', value: Rs(profile.data.analytics.totalPaid), icon: Banknote, color: 'text-emerald-600' },
-                    { label: 'Due Amount', value: Rs(profile.data.analytics.dueAmount), icon: Clock, color: profile.data.analytics.dueAmount > 0 ? 'text-red-600' : 'text-emerald-600' },
-                  ].map(s => (
-                    <div key={s.label} className="rounded-lg bg-muted/40 p-3">
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><s.icon size={11} /> {s.label}</div>
-                      <div className={`text-base font-bold tabular-nums ${s.color}`}>{s.value}</div>
+              {/* Due amount card */}
+              <div className="px-4 pb-4">
+                <div
+                  className="rounded-xl px-4 py-3.5 flex items-center justify-between"
+                  style={{
+                    background: profile.data.analytics.dueAmount > 0 ? 'rgba(239,68,68,0.07)' : 'rgba(16,185,129,0.07)',
+                    border: `1.5px solid ${profile.data.analytics.dueAmount > 0 ? 'rgba(239,68,68,0.22)' : 'rgba(16,185,129,0.22)'}`,
+                  }}
+                >
+                  <div>
+                    <div className="text-[11px] text-muted-foreground mb-1">Due Amount</div>
+                    <div className={`text-2xl font-black tabular-nums ${profile.data.analytics.dueAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {Rs(profile.data.analytics.dueAmount)}
                     </div>
-                  ))}
+                  </div>
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${profile.data.analytics.dueAmount > 0 ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600'}`}>
+                    {profile.data.analytics.dueAmount > 0 ? 'Unpaid' : 'Settled'}
+                  </span>
                 </div>
-                {profile.data.analytics.dueAmount === 0 && profile.data.analytics.totalOrders > 0 && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 font-semibold"><CheckCircle2 size={12} /> Fully Settled</div>
-                )}
+              </div>
 
-                {/* WhatsApp share */}
-                {(profile.data.customer.whatsapp || profile.data.customer.phone) && (
+              {/* WhatsApp share */}
+              {(profile.data.customer.whatsapp || profile.data.customer.phone) && (
+                <div className="px-4 pb-3">
                   <a
                     href={(() => {
                       const num = (profile.data.customer.whatsapp || profile.data.customer.phone).replace(/\D/g, '');
@@ -283,44 +312,106 @@ export default function ManufacturingCustomers() {
                       const msg = `Assalam o Alaikum ${profile.data.customer.name},\n\nAccount Summary:\n• Total Billed: Rs. ${Math.round(lifetimeValue).toLocaleString()}\n• Amount Paid: Rs. ${Math.round(totalPaid).toLocaleString()}\n• Balance Due: Rs. ${Math.round(dueAmount).toLocaleString()}\n\nKindly settle your balance. JazakAllah.`;
                       return `https://wa.me/${ph}?text=${encodeURIComponent(msg)}`;
                     })()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 flex items-center justify-center gap-2 w-full rounded-lg py-2 text-sm font-semibold text-white transition-colors"
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full rounded-lg py-2 text-sm font-semibold text-white"
                     style={{ background: '#25D366' }}
                   >
                     <MessageCircle size={14} fill="white" /> Share on WhatsApp
                   </a>
-                )}
+                </div>
+              )}
+
+              {/* Tabs */}
+              <div className="px-4 pb-3 border-b">
+                <div className="flex gap-1 bg-muted rounded-lg p-1">
+                  <button className="flex-1 text-xs font-semibold py-1.5 rounded-md bg-background shadow-sm text-foreground">Sales History</button>
+                  <button className="flex-1 text-xs font-semibold py-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors">Khata</button>
+                  <button className="flex-1 text-xs font-semibold py-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors">Ledger</button>
+                </div>
               </div>
 
-              {/* Recent sales */}
-              <div className="px-5 py-4">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Recent Sales</h4>
+              {/* BOUGHT / PAID / REMAINING summary */}
+              <div className="px-4 py-3 grid grid-cols-3 gap-2 border-b">
+                <div className="text-center">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Billed</div>
+                  <div className="text-sm font-bold tabular-nums mt-0.5">{Rs(profile.data.analytics.lifetimeValue)}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[10px] text-emerald-500/80 uppercase tracking-wide">Paid</div>
+                  <div className="text-sm font-bold tabular-nums text-emerald-600 mt-0.5">{Rs(profile.data.analytics.totalPaid)}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[10px] text-red-500/70 uppercase tracking-wide">Due</div>
+                  <div className={`text-sm font-bold tabular-nums mt-0.5 ${profile.data.analytics.dueAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{Rs(profile.data.analytics.dueAmount)}</div>
+                </div>
+              </div>
+
+              {/* Per-invoice sale cards */}
+              <div className="px-4 py-4 space-y-3">
                 {profile.data.sales.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No sales recorded</p>
+                  <div className="flex flex-col items-center py-8 text-muted-foreground text-sm gap-2">
+                    <ShoppingBag size={28} className="opacity-20" />
+                    No sales recorded
+                  </div>
                 ) : (
-                  <div className="space-y-2">
-                    {profile.data.sales.map(s => (
-                      <div key={s.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                        <div>
-                          <p className="text-sm font-medium">{Rs(s.total)}</p>
-                          <p className="text-xs text-muted-foreground">{fmt(s.created_at)}</p>
+                  profile.data.sales.map(s => {
+                    const paid = Number(s.paid_amount || 0);
+                    const total = Number(s.total || 0);
+                    const balance = total - paid;
+                    const pct = total > 0 ? Math.min(100, (paid / total) * 100) : 0;
+                    return (
+                      <div key={s.id} className="rounded-xl border bg-card p-3.5 space-y-3">
+                        {/* Top row */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-foreground">#{s.id}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                              s.status === 'Completed'
+                                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                : s.status === 'Partial'
+                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                            }`}>{s.status || 'Due'}</span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">{fmt(s.created_at)}</span>
                         </div>
-                        <div className="text-right">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            s.status === 'Completed'
-                              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                              : s.status === 'Partial'
-                              ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                          }`}>{s.status || 'Due'}</span>
-                          {s.paid_amount < s.total && (
-                            <p className="text-xs text-red-500 mt-0.5">Due: {Rs(s.total - s.paid_amount)}</p>
-                          )}
+                        {/* Amount breakdown */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
+                            <div className="text-[10px] text-muted-foreground">Total</div>
+                            <div className="text-xs font-bold tabular-nums mt-0.5">{Rs(total)}</div>
+                          </div>
+                          <div className="rounded-lg px-2 py-2 text-center" style={{ background: 'rgba(16,185,129,0.09)' }}>
+                            <div className="text-[10px] text-emerald-500/80">Paid</div>
+                            <div className="text-xs font-bold tabular-nums text-emerald-600 mt-0.5">{Rs(paid)}</div>
+                          </div>
+                          <div className="rounded-lg px-2 py-2 text-center" style={{ background: balance > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.09)' }}>
+                            <div className="text-[10px] text-red-400/80">Balance</div>
+                            <div className={`text-xs font-bold tabular-nums mt-0.5 ${balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{Rs(balance)}</div>
+                          </div>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="space-y-1">
+                          <div className="h-2 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${pct}%`, background: pct >= 100 ? '#10b981' : pct > 0 ? '#f59e0b' : '#ef4444' }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-muted-foreground text-right">{pct.toFixed(0)}% paid</div>
+                        </div>
+                        {/* Action buttons */}
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button
+                            onClick={() => toast.info('Go to Sales to record a payment')}
+                            className="py-1 rounded-lg text-[11px] font-semibold border border-emerald-200 dark:border-emerald-800 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                          >Pay</button>
+                          <button className="py-1 rounded-lg text-[11px] font-semibold border border-border text-muted-foreground hover:bg-muted/50 transition-colors">View</button>
+                          <button className="py-1 rounded-lg text-[11px] font-semibold border border-border text-muted-foreground hover:bg-muted/50 transition-colors">Print</button>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })
                 )}
               </div>
             </div>
