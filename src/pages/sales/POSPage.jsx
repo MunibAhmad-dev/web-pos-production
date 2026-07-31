@@ -248,12 +248,13 @@ export default function POSPage() {
   };
 
   const cartCount = cart.reduce((sum, i) => sum + i.qty, 0);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
 
   const { paged: pagedProducts, page: posPage, pageCount: posPageCount, setPage: setPosPage } = usePagination(filteredProducts, 50);
 
   return (
-    <div className="flex flex-col gap-4 xl:flex-row">
-      <div className="min-w-0 flex-1">
+    <div className="flex flex-col gap-4 xl:flex-row relative">
+      <div className="min-w-0 flex-1 pb-20 xl:pb-0">
         <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -432,7 +433,8 @@ export default function POSPage() {
         </div>
       </div>
 
-      <div className="w-full shrink-0 xl:w-96">
+      {/* Desktop cart panel — hidden on mobile */}
+      <div className="hidden xl:block xl:w-96 shrink-0">
         <div className="sticky top-20 flex flex-col rounded-xl border border-border bg-card shadow-sm">
           <div className="flex items-center gap-2 border-b border-border px-4 py-3">
             <ShoppingCart size={16} className="text-muted-foreground" />
@@ -511,6 +513,115 @@ export default function POSPage() {
           </div>
         </div>
       </div>
+
+      {/* Mobile floating cart button — shows below xl */}
+      <div className="xl:hidden fixed bottom-4 left-4 right-4 z-40">
+        <button
+          onClick={() => setCartDrawerOpen(true)}
+          className="w-full flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl font-bold text-sm bg-primary text-primary-foreground"
+        >
+          <ShoppingCart size={18} />
+          <span className="flex-1 text-left">View Cart</span>
+          {cartCount > 0 && (
+            <span className="bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full min-w-[22px] text-center">
+              {cartCount}
+            </span>
+          )}
+          <span className="opacity-80 tabular-nums text-xs">{formatCurrency(total, currency)}</span>
+        </button>
+      </div>
+
+      {/* Mobile cart drawer — shows below xl */}
+      {cartDrawerOpen && (
+        <div className="xl:hidden fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCartDrawerOpen(false)} />
+          <div className="absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl shadow-2xl flex flex-col" style={{ maxHeight: '88vh' }}>
+            <div className="w-12 h-1 bg-muted-foreground/30 rounded-full mx-auto mt-3 mb-1 shrink-0" />
+            {/* Drawer header */}
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3 shrink-0">
+              <ShoppingCart size={16} className="text-muted-foreground" />
+              <h3 className="font-heading text-sm font-semibold text-foreground flex-1">Current Order</h3>
+              {cart.length > 0 && (
+                <button onClick={() => { resetCart(); setCartDrawerOpen(false); }} className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 transition-colors">
+                  <Trash2 size={12} /> Clear
+                </button>
+              )}
+              <button onClick={() => setCartDrawerOpen(false)} className="ml-2 p-1 text-muted-foreground hover:text-foreground">
+                <Plus size={16} className="rotate-45" />
+              </button>
+            </div>
+            {/* Items */}
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              {cart.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                    <ShoppingCart size={22} className="text-muted-foreground" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">Cart is empty</p>
+                  <p className="text-xs text-muted-foreground">Tap a product to add it</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {cart.map((item) => (
+                    <div key={item.key} className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {item.name}
+                          {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom item</span>}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)} each</p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1 hover:bg-muted">
+                          <Minus size={12} />
+                        </button>
+                        <span className="w-5 text-center text-sm">{item.qty}</span>
+                        <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1 hover:bg-muted">
+                          <Plus size={12} />
+                        </button>
+                        <button onClick={() => removeFromCart(item.key)} className="ml-1 rounded-md p-1 text-destructive hover:bg-destructive/10">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Totals + checkout */}
+            <div className="flex flex-col gap-3 border-t border-border px-4 py-3 shrink-0">
+              <Input
+                label="Discount"
+                type="number"
+                min="0"
+                max={subtotal}
+                placeholder="0"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+              />
+              <div className="flex flex-col gap-1 text-sm">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Subtotal</span>
+                  <span>{formatCurrency(subtotal, currency)}</span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Discount</span>
+                    <span>-{formatCurrency(discountAmount, currency)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-border pt-1 text-2xl font-black text-primary">
+                  <span className="text-base font-semibold text-foreground">Total</span>
+                  <span>{formatCurrency(total, currency)}</span>
+                </div>
+              </div>
+              <Button className="w-full justify-center" disabled={cart.length === 0} onClick={() => { setCartDrawerOpen(false); setCheckoutOpen(true); }}>
+                Checkout · {formatCurrency(total, currency)}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CustomItemModal open={customItemModalOpen} onClose={() => setCustomItemModalOpen(false)} onAdd={addCustomItem} />
       <CustomerFormModal open={customerModalOpen} onClose={() => setCustomerModalOpen(false)} onSubmit={handleAddCustomer} />

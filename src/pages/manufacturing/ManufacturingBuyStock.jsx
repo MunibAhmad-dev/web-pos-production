@@ -23,17 +23,18 @@ const PAYMENT_METHODS = [
 ];
 
 export default function ManufacturingBuyStock() {
-  const [mode, setMode]       = useState('purchase'); // 'purchase' | 'opening'
-  const [tab, setTab]         = useState('parts');
-  const [parts, setParts]     = useState([]);
+  const [mode, setMode]         = useState('purchase'); // 'purchase' | 'opening'
+  const [tab, setTab]           = useState('parts');
+  const [parts, setParts]       = useState([]);
   const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
-  const [search, setSearch]   = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+  const [search, setSearch]     = useState('');
 
-  const [cart, setCart]               = useState([]);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [submitting, setSubmitting]   = useState(false);
+  const [cart, setCart]                   = useState([]);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen]   = useState(false);
+  const [submitting, setSubmitting]       = useState(false);
   const [form, setForm] = useState({
     vendor_name:    '',
     invoice_number: '',
@@ -43,12 +44,17 @@ export default function ManufacturingBuyStock() {
     notes:          '',
   });
 
+  const subtotal     = cart.reduce((s, i) => s + i.qty * i.unit_cost, 0);
+  const transportAmt = Number(form.transport || 0);
+  const total        = subtotal + transportAmt;
+  const cartCount    = cart.reduce((s, i) => s + i.qty, 0);
+
   const fetchItems = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const res = await mfgGetSellItems();
-      setParts(res.parts || []);
+      setParts(res.parts    || []);
       setProducts(res.products || []);
     } catch (err) {
       setError(err.message || 'Failed to load inventory');
@@ -68,11 +74,6 @@ export default function ManufacturingBuyStock() {
     );
   }, [tab, parts, products, search]);
 
-  const subtotal    = cart.reduce((s, i) => s + i.qty * i.unit_cost, 0);
-  const transportAmt = Number(form.transport || 0);
-  const total       = subtotal + transportAmt;
-  const cartCount   = cart.reduce((s, i) => s + i.qty, 0);
-
   function addToCart(item) {
     const unit_cost = tab === 'parts'
       ? Number(item.cost_price || item.purchase_price || item.price || 0)
@@ -82,13 +83,8 @@ export default function ManufacturingBuyStock() {
       const exists = prev.find(c => c._key === key);
       if (exists) return prev.map(c => c._key === key ? { ...c, qty: c.qty + 1 } : c);
       return [...prev, {
-        _key:         key,
-        id:           item.id,
-        name:         item.name,
-        type:         tab,
-        qty:          1,
-        unit_cost,
-        unit:         item.unit || 'pc',
+        _key: key, id: item.id, name: item.name, type: tab,
+        qty: 1, unit_cost, unit: item.unit || 'pc',
         currentStock: Number(item.stock || 0),
       }];
     });
@@ -107,13 +103,17 @@ export default function ManufacturingBuyStock() {
     setCart(prev => prev.filter(c => c._key !== key));
   }
 
-  function clearCart() { setCart([]); }
+  function clearCart() {
+    setCart([]);
+    setCartDrawerOpen(false);
+  }
 
   function openCheckout() {
     setForm(f => ({
       ...f,
       paid_amount: f.payment_method === 'Credit' ? '0' : String(total),
     }));
+    setCartDrawerOpen(false);
     setCheckoutOpen(true);
   }
 
@@ -162,10 +162,9 @@ export default function ManufacturingBuyStock() {
         }, stockUpdates);
       }
 
-      // Optimistically update local stock state
       const newStockMap = new Map(stockUpdates.map(u => [String(u.payload.id), u.payload.stock]));
-      setParts(prev    => prev.map(p    => newStockMap.has(String(p.id))    ? { ...p,    stock: newStockMap.get(String(p.id)) }    : p));
-      setProducts(prev => prev.map(p    => newStockMap.has(String(p.id))    ? { ...p,    stock: newStockMap.get(String(p.id)) }    : p));
+      setParts(prev    => prev.map(p => newStockMap.has(String(p.id)) ? { ...p, stock: newStockMap.get(String(p.id)) } : p));
+      setProducts(prev => prev.map(p => newStockMap.has(String(p.id)) ? { ...p, stock: newStockMap.get(String(p.id)) } : p));
 
       toast.success(mode === 'opening' ? 'Stock added successfully!' : 'Purchase recorded successfully!');
       setCheckoutOpen(false);
@@ -178,7 +177,6 @@ export default function ManufacturingBuyStock() {
     }
   }
 
-  /* ─── Status badge helper ─── */
   function PaymentStatus() {
     const paid = Number(form.paid_amount || 0);
     if (form.payment_method === 'Credit' || paid === 0)
@@ -188,14 +186,118 @@ export default function ManufacturingBuyStock() {
     return <p className="text-xs text-green-600 mt-1">Status: <strong>Completed</strong></p>;
   }
 
-  return (
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
+  // ── Cart panel content (shared between desktop sidebar + mobile drawer) ───────
+  function CartContent({ inDrawer = false }) {
+    return (
+      <>
+        {/* Header */}
+        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0">
+          <ShoppingBag size={16} className="text-muted-foreground" />
+          <span className="font-semibold text-sm">Incoming Stock</span>
+          {cart.length > 0 && (
+            <button
+              onClick={clearCart}
+              className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <Trash2 size={12} /> Clear
+            </button>
+          )}
+          {inDrawer && (
+            <button onClick={() => setCartDrawerOpen(false)} className="ml-2 p-1 text-muted-foreground hover:text-foreground">
+              <X size={16} />
+            </button>
+          )}
+        </div>
 
-      {/* ─── Left panel ─── */}
+        {/* Items */}
+        <div className="flex-1 overflow-y-auto">
+          {cart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-6 text-center py-12">
+              <ShoppingBag size={36} strokeWidth={1.2} />
+              <div>
+                <p className="text-sm font-medium">Cart is empty</p>
+                <p className="text-xs mt-0.5">Tap an item to add it</p>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 space-y-2">
+              {cart.map(item => (
+                <div key={item._key} className="rounded-lg border bg-card p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium flex-1 min-w-0 truncate">{item.name}</p>
+                    <button onClick={() => removeItem(item._key)} className="text-muted-foreground hover:text-destructive shrink-0">
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateQty(item._key, item.qty - 1)} className="w-6 h-6 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted">
+                        <Minus size={10} />
+                      </button>
+                      <input
+                        type="number" min="1"
+                        value={item.qty}
+                        onChange={e => updateQty(item._key, Math.max(1, Number(e.target.value) || 1))}
+                        className="w-10 text-center text-sm font-bold bg-transparent border-0 focus:outline-none"
+                      />
+                      <button onClick={() => updateQty(item._key, item.qty + 1)} className="w-6 h-6 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted">
+                        <Plus size={10} />
+                      </button>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{item.unit} ×</span>
+                    <div className="flex-1 flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground">Rs.</span>
+                      <input
+                        type="number" min="0"
+                        value={item.unit_cost}
+                        onChange={e => updateCost(item._key, e.target.value)}
+                        className="w-full text-sm font-semibold bg-transparent border-0 focus:outline-none text-indigo-600"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Line total</span>
+                    <span className="font-bold tabular-nums">{fmt(item.qty * item.unit_cost)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Totals + CTA */}
+        <div className="border-t p-4 shrink-0 space-y-3">
+          <div className="flex justify-between text-sm text-muted-foreground">
+            <span>Subtotal</span>
+            <span className="tabular-nums">{fmt(subtotal)}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="font-semibold">Total</span>
+            <span className="text-xl font-black tabular-nums text-indigo-600">{fmt(total)}</span>
+          </div>
+          <Button
+            className="w-full h-11 text-sm font-bold gap-2"
+            style={cart.length > 0 ? { background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' } : {}}
+            disabled={cart.length === 0}
+            onClick={openCheckout}
+          >
+            <ChevronRight size={16} />
+            {mode === 'opening' ? 'Add to Stock' : 'Process Purchase'}
+          </Button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="flex h-[calc(100vh-56px)] overflow-hidden relative">
+
+      {/* ── Left panel ────────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden border-r">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-background shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-4 border-b bg-background shrink-0">
           <div>
             <h1 className="text-xl font-bold">Buy Stock</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -206,18 +308,18 @@ export default function ManufacturingBuyStock() {
                   }`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="outline" onClick={fetchItems} disabled={loading}>
               <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             </Button>
-            {/* Mode toggle */}
+            {/* Mode toggle — fixed contrast */}
             <div className="flex rounded-lg border overflow-hidden text-xs font-semibold">
               <button
                 onClick={() => setMode('purchase')}
                 className={`px-3 py-2 transition-colors ${
                   mode === 'purchase'
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 }`}
               >
                 New Purchase
@@ -226,11 +328,11 @@ export default function ManufacturingBuyStock() {
                 onClick={() => setMode('opening')}
                 className={`px-3 py-2 border-l transition-colors ${
                   mode === 'opening'
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 }`}
               >
-                Already Purchased / Opening Stock
+                <span className="hidden sm:inline">Already Purchased / </span>Opening Stock
               </button>
             </div>
           </div>
@@ -239,8 +341,8 @@ export default function ManufacturingBuyStock() {
         {/* Tabs */}
         <div className="flex shrink-0 border-b bg-background">
           {[
-            { key: 'parts',    label: 'Raw Parts',         icon: Boxes },
-            { key: 'products', label: 'Assembled Coolers',  icon: Package2 },
+            { key: 'parts',    label: 'Raw Parts',        icon: Boxes },
+            { key: 'products', label: 'Assembled Coolers', icon: Package2 },
           ].map(t => (
             <button
               key={t.key}
@@ -258,7 +360,7 @@ export default function ManufacturingBuyStock() {
         </div>
 
         {/* Search */}
-        <div className="px-5 py-3 shrink-0">
+        <div className="px-4 md:px-5 py-3 shrink-0">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -268,29 +370,22 @@ export default function ManufacturingBuyStock() {
               className="pl-8 h-9 text-sm"
             />
             {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
+              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                 <X size={13} />
               </button>
             )}
           </div>
         </div>
 
-        {/* Error */}
         {error && (
-          <div className="mx-5 mb-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-400">
-            <AlertCircle size={13} />
-            {error}
-            <Button size="sm" variant="ghost" className="ml-auto h-5 px-2 text-xs text-red-700" onClick={fetchItems}>
-              Retry
-            </Button>
+          <div className="mx-4 md:mx-5 mb-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+            <AlertCircle size={13} /> {error}
+            <Button size="sm" variant="ghost" className="ml-auto h-5 px-2 text-xs text-red-700" onClick={fetchItems}>Retry</Button>
           </div>
         )}
 
         {/* Table */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
           {loading ? (
             <div>
               {Array.from({ length: 6 }).map((_, i) => (
@@ -305,29 +400,27 @@ export default function ManufacturingBuyStock() {
           ) : displayItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground text-sm">
               {tab === 'parts' ? <Boxes size={28} className="opacity-30" /> : <Package2 size={28} className="opacity-30" />}
-              {search
-                ? `No results for "${search}"`
-                : 'No items synced yet from the desktop app'}
+              {search ? `No results for "${search}"` : 'No items synced yet from the desktop app'}
             </div>
           ) : (
             <table className="w-full">
               <thead className="sticky top-0 bg-muted/50 backdrop-blur-sm border-b">
                 <tr>
-                  <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-2.5">
+                  <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 md:px-6 py-2.5">
                     {tab === 'parts' ? 'Part' : 'Product'}
                   </th>
-                  <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-3 py-2.5">
+                  <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-3 py-2.5 hidden sm:table-cell">
                     In Stock
                   </th>
                   <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide px-3 py-2.5">
                     Cost
                   </th>
-                  <th className="w-16 py-2.5" />
+                  <th className="w-14 py-2.5" />
                 </tr>
               </thead>
               <tbody>
                 {displayItems.map(item => {
-                  const cost  = tab === 'parts'
+                  const cost = tab === 'parts'
                     ? Number(item.cost_price || item.purchase_price || item.price || 0)
                     : Number(item.purchase_price || item.cost_price || item.price || 0);
                   const inCart = !!cart.find(c => c._key === `${tab}-${item.id}`);
@@ -337,18 +430,18 @@ export default function ManufacturingBuyStock() {
                       onClick={() => addToCart(item)}
                       className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
                     >
-                      <td className="px-6 py-3.5">
+                      <td className="px-4 md:px-6 py-3.5">
                         <p className="text-sm font-medium">{item.name}</p>
-                        {item.category && (
-                          <p className="text-xs text-muted-foreground">{item.category}</p>
-                        )}
+                        {item.category && <p className="text-xs text-muted-foreground">{item.category}</p>}
+                        {/* stock on mobile */}
+                        <span className="sm:hidden text-xs text-muted-foreground mt-0.5 block">
+                          Stock: {item.stock ?? 0} {item.unit || 'pcs'}
+                        </span>
                       </td>
-                      <td className="px-3 py-3.5 text-center">
+                      <td className="px-3 py-3.5 text-center hidden sm:table-cell">
                         <span className="text-sm font-semibold">
                           {item.stock ?? 0}{' '}
-                          <span className="text-xs text-muted-foreground font-normal">
-                            {item.unit || 'pcs'}
-                          </span>
+                          <span className="text-xs text-muted-foreground font-normal">{item.unit || 'pcs'}</span>
                         </span>
                       </td>
                       <td className="px-3 py-3.5 text-right">
@@ -356,7 +449,7 @@ export default function ManufacturingBuyStock() {
                           {cost > 0 ? fmt(cost) : '—'}
                         </span>
                       </td>
-                      <td className="pr-5 py-3.5 text-right">
+                      <td className="pr-4 md:pr-5 py-3.5 text-right">
                         <button
                           onClick={e => { e.stopPropagation(); addToCart(item); }}
                           className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
@@ -377,117 +470,41 @@ export default function ManufacturingBuyStock() {
         </div>
       </div>
 
-      {/* ─── Right panel (cart) ─── */}
-      <div className="w-80 xl:w-96 flex flex-col bg-background shrink-0">
-
-        {/* Cart header */}
-        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0">
-          <ShoppingBag size={16} className="text-muted-foreground" />
-          <span className="font-semibold text-sm">Incoming Stock</span>
-          {cart.length > 0 && (
-            <button
-              onClick={clearCart}
-              className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-            >
-              <Trash2 size={12} /> Clear
-            </button>
-          )}
-        </div>
-
-        {/* Cart items */}
-        <div className="flex-1 overflow-y-auto">
-          {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-6 text-center">
-              <ShoppingBag size={36} strokeWidth={1.2} />
-              <div>
-                <p className="text-sm font-medium">Cart is empty</p>
-                <p className="text-xs mt-0.5">Click a part to add it</p>
-              </div>
-            </div>
-          ) : (
-            <div className="p-3 space-y-2">
-              {cart.map(item => (
-                <div key={item._key} className="rounded-lg border bg-card p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium flex-1 min-w-0 truncate">{item.name}</p>
-                    <button
-                      onClick={() => removeItem(item._key)}
-                      className="text-muted-foreground hover:text-destructive shrink-0"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-
-                  {/* Qty + unit cost */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => updateQty(item._key, item.qty - 1)}
-                        className="w-6 h-6 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted"
-                      >
-                        <Minus size={10} />
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.qty}
-                        onChange={e => updateQty(item._key, Math.max(1, Number(e.target.value) || 1))}
-                        className="w-10 text-center text-sm font-bold bg-transparent border-0 focus:outline-none"
-                      />
-                      <button
-                        onClick={() => updateQty(item._key, item.qty + 1)}
-                        className="w-6 h-6 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted"
-                      >
-                        <Plus size={10} />
-                      </button>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{item.unit} ×</span>
-                    <div className="flex-1 flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground">Rs.</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={item.unit_cost}
-                        onChange={e => updateCost(item._key, e.target.value)}
-                        className="w-full text-sm font-semibold bg-transparent border-0 focus:outline-none text-indigo-600"
-                        placeholder="0"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Line total</span>
-                    <span className="font-bold tabular-nums">{fmt(item.qty * item.unit_cost)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Bottom totals + CTA */}
-        <div className="border-t p-4 shrink-0 space-y-3">
-          <div className="flex justify-between text-sm text-muted-foreground">
-            <span>Subtotal</span>
-            <span className="tabular-nums">{fmt(subtotal)}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="font-semibold">Total</span>
-            <span className="text-xl font-black tabular-nums text-indigo-600">{fmt(total)}</span>
-          </div>
-          <Button
-            className="w-full h-11 text-sm font-bold gap-2"
-            style={cart.length > 0 ? { background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' } : {}}
-            disabled={cart.length === 0}
-            onClick={openCheckout}
-          >
-            <ChevronRight size={16} />
-            {mode === 'opening' ? 'Add to Stock' : 'Process Purchase'}
-          </Button>
-        </div>
+      {/* ── Desktop cart panel (hidden on mobile) ──────────────────────────── */}
+      <div className="hidden md:flex md:w-80 xl:w-96 flex-col bg-background shrink-0">
+        <CartContent />
       </div>
 
-      {/* ─── Checkout dialog ─── */}
+      {/* ── Mobile floating cart button ──────────────────────────────────────── */}
+      <div className="md:hidden fixed bottom-4 left-4 right-4 z-40">
+        <button
+          onClick={() => setCartDrawerOpen(true)}
+          className="w-full flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl font-bold text-sm text-white"
+          style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' }}
+        >
+          <ShoppingBag size={18} />
+          <span className="flex-1 text-left">View Cart</span>
+          {cartCount > 0 && (
+            <span className="bg-white text-indigo-700 text-xs font-black px-2 py-0.5 rounded-full min-w-[22px] text-center">
+              {cartCount}
+            </span>
+          )}
+          <span className="text-indigo-200 tabular-nums text-xs">{fmt(total)}</span>
+        </button>
+      </div>
+
+      {/* ── Mobile cart drawer ────────────────────────────────────────────────── */}
+      {cartDrawerOpen && (
+        <div className="md:hidden fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCartDrawerOpen(false)} />
+          <div className="absolute bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-2xl flex flex-col" style={{ maxHeight: '88vh' }}>
+            <div className="w-12 h-1 bg-muted-foreground/30 rounded-full mx-auto mt-3 mb-1 shrink-0" />
+            <CartContent inDrawer />
+          </div>
+        </div>
+      )}
+
+      {/* ── Checkout dialog ────────────────────────────────────────────────── */}
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -498,7 +515,6 @@ export default function ManufacturingBuyStock() {
           </DialogHeader>
 
           <div className="space-y-4 py-1">
-            {/* Summary */}
             <div className="rounded-lg bg-muted/40 px-4 py-3 space-y-1">
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>{cartCount} item{cartCount !== 1 ? 's' : ''}</span>
@@ -512,44 +528,22 @@ export default function ManufacturingBuyStock() {
 
             {mode === 'purchase' ? (
               <>
-                {/* Vendor + invoice */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1">
-                      <Truck size={11} /> Vendor Name
-                    </Label>
-                    <Input
-                      placeholder="Optional"
-                      value={form.vendor_name}
-                      onChange={e => setForm(f => ({ ...f, vendor_name: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
+                    <Label className="text-xs flex items-center gap-1"><Truck size={11} /> Vendor Name</Label>
+                    <Input placeholder="Optional" value={form.vendor_name} onChange={e => setForm(f => ({ ...f, vendor_name: e.target.value }))} className="h-9 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1">
-                      <Hash size={11} /> Invoice #
-                    </Label>
-                    <Input
-                      placeholder="Optional"
-                      value={form.invoice_number}
-                      onChange={e => setForm(f => ({ ...f, invoice_number: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
+                    <Label className="text-xs flex items-center gap-1"><Hash size={11} /> Invoice #</Label>
+                    <Input placeholder="Optional" value={form.invoice_number} onChange={e => setForm(f => ({ ...f, invoice_number: e.target.value }))} className="h-9 text-sm" />
                   </div>
                 </div>
 
-                {/* Transport */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Transport Cost (Rs.)</Label>
-                  <Input
-                    type="number" min="0" placeholder="0"
-                    value={form.transport}
-                    onChange={e => setForm(f => ({ ...f, transport: e.target.value }))}
-                    className="h-9 text-sm"
-                  />
+                  <Input type="number" min="0" placeholder="0" value={form.transport} onChange={e => setForm(f => ({ ...f, transport: e.target.value }))} className="h-9 text-sm" />
                 </div>
 
-                {/* Payment method */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Payment Method</Label>
                   <div className="grid grid-cols-3 gap-2">
@@ -560,7 +554,7 @@ export default function ManufacturingBuyStock() {
                         className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border text-xs font-semibold transition-colors ${
                           form.payment_method === m.key
                             ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                            : 'text-muted-foreground hover:bg-muted/50'
+                            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                         }`}
                       >
                         <m.icon size={16} />
@@ -570,31 +564,18 @@ export default function ManufacturingBuyStock() {
                   </div>
                 </div>
 
-                {/* Amount paid */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Amount Paid (Rs.)</Label>
-                  <Input
-                    type="number" min="0" placeholder={String(total)}
-                    value={form.paid_amount}
-                    onChange={e => setForm(f => ({ ...f, paid_amount: e.target.value }))}
-                    className="h-9 text-sm"
-                  />
+                  <Input type="number" min="0" placeholder={String(total)} value={form.paid_amount} onChange={e => setForm(f => ({ ...f, paid_amount: e.target.value }))} className="h-9 text-sm" />
                   <PaymentStatus />
                 </div>
 
-                {/* Notes */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Note (optional)</Label>
-                  <Input
-                    placeholder="Any note…"
-                    value={form.notes}
-                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                    className="h-9 text-sm"
-                  />
+                  <Input placeholder="Any note…" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="h-9 text-sm" />
                 </div>
               </>
             ) : (
-              /* Opening stock — just a note */
               <div className="space-y-1.5">
                 <Label className="text-xs">Note (optional)</Label>
                 <Input
@@ -611,20 +592,16 @@ export default function ManufacturingBuyStock() {
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setCheckoutOpen(false)} disabled={submitting}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setCheckoutOpen(false)} disabled={submitting}>Cancel</Button>
             <Button
               onClick={handleProcess}
               disabled={submitting || cart.length === 0}
               className="gap-2"
               style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' }}
             >
-              {submitting ? (
-                <><RefreshCw size={13} className="animate-spin" /> Processing…</>
-              ) : (
-                <><CheckCircle2 size={14} /> {mode === 'opening' ? 'Add to Stock' : 'Confirm Purchase'}</>
-              )}
+              {submitting
+                ? <><RefreshCw size={13} className="animate-spin" /> Processing…</>
+                : <><CheckCircle2 size={14} /> {mode === 'opening' ? 'Add to Stock' : 'Confirm Purchase'}</>}
             </Button>
           </DialogFooter>
         </DialogContent>

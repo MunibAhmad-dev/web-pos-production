@@ -302,6 +302,7 @@ export default function PurchasesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState([]);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState('all');
   const [historyDetail, setHistoryDetail] = useState(null);
@@ -543,7 +544,7 @@ export default function PurchasesPage() {
 
       {/* ── Tab Content ── */}
       {activeTab === 'new' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-[50vh]">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-[50vh] pb-20 lg:pb-0">
 
           {/* Product catalog */}
           <div className="rounded-2xl border border-border/50 bg-card shadow-sm flex flex-col overflow-hidden">
@@ -592,8 +593,8 @@ export default function PurchasesPage() {
             </div>
           </div>
 
-          {/* Cart */}
-          <div className="rounded-2xl border border-border/50 bg-card shadow-sm flex flex-col overflow-hidden">
+          {/* Cart — desktop only */}
+          <div className="hidden lg:flex flex-col rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
             <div className="p-4 border-b bg-muted/10 shrink-0 flex items-center justify-between">
               <div>
                 <p className="text-base font-bold flex items-center gap-2"><ShoppingCart size={15} className="text-emerald-500" /> Cart</p>
@@ -649,6 +650,91 @@ export default function PurchasesPage() {
               </>
             )}
           </div>
+
+          {/* Mobile floating cart button */}
+          <div className="lg:hidden fixed bottom-4 left-4 right-4 z-40">
+            <button
+              onClick={() => setCartDrawerOpen(true)}
+              className="w-full flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl font-bold text-sm bg-emerald-600 text-white"
+            >
+              <ShoppingCart size={18} />
+              <span className="flex-1 text-left">View Cart</span>
+              {cart.length > 0 && (
+                <span className="bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full min-w-[22px] text-center">
+                  {cart.length}
+                </span>
+              )}
+              <span className="opacity-80 text-xs tabular-nums">{fmtPKR(cartTotal)}</span>
+            </button>
+          </div>
+
+          {/* Mobile cart drawer */}
+          {cartDrawerOpen && (
+            <div className="lg:hidden fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCartDrawerOpen(false)} />
+              <div className="absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl shadow-2xl flex flex-col" style={{ maxHeight: '88vh' }}>
+                <div className="w-12 h-1 bg-muted-foreground/30 rounded-full mx-auto mt-3 mb-1 shrink-0" />
+                <div className="p-4 border-b bg-muted/10 shrink-0 flex items-center justify-between">
+                  <div>
+                    <p className="text-base font-bold flex items-center gap-2"><ShoppingCart size={15} className="text-emerald-500" /> Cart</p>
+                    <p className="text-xs text-muted-foreground">{cart.length} product type{cart.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cart.length > 0 && <button onClick={() => setCart([])} className="text-xs text-muted-foreground hover:text-destructive">Clear all</button>}
+                    <button onClick={() => setCartDrawerOpen(false)} className="p-1 text-muted-foreground hover:text-foreground">
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+                {cart.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2 py-12">
+                    <ShoppingCart size={36} className="opacity-15" />
+                    <p className="text-sm">Cart is empty</p>
+                    <p className="text-xs opacity-70">Tap products to add them</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex-1 overflow-y-auto divide-y divide-border/20 p-3 space-y-2">
+                      {cart.map((item) => (
+                        <div key={item.productId} className="rounded-xl border border-border/40 bg-muted/10 p-3 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <p className="font-semibold text-sm truncate mr-2">{item.name}</p>
+                            <button onClick={() => removeFromCart(item.productId)} className="text-muted-foreground hover:text-destructive shrink-0"><Trash2 size={13} /></button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Qty</label>
+                              <input type="number" min="1" value={item.qty} onChange={(e) => updateCartQty(item.productId, e.target.value)}
+                                className="w-full h-8 px-2 text-sm rounded-md border border-border bg-background focus:outline-none mt-1 font-mono text-center" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Cost Price</label>
+                              <div className="relative mt-1"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-muted-foreground">PKR</span>
+                                <input type="number" min="0" value={item.purchasePrice} onChange={(e) => updateCartPrice(item.productId, e.target.value)}
+                                  className="w-full h-8 pl-7 pr-2 text-sm rounded-md border border-border bg-background focus:outline-none font-mono text-right" />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-xs font-bold text-muted-foreground">
+                            <span>Subtotal</span><span className="font-mono">{fmtPKR(item.qty * item.purchasePrice)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="p-4 border-t shrink-0">
+                      <div className="flex items-center justify-between font-bold text-base mb-3">
+                        <span>Total</span><span className="font-mono text-primary">{fmtPKR(cartTotal)}</span>
+                      </div>
+                      <button onClick={() => { setCartDrawerOpen(false); setShowCheckout(true); }}
+                        className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
+                        <CheckCircle size={15} /> Process Purchase
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* History */
