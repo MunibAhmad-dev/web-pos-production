@@ -13,6 +13,7 @@ import {
   mfgGetParts, mfgGetProducts, mfgGetVendors, mfgGetCustomers,
   mfgGetExpenses, mfgGetAccounts,
 } from '../../api/manufacturingApi';
+import { useMfgAuth } from '../../context/ManufacturingAuthContext';
 
 // ── Google Drive config ───────────────────────────────────────────────────────
 const GD_CLIENT_ID = '997460265293-at775rhu7jojvhmeuk6jjn0irammnmuq.apps.googleusercontent.com';
@@ -42,6 +43,7 @@ function setGdMeta(data) { localStorage.setItem(GD_META_KEY, JSON.stringify({ ..
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 const TABS = [
+  { id: 'profile', label: 'Profile',         icon: Store },
   { id: 'drive',   label: 'Google Drive',    icon: HardDrive },
   { id: 'thermal', label: 'Thermal Printer', icon: Printer },
   { id: 'formal',  label: 'Formal Invoice',  icon: FileText },
@@ -58,7 +60,9 @@ const SAMPLE_SALE = {
 };
 
 export default function ManufacturingSettings() {
-  const [tab, setTab] = useState('drive');
+  const { mfgUser } = useMfgAuth();
+  const [tab, setTab] = useState('profile');
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
 
   // Google Drive state
   const [gdToken, setGdToken]       = useState(getGdToken);
@@ -270,6 +274,69 @@ export default function ManufacturingSettings() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-6">
+
+        {/* ── Profile Tab ── */}
+        {tab === 'profile' && (
+          <div className="max-w-lg space-y-6">
+            <div className="rounded-2xl border bg-card p-6">
+              <div className="flex items-center gap-4 mb-5">
+                <div className="w-14 h-14 rounded-full bg-violet-500/10 border-2 border-violet-500/30 flex items-center justify-center text-2xl font-bold text-violet-600">
+                  {(mfgUser?.company_name || 'F')[0].toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-bold text-lg">{mfgUser?.company_name || 'Factory ERP'}</p>
+                  <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                    <Phone size={12} /> {mfgUser?.mobile || '—'}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="rounded-lg bg-muted/40 px-4 py-3">
+                  <p className="text-xs text-muted-foreground mb-1">Company Name</p>
+                  <p className="font-semibold">{mfgUser?.company_name || '—'}</p>
+                </div>
+                <div className="rounded-lg bg-muted/40 px-4 py-3">
+                  <p className="text-xs text-muted-foreground mb-1">Mobile</p>
+                  <p className="font-semibold">{mfgUser?.mobile || '—'}</p>
+                </div>
+                <div className="rounded-lg bg-muted/40 px-4 py-3 col-span-2">
+                  <p className="text-xs text-muted-foreground mb-1">Instance ID</p>
+                  <p className="font-semibold font-mono text-xs">{mfgUser?.instance_id || '—'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border bg-card p-6">
+              <h3 className="font-semibold mb-4 flex items-center gap-2"><FileCheck size={16} className="text-violet-500" /> Change Password</h3>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs">Current Password</Label>
+                  <Input type="password" value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} className="h-9 text-sm mt-1.5" placeholder="Current password" />
+                </div>
+                <div>
+                  <Label className="text-xs">New Password</Label>
+                  <Input type="password" value={pwForm.next} onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))} className="h-9 text-sm mt-1.5" placeholder="New password" />
+                </div>
+                <div>
+                  <Label className="text-xs">Confirm New Password</Label>
+                  <Input type="password" value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} className="h-9 text-sm mt-1.5" placeholder="Confirm password" />
+                </div>
+              </div>
+              <Button
+                className="mt-4 w-full"
+                style={{ background: 'linear-gradient(135deg,#7c3aed,#6d28d9)' }}
+                onClick={() => {
+                  if (!pwForm.current || !pwForm.next) { toast.error('Please fill all fields'); return; }
+                  if (pwForm.next !== pwForm.confirm) { toast.error('Passwords do not match'); return; }
+                  toast.info('Password change not yet supported from web — use the desktop app');
+                  setPwForm({ current: '', next: '', confirm: '' });
+                }}
+              >
+                Update Password
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── Google Drive Tab ── */}
         {tab === 'drive' && (

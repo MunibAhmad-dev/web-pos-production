@@ -4,7 +4,7 @@ import {
   Users, Plus, Search, X, RefreshCw, AlertCircle,
   MoreVertical, Eye, Pencil, Trash2, Phone,
   MapPin, FileText, CheckCircle2,
-  ShoppingBag, Banknote, TrendingUp, Clock,
+  ShoppingBag, Banknote, TrendingUp, Clock, MessageCircle,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -271,6 +271,25 @@ export default function ManufacturingCustomers() {
                 </div>
                 {profile.data.analytics.dueAmount === 0 && profile.data.analytics.totalOrders > 0 && (
                   <div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 font-semibold"><CheckCircle2 size={12} /> Fully Settled</div>
+                )}
+
+                {/* WhatsApp share */}
+                {(profile.data.customer.whatsapp || profile.data.customer.phone) && (
+                  <a
+                    href={(() => {
+                      const num = (profile.data.customer.whatsapp || profile.data.customer.phone).replace(/\D/g, '');
+                      const ph = num.startsWith('0') ? '92' + num.slice(1) : num;
+                      const { lifetimeValue, totalPaid, dueAmount } = profile.data.analytics;
+                      const msg = `Assalam o Alaikum ${profile.data.customer.name},\n\nAccount Summary:\n• Total Billed: Rs. ${Math.round(lifetimeValue).toLocaleString()}\n• Amount Paid: Rs. ${Math.round(totalPaid).toLocaleString()}\n• Balance Due: Rs. ${Math.round(dueAmount).toLocaleString()}\n\nKindly settle your balance. JazakAllah.`;
+                      return `https://wa.me/${ph}?text=${encodeURIComponent(msg)}`;
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 flex items-center justify-center gap-2 w-full rounded-lg py-2 text-sm font-semibold text-white transition-colors"
+                    style={{ background: '#25D366' }}
+                  >
+                    <MessageCircle size={14} fill="white" /> Share on WhatsApp
+                  </a>
                 )}
               </div>
 

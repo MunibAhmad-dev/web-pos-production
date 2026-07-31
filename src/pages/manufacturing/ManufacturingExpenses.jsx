@@ -20,7 +20,8 @@ const COMMON_CATEGORIES = [
   'Transport', 'Repair', 'Maintenance', 'Marketing', 'Miscellaneous',
 ];
 
-const EMPTY_FORM = { title: '', category: '', amount: '', date_added: '', notes: '', account_id: '' };
+const today = () => new Date().toISOString().slice(0, 10);
+const EMPTY_FORM = { title: '', category: '', amount: '', date_added: today(), notes: '', account_id: '' };
 
 export default function ManufacturingExpenses() {
   const [expenses, setExpenses]   = useState([]);
@@ -65,7 +66,7 @@ export default function ManufacturingExpenses() {
       setExpenses(prev => [res.expense, ...prev]);
       toast.success('Expense added');
       setAddDlg(false);
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, date_added: today() });
     } catch (e) { toast.error(e.message || 'Failed to save'); }
     finally { setSub(false); }
   }
@@ -104,7 +105,7 @@ export default function ManufacturingExpenses() {
             <Button size="sm" variant="outline" onClick={fetchAll} disabled={loading}>
               <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             </Button>
-            <Button size="sm" onClick={() => { setForm(EMPTY_FORM); setAddDlg(true); }} className="gap-1.5" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' }}>
+            <Button size="sm" onClick={() => { setForm({ ...EMPTY_FORM, date_added: today() }); setAddDlg(true); }} className="gap-1.5" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' }}>
               <Plus size={13} /> Add Expense
             </Button>
           </div>
@@ -136,7 +137,7 @@ export default function ManufacturingExpenses() {
           <div className="flex flex-col items-center justify-center h-52 gap-3 text-muted-foreground text-sm">
             <Receipt size={32} className="opacity-25" />
             {search ? `No expenses match "${search}"` : 'No expenses yet. Add your first expense.'}
-            {!search && <Button size="sm" onClick={() => { setForm(EMPTY_FORM); setAddDlg(true); }} className="gap-1.5 mt-1"><Plus size={12} /> Add Expense</Button>}
+            {!search && <Button size="sm" onClick={() => { setForm({ ...EMPTY_FORM, date_added: today() }); setAddDlg(true); }} className="gap-1.5 mt-1"><Plus size={12} /> Add Expense</Button>}
           </div>
         ) : (
           <table className="w-full">

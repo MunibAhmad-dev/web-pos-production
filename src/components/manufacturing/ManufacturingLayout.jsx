@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Boxes, Package, ShoppingCart, Wallet, FileBarChart,
   Settings as SettingsIcon, Wind, Truck, Users, ShoppingBag, Sun, Moon,
   Receipt, FileText, LogOut, ChevronRight, Info, Shield, Menu, X,
+  User, Phone, Key,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
@@ -125,10 +126,22 @@ export default function ManufacturingLayout() {
   const location = useLocation();
   const [now, setNow] = useState(new Date());
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [pwDlg, setPwDlg] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const profileRef = useRef(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    function handler(e) {
+      if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   // Close drawer on route change
@@ -192,12 +205,90 @@ export default function ManufacturingLayout() {
               <p className="text-[10px] md:text-[11px] text-muted-foreground hidden sm:block truncate">{dateStr}</p>
             </div>
           </div>
-          <button
-            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="w-9 h-9 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0"
-          >
-            {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="w-9 h-9 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+            >
+              {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+
+            {/* Profile button */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setProfileOpen(p => !p)}
+                className="w-9 h-9 rounded-full bg-violet-500/10 border border-violet-500/30 flex items-center justify-center text-violet-600 hover:bg-violet-500/20 transition-colors"
+                title="Profile"
+              >
+                <User size={16} />
+              </button>
+
+              {profileOpen && (
+                <div className="absolute right-0 top-11 z-50 w-64 rounded-xl border bg-popover shadow-2xl py-1 overflow-hidden">
+                  <div className="px-4 py-3 border-b bg-muted/30">
+                    <p className="font-bold text-sm truncate">{mfgUser?.company_name || 'Factory ERP'}</p>
+                    {mfgUser?.mobile && (
+                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                        <Phone size={10} /> {mfgUser.mobile}
+                      </p>
+                    )}
+                  </div>
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setPwDlg(true); setProfileOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-muted/50 transition-colors text-left"
+                    >
+                      <Key size={14} className="text-muted-foreground" /> Change Password
+                    </button>
+                    <button
+                      onClick={() => { handleLogout(); setProfileOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
+                    >
+                      <LogOut size={14} /> Sign Out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Change Password dialog */}
+          {pwDlg && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+              <div className="w-full max-w-xs rounded-2xl border bg-background shadow-2xl p-6">
+                <h3 className="font-bold text-base mb-4 flex items-center gap-2"><Key size={16} className="text-violet-500" /> Change Password</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Current Password</label>
+                    <input type="password" value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} className="w-full h-9 rounded-md border bg-background px-3 text-sm" placeholder="Current password" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">New Password</label>
+                    <input type="password" value={pwForm.next} onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))} className="w-full h-9 rounded-md border bg-background px-3 text-sm" placeholder="New password" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Confirm New Password</label>
+                    <input type="password" value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} className="w-full h-9 rounded-md border bg-background px-3 text-sm" placeholder="Confirm new password" />
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-5">
+                  <button onClick={() => { setPwDlg(false); setPwForm({ current: '', next: '', confirm: '' }); }} className="flex-1 h-9 rounded-lg border text-sm font-medium hover:bg-muted transition-colors">Cancel</button>
+                  <button
+                    onClick={() => {
+                      if (!pwForm.current || !pwForm.next) return;
+                      if (pwForm.next !== pwForm.confirm) { alert('Passwords do not match'); return; }
+                      setPwDlg(false);
+                      setPwForm({ current: '', next: '', confirm: '' });
+                    }}
+                    className="flex-1 h-9 rounded-lg text-sm font-medium text-white transition-colors"
+                    style={{ background: 'linear-gradient(135deg,#7c3aed,#6d28d9)' }}
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </header>
 
         {/* Page content */}

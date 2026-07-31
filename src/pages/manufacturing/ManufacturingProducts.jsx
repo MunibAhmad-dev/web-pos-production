@@ -320,7 +320,7 @@ export default function ManufacturingProducts() {
 
       {/* ── Add/Edit Dialog ── */}
       <Dialog open={dialog.open} onOpenChange={v => setDialog(d => ({ ...d, open: v }))}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package2 size={16} className="text-blue-500" />

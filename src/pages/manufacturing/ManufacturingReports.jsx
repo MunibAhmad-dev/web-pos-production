@@ -186,8 +186,8 @@ export default function ManufacturingReports() {
               onClick={() => setActiveTab(t.key)}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors whitespace-nowrap ${
                 activeTab === t.key
-                  ? 'bg-white dark:bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-background text-foreground shadow-sm border-b-2 border-indigo-500'
+                  : 'text-foreground/70 hover:text-foreground'
               }`}
             >
               <t.icon size={13} /> {t.label}
@@ -204,7 +204,7 @@ export default function ManufacturingReports() {
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 period === p.key
                   ? 'bg-indigo-600 text-white'
-                  : 'border text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  : 'border border-border text-foreground hover:bg-muted/50'
               }`}
             >
               {p.label}
@@ -317,8 +317,8 @@ export default function ManufacturingReports() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" />
+                    <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" tickFormatter={v => v >= 100000 ? `${(v/1000).toFixed(0)}k` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(v)} />
                     <Tooltip content={<RevenueTooltip />} />
                     <Area type="monotone" dataKey="Revenue" stroke="#6366f1" fill="url(#revGrad)" strokeWidth={2} dot={false} />
                   </AreaChart>
@@ -335,8 +335,8 @@ export default function ManufacturingReports() {
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={plData} barSize={40}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" />
+                    <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" tickFormatter={v => v >= 100000 ? `${(v/1000).toFixed(0)}k` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(v)} />
                     <Tooltip content={<RevenueTooltip />} />
                     <Bar dataKey="value" name="Amount" radius={[5,5,0,0]}>
                       {plData.map((_, i) => <Cell key={i} fill={PL_COLORS[i]} />)}
@@ -501,8 +501,8 @@ export default function ManufacturingReports() {
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={data.vendors.slice(0, 8).map(v => ({ name: v.vendor_name.length > 12 ? v.vendor_name.slice(0, 12) + '…' : v.vendor_name, Spent: v.total_spent }))} barSize={32}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" />
+                  <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" tickFormatter={v => v >= 100000 ? `${(v/1000).toFixed(0)}k` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(v)} />
                   <Tooltip content={<RevenueTooltip />} />
                   <Bar dataKey="Spent" fill="#f59e0b" radius={[5,5,0,0]} />
                 </BarChart>
@@ -566,8 +566,8 @@ export default function ManufacturingReports() {
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={data.customers.slice(0, 8).map(c => ({ name: c.customer_name.length > 12 ? c.customer_name.slice(0, 12) + '…' : c.customer_name, Revenue: c.total_revenue }))} barSize={32}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" />
+                  <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--foreground)/0.65)' }} stroke="hsl(var(--border))" tickFormatter={v => v >= 100000 ? `${(v/1000).toFixed(0)}k` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(v)} />
                   <Tooltip content={<RevenueTooltip />} />
                   <Bar dataKey="Revenue" fill="#22c55e" radius={[5,5,0,0]} />
                 </BarChart>

@@ -4,7 +4,7 @@ import {
   Truck, Plus, Search, X, RefreshCw, AlertCircle,
   MoreVertical, Eye, Pencil, Trash2, Phone, Mail,
   Building2, MapPin, FileText, CheckCircle2,
-  ShoppingCart, Banknote, TrendingDown, Hash,
+  ShoppingCart, Banknote, TrendingDown, Hash, MessageCircle,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -278,6 +278,25 @@ export default function ManufacturingVendors() {
                 </div>
                 {profile.data.analytics.outstanding === 0 && profile.data.analytics.totalOrders > 0 && (
                   <div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 font-semibold"><CheckCircle2 size={12} /> Fully Settled</div>
+                )}
+
+                {/* WhatsApp share */}
+                {(profile.data.vendor.whatsapp || profile.data.vendor.phone) && (
+                  <a
+                    href={(() => {
+                      const num = (profile.data.vendor.whatsapp || profile.data.vendor.phone).replace(/\D/g, '');
+                      const ph = num.startsWith('0') ? '92' + num.slice(1) : num;
+                      const { totalPurchased, totalPaid, outstanding } = profile.data.analytics;
+                      const msg = `Assalam o Alaikum ${profile.data.vendor.name},\n\nAccount Summary:\n• Total Purchased: Rs. ${Math.round(totalPurchased).toLocaleString()}\n• Amount Paid: Rs. ${Math.round(totalPaid).toLocaleString()}\n• Balance Due: Rs. ${Math.round(outstanding).toLocaleString()}\n\nPlease confirm. JazakAllah.`;
+                      return `https://wa.me/${ph}?text=${encodeURIComponent(msg)}`;
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 flex items-center justify-center gap-2 w-full rounded-lg py-2 text-sm font-semibold text-white transition-colors"
+                    style={{ background: '#25D366' }}
+                  >
+                    <MessageCircle size={14} fill="white" /> Share on WhatsApp
+                  </a>
                 )}
               </div>
 

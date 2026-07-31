@@ -101,6 +101,11 @@ export default function ManufacturingPartsInventory() {
       : <ChevronDown size={10} className="text-indigo-500" />;
   }
 
+  const categories = useMemo(() => {
+    const cats = new Set(parts.map(p => p.category).filter(Boolean));
+    return [...cats].sort();
+  }, [parts]);
+
   // ── Add / Edit ───────────────────────────────────────────────────────────────
   function openAdd() {
     setForm(EMPTY_FORM);
@@ -460,7 +465,11 @@ export default function ManufacturingPartsInventory() {
                   value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                   className="h-9 text-sm"
+                  list="part-cat-list"
                 />
+                <datalist id="part-cat-list">
+                  {categories.map(c => <option key={c} value={c} />)}
+                </datalist>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Unit</Label>
