@@ -68,7 +68,10 @@ function buildPnl(analyticsData, saleItems, sales, productById = {}) {
     const day = dayOf[String(item.sale_id)];
     if (!day) continue;
     const product = productById[String(item.product_id ?? '')];
-    const cogs = gramCorrectedCost(item.quantity ?? 0, item.purchase_price ?? 0, product?.unit_type, product?.price);
+    // Fall back to product's own purchase_price when the sale_item stored 0
+    // (happens for records created before the Electron batch-cost bug was fixed).
+    const pp = Number(item.purchase_price) > 0 ? item.purchase_price : (product?.purchase_price ?? 0);
+    const cogs = gramCorrectedCost(item.quantity ?? 0, pp, product?.unit_type, product?.price);
     cogsByDay[day] = (cogsByDay[day] || 0) + cogs;
   }
   const revenueByDay = {};
@@ -298,7 +301,7 @@ export default function Dashboard() {
   const payableVendors = useMemo(() => {
     return vendors.map((v) => {
       const vid    = String(v.id);
-      const owed   = purchases.filter((p) => String(p.vendor_id) === vid && p.status !== 'Cancelled').reduce((s, p) => s + Number(p.total || 0), 0);
+      const owed   = purchases.filter((p) => String(p.vendor_id) === vid && p.status !== 'Cancelled').reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
       const paid   = vendorPayments.filter((p) => String(p.vendor_id) === vid).reduce((s, p) => s + Number(p.amount || 0), 0);
       const ret    = purchaseReturns.filter((r) => String(r.vendor_id) === vid).reduce((s, r) => s + Number(r.total_returned || 0), 0);
       return { ...v, balance: Math.max(0, owed - paid - ret) };
