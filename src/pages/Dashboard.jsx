@@ -309,7 +309,47 @@ export default function Dashboard() {
     }).filter((v) => v.balance > 0.01).sort((a, b) => b.balance - a.balance);
   }, [vendors, purchases, vendorPayments, purchaseReturns]);
 
-  const pnl = useMemo(() => buildPnl(analytics, saleItems, sales, productById), [analytics, saleItems, sales, productById]);
+  // Period analytics computed locally from synced data — the cloud analytics
+  // endpoint includes Cancelled sales in salesByDay/totals (and can't be
+  // changed), which inflated Period Revenue and Transactions vs the desktop.
+  // Local calculation excludes cancelled and uses local-timezone day keys,
+  // matching the Electron dashboard exactly.
+  const expensesList = list('expense');
+  const localAnalytics = useMemo(() => {
+    const range = rangeForPeriod(period, from, to);
+    const start = new Date(range.date_from);
+    const end   = new Date(range.date_to);
+    const dayKey = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD, local tz
+    const salesByDayMap = {};
+    let count = 0, revenue = 0;
+    for (const s of sales) {
+      if (s.status === 'Cancelled' || !s.date_created) continue;
+      const d = new Date(String(s.date_created).replace(' ', 'T'));
+      if (isNaN(d) || d < start || d > end) continue;
+      const day = dayKey(d);
+      salesByDayMap[day] = (salesByDayMap[day] || 0) + Number(s.total || 0);
+      count++;
+      revenue += Number(s.total || 0);
+    }
+    const expByDayMap = {};
+    let expTotal = 0;
+    for (const e of expensesList) {
+      const raw = e.date_added ?? e.date ?? e.created_at;
+      if (!raw) continue;
+      const d = new Date(String(raw).replace(' ', 'T'));
+      if (isNaN(d) || d < start || d > end) continue;
+      const amt = Number(e.amount || 0);
+      expByDayMap[dayKey(d)] = (expByDayMap[dayKey(d)] || 0) + amt;
+      expTotal += amt;
+    }
+    return {
+      salesByDay: Object.entries(salesByDayMap).map(([day, rev]) => ({ day, revenue: rev })),
+      expensesByDay: Object.entries(expByDayMap).map(([day, amount]) => ({ day, amount })),
+      totals: { sales: count, revenue, expenses: expTotal },
+    };
+  }, [sales, expensesList, period, from, to]);
+
+  const pnl = useMemo(() => buildPnl(localAnalytics, saleItems, sales, productById), [localAnalytics, saleItems, sales, productById]);
 
   // Payment method breakdown from local sales filtered by period
   const paymentBreakdown = useMemo(() => {
@@ -375,7 +415,7 @@ export default function Dashboard() {
 
   // Sparkline data
   const revSparkline  = pnl.series.slice(-10).map((d) => ({ date: d.date, value: d.revenue }));
-  const netSparkline  = pnl.series.slice(-10).map((d) => ({ date: d.date, value: Math.max(0, d.net) }));
+  const netSparkline  = pnl.series.slice(-10).map((d) => ({ date: d.date, value: Math.max(0, d.gross) }));
 
   if (loading && !overview) return <Skeleton />;
 
@@ -417,8 +457,8 @@ export default function Dashboard() {
       {/* ── KPI grid (with sparklines) ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={1} className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard icon={DollarSign}    label="Period Revenue"    value={fmtPKR(pnl.totals.revenue)}              sublabel={periodLabel}                                    color="text-blue-600 bg-blue-500/10"         sparkData={revSparkline}  sparkKey="value" sparkColor="#3b82f6" />
-        <KpiCard icon={TrendingUp}    label="Net Profit"        value={fmtPKR(pnl.totals.net)}                  sublabel={periodLabel}                                    color="text-emerald-600 bg-emerald-500/10"   sparkData={netSparkline}  sparkKey="value" sparkColor="#10b981" />
-        <KpiCard icon={Activity}      label="Transactions"      value={analytics?.totals?.sales ?? 0}           sublabel={periodLabel}                                    color="text-purple-600 bg-purple-500/10" />
+        <KpiCard icon={TrendingUp}    label="Gross Profit"      value={fmtPKR(pnl.totals.gross)}                sublabel={periodLabel}                                    color="text-emerald-600 bg-emerald-500/10"   sparkData={netSparkline}  sparkKey="value" sparkColor="#10b981" />
+        <KpiCard icon={Activity}      label="Transactions"      value={localAnalytics.totals.sales}             sublabel={periodLabel}                                    color="text-purple-600 bg-purple-500/10" />
         <KpiCard icon={Zap}           label="Today's Revenue"   value={fmtPKR(todayRevenue)}                    sublabel="vs this month"                                  color="text-amber-600 bg-amber-500/10" />
         <KpiCard icon={Boxes}         label="Stock Value"       value={fmtPKR(stockStats.stockValue)}           sublabel="Total inventory at cost"                        color="text-blue-600 bg-blue-500/10" />
         <KpiCard icon={PiggyBank}     label="Retail Stock"      value={fmtPKR(stockStats.retailStockValue)}     sublabel={`Profit: ${fmtPKR(stockStats.retailProfit)}`}   color="text-emerald-600 bg-emerald-500/10" />
