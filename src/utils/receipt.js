@@ -324,6 +324,44 @@ export function printInvoice(data, { autoPrint = true } = {}) {
   return iframe;
 }
 
+/**
+ * Directly download the invoice as a PDF file (no print dialog).
+ * Renders the invoice HTML off-screen and converts it with html2pdf.js —
+ * thermal gets a 72mm-wide page with auto height, formal gets A4.
+ */
+export async function downloadInvoicePdf(data) {
+  const { default: html2pdf } = await import('html2pdf.js');
+  const html = buildInvoiceHtml(data);
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;height:1400px;border:0;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  await new Promise((r) => setTimeout(r, 350)); // let styles/layout settle
+  const isThermal = data.settings.invoice_style !== 'formal';
+  // Target the invoice element itself, not body — body carries screen-view
+  // chrome (grey background, centering) that shouldn't be in the PDF.
+  const el = doc.querySelector(isThermal ? '.receipt' : '.page') || doc.body;
+  const filename = `${formatInvoiceId(data.saleId, data.date)}.pdf`;
+  const heightMm = Math.max(80, (el.scrollHeight * 25.4) / 96 + 6);
+  const opt = {
+    margin: 0,
+    filename,
+    image: { type: 'jpeg', quality: 0.97 },
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+    jsPDF: isThermal
+      ? { unit: 'mm', format: [72, heightMm], orientation: 'portrait' }
+      : { unit: 'mm', format: 'a4', orientation: 'portrait' },
+  };
+  try {
+    await html2pdf().set(opt).from(el).save();
+  } finally {
+    document.body.removeChild(iframe);
+  }
+}
+
 /** Open the invoice in a new browser tab (view + print from there). */
 export function openInvoiceInTab(data) {
   const html = buildInvoiceHtml(data);

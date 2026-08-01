@@ -2,14 +2,16 @@ import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Phone, Mail, MapPin, CreditCard, ShoppingCart, Undo2, History,
-  MessageCircle, ChevronDown, ChevronRight, Plus,
+  MessageCircle, ChevronDown, ChevronRight, Plus, Printer, Download,
   Trash2, Check, Clock, FileText, TrendingUp, Package, ArrowLeft, X,
   Boxes, DollarSign,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { getReceiptSettings, printInvoice, downloadInvoicePdf } from '../../utils/receipt';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -54,8 +56,10 @@ export default function VendorDetailPage() {
   const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
   const { showToast } = useToast();
+  const { user } = useAuth();
   const [tab, setTab] = useState('purchases');
   const [posPage, setPosPage] = useState(1);
+  const [poFilter, setPoFilter] = useState('all');
   const [expandedPoId, setExpandedPoId] = useState(null);
   const [payingPoId, setPayingPoId] = useState(null);
   const [payAmount, setPayAmount] = useState('');
@@ -145,8 +149,17 @@ export default function VendorDetailPage() {
   if (!data) return null;
 
   const { purchases, payments, returns, products, activity, totalPurchased, totalPaid, totalReturned, balance, stockCostValue, totalStock } = data;
-  const visiblePOs = purchases.slice(0, posPage * POS_PER_PAGE);
-  const hasMorePOs = visiblePOs.length < purchases.length;
+  const filteredPOs = purchases.filter((p) => {
+    if (poFilter === 'all') return true;
+    if (poFilter === 'cancelled') return p.status === 'Cancelled';
+    if (p.status === 'Cancelled') return false;
+    if (poFilter === 'settled') return p.remaining <= 0.5;
+    if (poFilter === 'partial') return p.remaining > 0.5 && p.amountPaid > 0;
+    if (poFilter === 'unpaid') return p.remaining > 0.5 && p.amountPaid <= 0;
+    return true;
+  });
+  const visiblePOs = filteredPOs.slice(0, posPage * POS_PER_PAGE);
+  const hasMorePOs = visiblePOs.length < filteredPOs.length;
   const settledCount = purchases.filter((p) => p.remaining <= 0.5 && p.status !== 'Cancelled').length;
   const pendingCount = purchases.filter((p) => p.remaining > 0.5 && p.status !== 'Cancelled').length;
 
@@ -154,6 +167,37 @@ export default function VendorDetailPage() {
     const d = po.date_created ? new Date(po.date_created) : new Date();
     const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     return `PO-${ymd}-${String(po.id).slice(-5).toUpperCase()}`;
+  };
+
+  // PO → invoice data for the shared print/PDF builders (vendor is the bill-to)
+  const poInvoiceData = (po) => {
+    const settings = getReceiptSettings();
+    return {
+      saleId: po.id,
+      items: (po.items || []).map((i) => ({ name: i.product_name, qty: Number(i.quantity), price: Number(i.cost_price || i.purchase_price || 0) })),
+      subtotal: Number(po.total),
+      discount: 0,
+      total: Number(po.total),
+      paymentMethod: po.payment_method || 'cash',
+      settings: { ...settings, store_name: settings.store_name || user?.store_name || 'My Store' },
+      date: new Date(po.date_created || Date.now()).toLocaleString('en-PK', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      customerName: vendor?.name,
+      customerPhone: vendor?.phone,
+      amountPaid: po.amountPaid,
+      balance: po.remaining > 0.5 ? po.remaining : 0,
+    };
+  };
+
+  // WhatsApp the current payment status of a PO to the vendor
+  const waPoStatus = (po) => {
+    if (!vendor?.phone) return;
+    const storeName = getReceiptSettings().store_name || user?.store_name || 'Store';
+    let msg = `🧾 *${poNumber(po)}* — ${storeName}\n📅 ${fmtDate(po.date_created)}\n───────────────\n`;
+    msg += `💰 Total: ${fmtPKR(po.total)}\n✅ Paid: ${fmtPKR(po.amountPaid)}\n`;
+    msg += po.remaining > 0.5 ? `🔴 Remaining: ${fmtPKR(po.remaining)}\n` : `🟢 Fully settled\n`;
+    let phone = String(vendor.phone).replace(/\D/g, '');
+    if (phone.startsWith('0')) phone = '92' + phone.substring(1);
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   return (
@@ -289,6 +333,17 @@ export default function VendorDetailPage() {
             <TabsContent value="purchases" className="flex-1 overflow-y-auto m-0 p-5 space-y-2">
               {purchases.length === 0 ? <EmptyState icon={<ShoppingCart size={36} />} text="No purchase orders yet" /> : (
                 <>
+                  {/* Status filter pills */}
+                  <div className="flex gap-1.5 pb-2 flex-wrap">
+                    {[['all', 'All'], ['unpaid', 'Unpaid'], ['partial', 'Partial'], ['settled', 'Settled'], ['cancelled', 'Cancelled']].map(([val, lbl]) => (
+                      <button key={val} onClick={() => { setPoFilter(val); setPosPage(1); }}
+                        className={cn('px-3 py-1.5 text-xs font-semibold rounded-full transition-colors',
+                          poFilter === val ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:text-foreground')}>
+                        {lbl}
+                      </button>
+                    ))}
+                    <span className="ml-auto text-xs text-muted-foreground self-center">{filteredPOs.length} order{filteredPOs.length !== 1 ? 's' : ''}</span>
+                  </div>
                   <div className="hidden md:grid grid-cols-[24px_1fr_96px_100px_100px_100px_72px] gap-3 px-3 pb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b border-border">
                     <span /><span>PO Number</span><span className="text-right">Total</span><span className="text-right">Paid</span><span className="text-right">Due</span><span className="text-center">Method</span><span className="text-center">Status</span>
                   </div>
@@ -313,6 +368,23 @@ export default function VendorDetailPage() {
 
                         {isExpanded && (
                           <div className="border-t border-border/40 bg-muted/10">
+                            {/* PO actions — print / PDF / WhatsApp status, like Electron */}
+                            <div className="flex items-center gap-2 px-5 pt-3 flex-wrap">
+                              <button onClick={() => printInvoice(poInvoiceData(po))}
+                                className="h-7 px-3 text-[11px] font-semibold rounded-lg border border-border bg-background hover:bg-muted flex items-center gap-1.5 transition-colors">
+                                <Printer size={11} /> Print
+                              </button>
+                              <button onClick={() => downloadInvoicePdf(poInvoiceData(po))}
+                                className="h-7 px-3 text-[11px] font-semibold rounded-lg border border-emerald-400/40 text-emerald-600 hover:bg-emerald-500/10 flex items-center gap-1.5 transition-colors">
+                                <Download size={11} /> PDF
+                              </button>
+                              {vendor.phone && (
+                                <button onClick={() => waPoStatus(po)}
+                                  className="h-7 px-3 text-[11px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 flex items-center gap-1.5 transition-colors">
+                                  <MessageCircle size={11} /> WhatsApp Status
+                                </button>
+                              )}
+                            </div>
                             {/* Items */}
                             {po.items?.length > 0 && (
                               <div className="px-5 pt-4 pb-3">
@@ -421,7 +493,7 @@ export default function VendorDetailPage() {
                     <div className="flex justify-center pt-2 pb-4">
                       <button onClick={() => setPosPage((p) => p + 1)}
                         className="flex items-center gap-2 h-8 px-4 text-xs rounded-lg border border-border bg-background hover:bg-muted">
-                        <ChevronDown size={13} /> Load {Math.min(POS_PER_PAGE, purchases.length - visiblePOs.length)} more orders
+                        <ChevronDown size={13} /> Load {Math.min(POS_PER_PAGE, filteredPOs.length - visiblePOs.length)} more orders
                       </button>
                     </div>
                   )}

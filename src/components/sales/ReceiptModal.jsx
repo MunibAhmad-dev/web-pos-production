@@ -3,7 +3,7 @@ import { CheckCircle, ChevronDown, Monitor, Printer, X, FileDown } from 'lucide-
 import Button from '@/components/ui/action-button';
 import {
   getReceiptSettings, buildWhatsAppLink, printInvoice, openInvoiceInTab,
-  formatInvoiceId, fmtPKR,
+  downloadInvoicePdf, formatInvoiceId, fmtPKR,
 } from '../../utils/receipt';
 
 // Receipt modal — mirrors the Electron ReceiptModal (Sales.tsx): dashed
@@ -154,8 +154,8 @@ export default function ReceiptModal({ open, onClose, sale, businessName }) {
             </div>
           </div>
           <div className="flex gap-3 w-full">
-            <Button variant="secondary" onClick={() => printInvoice(data)} className="flex-1 justify-center gap-2 text-xs">
-              <FileDown size={13} /> Save as PDF
+            <Button variant="secondary" onClick={() => downloadInvoicePdf(data)} className="flex-1 justify-center gap-2 text-xs">
+              <FileDown size={13} /> Download PDF
             </Button>
             {waLink && (
               <Button
