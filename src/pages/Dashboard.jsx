@@ -78,8 +78,12 @@ function buildPnl(analyticsData, saleItems, sales, productById = {}) {
   for (const d of analyticsData?.salesByDay || []) revenueByDay[d.day] = d.revenue;
   const expensesByDay = {};
   for (const d of analyticsData?.expensesByDay || []) expensesByDay[d.day] = d.amount;
+  // Use server-period days as the anchor — never expand into all-time COGS days.
+  // revenueByDay and expensesByDay come from the server's period-filtered analytics,
+  // so including cogsByDay (all history) would add phantom days with 0 revenue but
+  // non-zero COGS, making net profit deeply negative when period is "Today".
   const days = Array.from(new Set([
-    ...Object.keys(revenueByDay), ...Object.keys(cogsByDay), ...Object.keys(expensesByDay)
+    ...Object.keys(revenueByDay), ...Object.keys(expensesByDay)
   ])).sort();
   const series = days.map((date) => {
     const revenue  = revenueByDay[date]  || 0;
@@ -284,19 +288,16 @@ export default function Dashboard() {
     };
   }, [products, LOW_STOCK_THRESHOLD]);
 
-  // Customer AR (using sales + payments)
+  // Customer AR — use outstanding_balance maintained by the Electron app on each
+  // customer record. Computing from sum(sales.total) overcounts because it treats
+  // every named-customer sale as credit, including cash sales.
   const customerAR = useMemo(() => {
-    const allPayments = list('customer_payment');
-    const allReturns  = list('sale_return');
-    const withBalance = customers.map((c) => {
-      const cid    = String(c.id);
-      const taken  = sales.filter((s) => String(s.customer_id) === cid && s.status !== 'Cancelled').reduce((s, x) => s + Number(x.total || 0), 0);
-      const paid   = allPayments.filter((p) => String(p.customer_id) === cid).reduce((s, p) => s + Number(p.amount || 0), 0);
-      const ret    = allReturns.filter((r) => String(r.customer_id) === cid).reduce((s, r) => s + Number(r.total_returned || 0), 0);
-      return { ...c, balance: Math.max(0, taken - paid - ret) };
-    }).filter((c) => c.balance > 0.01).sort((a, b) => b.balance - a.balance);
+    const withBalance = customers
+      .map((c) => ({ ...c, balance: Math.max(0, Number(c.outstanding_balance || 0)) }))
+      .filter((c) => c.balance > 0.01)
+      .sort((a, b) => b.balance - a.balance);
     return { totalAR: withBalance.reduce((s, c) => s + c.balance, 0), debtors: withBalance };
-  }, [customers, sales, list]);
+  }, [customers]);
 
   const payableVendors = useMemo(() => {
     return vendors.map((v) => {

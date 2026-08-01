@@ -178,7 +178,8 @@ export default function POSPage() {
       subtotal,
       date_created: now,
       payment_method: paymentMethod,
-      payment_status: dueAmount > 0.01 ? 'Pending' : 'Paid',
+      // Match the Electron status ladder: Paid / Partial / Pending
+      payment_status: amountPaid >= total ? 'Paid' : amountPaid > 0 ? 'Partial' : 'Pending',
       status: 'Completed',
       notes: '',
       // Not a desktop schema column — tracked here so cancellation/AR reporting
@@ -191,6 +192,24 @@ export default function POSPage() {
       { entityType: 'sale', operation: 'create', payload: salePayload },
       ...saleItemsPayloads.map((p) => ({ entityType: 'sale_item', operation: 'create', payload: p })),
     ];
+
+    // Record the paid portion as a customer_payment — exactly what the Electron
+    // create-sale handler does. Without this the customer's ledger never shows
+    // what they actually paid (e.g. 100 of 500).
+    if (customerId && amountPaid > 0) {
+      events.push({
+        entityType: 'customer_payment',
+        operation: 'create',
+        payload: {
+          id: nextId(),
+          customer_id: Number(customerId),
+          amount: amountPaid,
+          notes: `Payment for Sale #${saleId}`,
+          sale_id: saleId,
+          date_added: now,
+        },
+      });
+    }
 
     for (const item of cart) {
       if (item.isCustom) continue;
@@ -217,10 +236,12 @@ export default function POSPage() {
 
     await pushBatch(events);
 
+    const customer = customerId ? customers.find((c) => String(c.id) === String(customerId)) : null;
     setReceiptSale({
+      saleId,
       invoiceNo: `INV-${String(saleId).slice(-6)}`,
       createdAt: now,
-      items: saleItemsPayloads.map((p) => ({ product: p.product_id, name: p.product_name, qty: p.quantity, lineTotal: p.price * p.quantity })),
+      items: saleItemsPayloads.map((p) => ({ product: p.product_id, name: p.product_name, qty: p.quantity, price: p.price, lineTotal: p.price * p.quantity })),
       subtotal,
       discount: discountAmount,
       tax: 0,
@@ -228,6 +249,8 @@ export default function POSPage() {
       paymentMethod,
       amountPaid,
       dueAmount,
+      customerName: customer?.name,
+      customerPhone: customer?.phone,
     });
     resetCart();
   };

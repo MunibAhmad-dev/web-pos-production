@@ -2,13 +2,15 @@ import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   X, Phone, Mail, MapPin, CreditCard, Receipt, Undo2, History,
-  MessageCircle, ChevronDown, ChevronRight, Plus,
+  MessageCircle, ChevronDown, ChevronRight, Plus, Printer,
   Trash2, Check, Clock, FileText, TrendingUp, Package, ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { getReceiptSettings, printInvoice, buildWhatsAppLink } from '../../utils/receipt';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -41,6 +43,7 @@ export default function CustomerDetailPage() {
   const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
   const { showToast } = useToast();
+  const { user } = useAuth();
   const [tab, setTab] = useState('invoices');
   const [salesPage, setSalesPage] = useState(1);
   const [expandedSaleId, setExpandedSaleId] = useState(null);
@@ -105,15 +108,47 @@ export default function CustomerDetailPage() {
         sale_id: saleId || null,
         date_added: new Date().toISOString(),
       });
+      // Keep the cached outstanding_balance in step — same as the Electron
+      // add-customer-payment handler. Dashboard AR reads this field.
+      await pushEntity('customer', 'update', {
+        ...customer,
+        outstanding_balance: Math.max(0, Number(customer.outstanding_balance || 0) - amt),
+        updated_at: new Date().toISOString(),
+      });
       showToast('Payment recorded');
       if (saleId) { setPayingSaleId(null); setPayAmount(''); setPayNotes(''); }
       else { setGenPayAmount(''); setGenPayNotes(''); }
     } catch { showToast('Failed to record payment', 'error'); }
   };
 
-  const deletePayment = async (paymentId) => {
-    await pushEntity('customer_payment', 'delete', { id: paymentId });
+  const deletePayment = async (payment) => {
+    await pushEntity('customer_payment', 'delete', { id: payment.id });
+    // Reverse the outstanding_balance decrement this payment applied
+    await pushEntity('customer', 'update', {
+      ...customer,
+      outstanding_balance: Number(customer.outstanding_balance || 0) + Number(payment.amount || 0),
+      updated_at: new Date().toISOString(),
+    });
     showToast('Payment removed');
+  };
+
+  // Print / WhatsApp an existing invoice — same builders as the POS receipt
+  const invoiceDataFor = (sale) => {
+    const settings = getReceiptSettings();
+    return {
+      saleId: sale.id,
+      items: (sale.items || []).map((i) => ({ name: i.product_name, qty: Number(i.quantity), price: Number(i.price) })),
+      subtotal: Number(sale.subtotal ?? sale.total),
+      discount: Number(sale.discount || 0),
+      total: Number(sale.total),
+      paymentMethod: sale.payment_method || 'cash',
+      settings: { ...settings, store_name: settings.store_name || user?.store_name || 'My Store' },
+      date: new Date(sale.date_created || Date.now()).toLocaleString('en-PK', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      customerName: customer?.name,
+      customerPhone: customer?.phone,
+      amountPaid: sale.amountPaid,
+      balance: sale.remaining > 0.5 ? sale.remaining : 0,
+    };
   };
 
   if (!customer) {
@@ -286,6 +321,23 @@ export default function CustomerDetailPage() {
 
                         {isExpanded && (
                           <div className="border-t border-border/40 bg-muted/10">
+                            {/* Invoice actions — print / WhatsApp, like the Electron profile */}
+                            <div className="flex items-center gap-2 px-5 pt-3">
+                              <button
+                                onClick={() => printInvoice(invoiceDataFor(sale))}
+                                className="h-7 px-3 text-[11px] font-semibold rounded-lg border border-border bg-background hover:bg-muted flex items-center gap-1.5 transition-colors"
+                              >
+                                <Printer size={11} /> Print / PDF
+                              </button>
+                              {customer.phone && (
+                                <button
+                                  onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(sale)); if (url) window.open(url, '_blank'); }}
+                                  className="h-7 px-3 text-[11px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 flex items-center gap-1.5 transition-colors"
+                                >
+                                  <MessageCircle size={11} /> WhatsApp
+                                </button>
+                              )}
+                            </div>
                             {/* Items */}
                             {sale.items?.length > 0 && (
                               <div className="px-5 pt-4 pb-3">
@@ -326,7 +378,7 @@ export default function CustomerDetailPage() {
                                       </div>
                                       <div className="flex items-center gap-2 shrink-0 ml-3">
                                         <span className="font-bold text-emerald-600 tabular-nums">{fmtPKR(p.amount)}</span>
-                                        <button onClick={() => deletePayment(p.id)} className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10"><Trash2 size={11} /></button>
+                                        <button onClick={() => deletePayment(p)} className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10"><Trash2 size={11} /></button>
                                       </div>
                                     </div>
                                   ))}
@@ -413,7 +465,7 @@ export default function CustomerDetailPage() {
                         <p className="text-xs text-muted-foreground text-center">
                           {p.sale_id ? <span className="bg-muted px-2 py-0.5 rounded-md font-mono text-[10px]">#{p.sale_id}</span> : <span className="text-muted-foreground/50">General</span>}
                         </p>
-                        <button onClick={() => deletePayment(p.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100">
+                        <button onClick={() => deletePayment(p)} className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100">
                           <Trash2 size={12} />
                         </button>
                       </div>
