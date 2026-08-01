@@ -340,6 +340,21 @@ export default function Dashboard() {
     sales.filter((s) => s.status === 'Completed').slice().sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0)).slice(0, 10),
   [sales]);
 
+  // Today's revenue computed locally from synced sales. The cloud endpoint
+  // compares date_created as a STRING against an ISO timestamp, but Electron
+  // stores dates as "YYYY-MM-DD HH:MM:SS" (space < 'T'), so every desktop sale
+  // is excluded server-side and the cloud figure reads 0. Local calculation is
+  // also timezone-correct (local midnight, not server midnight).
+  const todayRevenue = useMemo(() => {
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    return sales.reduce((sum, s) => {
+      if (s.status === 'Cancelled' || !s.date_created) return sum;
+      const d = new Date(String(s.date_created).replace(' ', 'T'));
+      return d >= midnight ? sum + Number(s.total || 0) : sum;
+    }, 0);
+  }, [sales]);
+
   const accountsSummary = useMemo(() => {
     const withBalance = accounts.map((a) => {
       const delta = accountTxns.filter((t) => String(t.account_id) === String(a.id))
@@ -404,7 +419,7 @@ export default function Dashboard() {
         <KpiCard icon={DollarSign}    label="Period Revenue"    value={fmtPKR(pnl.totals.revenue)}              sublabel={periodLabel}                                    color="text-blue-600 bg-blue-500/10"         sparkData={revSparkline}  sparkKey="value" sparkColor="#3b82f6" />
         <KpiCard icon={TrendingUp}    label="Net Profit"        value={fmtPKR(pnl.totals.net)}                  sublabel={periodLabel}                                    color="text-emerald-600 bg-emerald-500/10"   sparkData={netSparkline}  sparkKey="value" sparkColor="#10b981" />
         <KpiCard icon={Activity}      label="Transactions"      value={analytics?.totals?.sales ?? 0}           sublabel={periodLabel}                                    color="text-purple-600 bg-purple-500/10" />
-        <KpiCard icon={Zap}           label="Today's Revenue"   value={fmtPKR(overview?.today_revenue)}         sublabel="vs this month"                                  color="text-amber-600 bg-amber-500/10" />
+        <KpiCard icon={Zap}           label="Today's Revenue"   value={fmtPKR(todayRevenue)}                    sublabel="vs this month"                                  color="text-amber-600 bg-amber-500/10" />
         <KpiCard icon={Boxes}         label="Stock Value"       value={fmtPKR(stockStats.stockValue)}           sublabel="Total inventory at cost"                        color="text-blue-600 bg-blue-500/10" />
         <KpiCard icon={PiggyBank}     label="Retail Stock"      value={fmtPKR(stockStats.retailStockValue)}     sublabel={`Profit: ${fmtPKR(stockStats.retailProfit)}`}   color="text-emerald-600 bg-emerald-500/10" />
         <KpiCard icon={Wallet}        label="Customer Credit"   value={fmtPKR(customerAR.totalAR)}              sublabel={`${customerAR.debtors.length} debtors`}         color="text-purple-600 bg-purple-500/10" />
