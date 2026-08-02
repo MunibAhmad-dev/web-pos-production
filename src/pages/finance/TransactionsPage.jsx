@@ -5,8 +5,9 @@ import { motion } from 'framer-motion';
 import {
   ReceiptText, TrendingUp, Tag, AlertCircle, Search, X, ChevronDown,
   Printer, Monitor, Download, Undo2, MoreVertical, Eye, Ban, CheckCircle2,
-  RefreshCw, User, MessageCircle,
+  RefreshCw, User, MessageCircle, Pencil,
 } from 'lucide-react';
+import EditSaleModal from '../../components/sales/EditSaleModal';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -54,6 +55,7 @@ export default function TransactionsPage() {
   const [statusMenuId, setStatusMenuId] = useState(null);
   const [actionMenuId, setActionMenuId] = useState(null);
   const [detailSale, setDetailSale] = useState(null);
+  const [editSale, setEditSale] = useState(null);
   const [returnSale, setReturnSale] = useState(null);
   const [returnQty, setReturnQty] = useState({});
   const [returnReason, setReturnReason] = useState('');
@@ -113,7 +115,7 @@ export default function TransactionsPage() {
     const now = new Date();
     let start = null, end = null;
     if (period === 'today') { start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); }
-    else if (period === 'weekly') { start = new Date(now.getTime() - 7 * 86400000); }
+    else if (period === 'weekly') { start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6); }
     else if (period === 'monthly') { start = new Date(now.getFullYear(), now.getMonth(), 1); }
     else if (period === 'custom') {
       if (from) start = new Date(from);
@@ -261,6 +263,69 @@ export default function TransactionsPage() {
     showToast('Generating PDF…');
     try { await downloadInvoicePdf(invoiceDataFor(r)); }
     catch (err) { showToast(err?.message || 'PDF failed', 'error'); }
+  };
+
+  // ── Edit sale — same event flow as Sales History's editor ───────────────────
+  const cleanSalePayload = (r) => {
+    const clean = { ...r };
+    ['items', 'customer', 'paid', 'returned', 'due', 'payLabel', 'invoiceNo', 'itemsSummary'].forEach((f) => delete clean[f]);
+    return clean;
+  };
+
+  const handleSaveEdit = async ({ lines, subtotal, discount, total }) => {
+    const r = editSale;
+    const now = new Date().toISOString();
+    const originalItems = r.items || [];
+    const originalById = new Map(originalItems.map((i) => [i.id, i]));
+    const keptIds = new Set(lines.filter((l) => l.saleItemId != null).map((l) => l.saleItemId));
+
+    const events = [{
+      entityType: 'sale', operation: 'update',
+      payload: { ...cleanSalePayload(r), subtotal, discount, total, edited_at: now },
+    }];
+
+    // Stock deltas: removed/reduced lines restock, new/increased lines destock.
+    const stockDelta = new Map();
+    for (const orig of originalItems) {
+      if (orig.product_id == null) continue;
+      if (!keptIds.has(orig.id)) {
+        stockDelta.set(orig.product_id, (stockDelta.get(orig.product_id) || 0) + Number(orig.quantity || 0));
+        events.push({ entityType: 'sale_item', operation: 'delete', payload: { id: orig.id } });
+      }
+    }
+    for (const line of lines) {
+      if (line.product_id == null) continue;
+      const original = line.saleItemId != null ? originalById.get(line.saleItemId) : null;
+      const oldQty = original ? Number(original.quantity || 0) : 0;
+      const delta = oldQty - line.qty;
+      if (delta !== 0) stockDelta.set(line.product_id, (stockDelta.get(line.product_id) || 0) + delta);
+      events.push({
+        entityType: 'sale_item',
+        operation: line.saleItemId != null ? 'update' : 'create',
+        payload: {
+          id: line.saleItemId ?? undefined,
+          sale_id: r.id,
+          product_id: line.product_id,
+          product_name: line.name,
+          quantity: line.qty,
+          price: line.price,
+          purchase_price: line.purchase_price,
+          is_custom: line.isCustom,
+          created_at: original?.created_at || now,
+        },
+      });
+    }
+    for (const [productId, delta] of stockDelta.entries()) {
+      if (delta === 0) continue;
+      const product = products.find((p) => String(p.id) === String(productId));
+      if (!product) continue;
+      events.push({
+        entityType: 'product', operation: 'update',
+        payload: { ...product, stock: Math.max(0, Number(product.stock || 0) + delta), updated_at: now },
+      });
+    }
+    await pushBatch(events);
+    showToast('Sale updated — items and stock have been adjusted');
   };
 
   return (
@@ -412,6 +477,10 @@ export default function TransactionsPage() {
                                 className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium">
                                 <Eye size={12} className="text-violet-500" /> View Details
                               </button>
+                              <button onClick={() => { setEditSale(r); setActionMenuId(null); }} disabled={r.status === 'Cancelled'}
+                                className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40 disabled:opacity-40">
+                                <Pencil size={12} className="text-blue-500" /> Edit Sale
+                              </button>
                               {r.customer?.phone && (
                                 <button onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(r)); if (url) window.open(url, '_blank'); setActionMenuId(null); }}
                                   className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40">
@@ -546,6 +615,16 @@ export default function TransactionsPage() {
         </div>,
         document.body
       )}
+
+      {/* ── Edit sale modal ── */}
+      <EditSaleModal
+        open={Boolean(editSale)}
+        onClose={() => setEditSale(null)}
+        sale={editSale}
+        items={editSale?.items || []}
+        products={products}
+        onSave={handleSaveEdit}
+      />
 
       {/* ── Return modal ── */}
       {returnSale && createPortal(

@@ -40,7 +40,7 @@ function rangeForPeriod(period, from, to) {
   const end = new Date(now);
   let start = new Date(now);
   if      (period === 'today')  start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  else if (period === 'week')   start.setDate(start.getDate() - 7);
+  else if (period === 'week')   start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
   else if (period === 'month')  start = new Date(now.getFullYear(), now.getMonth(), 1);
   else if (period === 'year')   start = new Date(now.getFullYear(), 0, 1);
   else if (period === 'custom' && from && to)
@@ -62,7 +62,11 @@ function gramCorrectedCost(qty, purchasePrice, unitType, retailPrice) {
 
 function buildPnl(analyticsData, saleItems, sales, productById = {}) {
   const dayOf = {};
-  for (const s of sales) if (s.date_created) dayOf[String(s.id)] = String(s.date_created).slice(0, 10);
+  // Cancelled sales are excluded from COGS too — matches the Electron dashboard,
+  // whose COGS join filters status IN ('completed','paid','partial').
+  for (const s of sales) {
+    if (s.date_created && s.status !== 'Cancelled') dayOf[String(s.id)] = String(s.date_created).slice(0, 10);
+  }
   const cogsByDay = {};
   for (const item of saleItems) {
     const day = dayOf[String(item.sale_id)];
@@ -315,6 +319,7 @@ export default function Dashboard() {
   // Local calculation excludes cancelled and uses local-timezone day keys,
   // matching the Electron dashboard exactly.
   const expensesList = list('expense');
+  const saleReturnsAll = list('sale_return');
   const localAnalytics = useMemo(() => {
     const range = rangeForPeriod(period, from, to);
     const start = new Date(range.date_from);
@@ -330,6 +335,17 @@ export default function Dashboard() {
       salesByDayMap[day] = (salesByDayMap[day] || 0) + Number(s.total || 0);
       count++;
       revenue += Number(s.total || 0);
+    }
+    // Deduct sale returns from revenue — refunded money isn't revenue.
+    // Mirrors the Electron dashboard's returns deduction.
+    for (const r of saleReturnsAll) {
+      if (!r.date_created) continue;
+      const d = new Date(String(r.date_created).replace(' ', 'T'));
+      if (isNaN(d) || d < start || d > end) continue;
+      const amt = Number(r.total_returned || 0);
+      const day = dayKey(d);
+      salesByDayMap[day] = (salesByDayMap[day] || 0) - amt;
+      revenue -= amt;
     }
     const expByDayMap = {};
     let expTotal = 0;
@@ -347,7 +363,7 @@ export default function Dashboard() {
       expensesByDay: Object.entries(expByDayMap).map(([day, amount]) => ({ day, amount })),
       totals: { sales: count, revenue, expenses: expTotal },
     };
-  }, [sales, expensesList, period, from, to]);
+  }, [sales, saleReturnsAll, expensesList, period, from, to]);
 
   const pnl = useMemo(() => buildPnl(localAnalytics, saleItems, sales, productById), [localAnalytics, saleItems, sales, productById]);
 
@@ -388,12 +404,19 @@ export default function Dashboard() {
   const todayRevenue = useMemo(() => {
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
-    return sales.reduce((sum, s) => {
+    const gross = sales.reduce((sum, s) => {
       if (s.status === 'Cancelled' || !s.date_created) return sum;
       const d = new Date(String(s.date_created).replace(' ', 'T'));
       return d >= midnight ? sum + Number(s.total || 0) : sum;
     }, 0);
-  }, [sales]);
+    // Net of today's returns — same as the Electron dashboard
+    const returnedToday = saleReturnsAll.reduce((sum, r) => {
+      if (!r.date_created) return sum;
+      const d = new Date(String(r.date_created).replace(' ', 'T'));
+      return d >= midnight ? sum + Number(r.total_returned || 0) : sum;
+    }, 0);
+    return gross - returnedToday;
+  }, [sales, saleReturnsAll]);
 
   const accountsSummary = useMemo(() => {
     const withBalance = accounts.map((a) => {
