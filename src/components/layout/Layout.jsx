@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -24,6 +24,11 @@ export default function Layout() {
   });
   const location = useLocation();
   const title = titleMap[location.pathname] || 'Dashboard';
+
+  // Close mobile sidebar whenever the route changes
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   return (
     <div className="flex min-h-screen overflow-hidden bg-background">

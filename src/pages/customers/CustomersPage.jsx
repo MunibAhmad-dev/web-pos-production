@@ -480,24 +480,42 @@ export default function CustomersPage() {
                           const s = row.sale;
                           const items = getSaleItems(s.id);
                           const isPending = row.remaining > 0.5;
+                          const amtPaid = Number(s.total || 0) - row.remaining;
+                          const paidPct = Number(s.total) > 0 ? Math.min(100, Math.round((amtPaid / Number(s.total)) * 100)) : 0;
+                          const invNo = `INV-${String(s.id).slice(-6).toUpperCase()}`;
                           return (
                             <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden">
-                              <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20">
-                                <div className="flex items-center gap-2">
-                                  <Receipt size={13} className="text-blue-500 shrink-0" />
-                                  <div>
-                                    <p className="text-xs font-bold">Sale #{s.id}</p>
-                                    <p className="text-[10px] text-muted-foreground">{fmtDate(s.date_created)}</p>
+                              <div className="px-3 py-2.5 bg-muted/20">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <Receipt size={13} className="text-blue-500 shrink-0" />
+                                    <div>
+                                      <p className="text-xs font-bold">{invNo}</p>
+                                      <p className="text-[10px] text-muted-foreground">{fmtDate(s.date_created)}</p>
+                                    </div>
                                   </div>
+                                  <span className={cn('text-[9px] font-bold px-2 py-0.5 rounded-full', isPending ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400')}>
+                                    {isPending ? 'Partial' : 'Paid'}
+                                  </span>
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-xs font-black font-mono">{fmtPKR(s.total)}</p>
-                                  {isPending && <p className="text-[10px] text-amber-600 font-bold">Due: {fmtPKR(row.remaining)}</p>}
-                                  {!isPending && <p className="text-[10px] text-emerald-600 font-bold">Settled</p>}
+                                {/* Total / Paid / Remaining */}
+                                <div className="grid grid-cols-3 gap-1 mb-1.5 text-[10px]">
+                                  <div><p className="text-muted-foreground">Total</p><p className="font-bold tabular-nums">{fmtPKR(s.total)}</p></div>
+                                  <div><p className="text-muted-foreground">Paid</p><p className="font-bold text-emerald-600 tabular-nums">{fmtPKR(amtPaid)}</p></div>
+                                  <div><p className="text-muted-foreground">Remaining</p><p className={cn('font-bold tabular-nums', isPending ? 'text-rose-600' : 'text-muted-foreground')}>{fmtPKR(Math.max(0, row.remaining))}</p></div>
                                 </div>
+                                {/* Progress bar */}
+                                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className={cn('h-full rounded-full', isPending && paidPct > 0 ? 'bg-amber-500' : isPending ? 'bg-rose-400' : 'bg-emerald-500')}
+                                    style={{ width: `${paidPct}%` }}
+                                  />
+                                </div>
+                                <p className="text-[9px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                               </div>
                               {items.length > 0 && (
                                 <div className="px-3 pb-2.5 pt-1.5 space-y-1 border-t border-border/20 bg-card">
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Items</p>
                                   {items.map((si) => (
                                     <div key={si.id} className="flex justify-between text-[11px]">
                                       <span className="text-muted-foreground">{si.product_name || si.name} × {si.quantity}</span>
@@ -507,7 +525,7 @@ export default function CustomersPage() {
                                   {isPending && (
                                     <button
                                       onClick={() => { setPayTargetSaleId(s.id); setPayAmount(String(Math.round(row.remaining))); }}
-                                      className="mt-1 w-full h-7 rounded-lg text-[11px] font-semibold border border-primary/30 text-primary hover:bg-primary/8 transition-colors"
+                                      className="mt-1.5 w-full h-7 rounded-lg text-[11px] font-semibold border border-primary/30 text-primary hover:bg-primary/8 transition-colors"
                                     >
                                       Pay {fmtPKR(row.remaining)}
                                     </button>

@@ -201,7 +201,7 @@ export default function VendorDetailPage() {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-[calc(100vh-4rem)]">
+    <div className="flex flex-col">
       {/* Back bar */}
       <div className="flex items-center gap-2 px-1 pb-4">
         <button onClick={() => navigate('/vendors')}
@@ -212,10 +212,10 @@ export default function VendorDetailPage() {
         <span className="text-sm font-semibold">{vendor.name}</span>
       </div>
 
-      <div className="flex flex-1 min-h-0 gap-0 border border-border rounded-2xl overflow-hidden bg-card shadow-sm">
+      <div className="flex flex-col lg:flex-row lg:flex-1 lg:min-h-0 border border-border rounded-2xl overflow-hidden bg-card shadow-sm">
 
         {/* ── LEFT SIDEBAR ── */}
-        <div className="w-[260px] shrink-0 border-r border-border flex flex-col overflow-y-auto">
+        <div className="border-b border-border lg:border-b-0 lg:w-[260px] lg:shrink-0 lg:border-r lg:flex lg:flex-col lg:overflow-y-auto">
 
           {/* Profile */}
           <div className="p-6 text-center border-b border-border">
@@ -310,8 +310,8 @@ export default function VendorDetailPage() {
         </div>
 
         {/* ── MAIN CONTENT ── */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col lg:flex-1 lg:min-w-0 lg:overflow-hidden">
+          <Tabs value={tab} onValueChange={setTab} className="flex flex-col lg:flex-1 lg:overflow-hidden">
             <div className="border-b border-border px-6 pt-4 pb-0 shrink-0">
               <TabsList className="h-9 mb-0">
                 {[
@@ -330,7 +330,7 @@ export default function VendorDetailPage() {
             </div>
 
             {/* PURCHASES */}
-            <TabsContent value="purchases" className="flex-1 overflow-y-auto m-0 p-5 space-y-2">
+            <TabsContent value="purchases" className="lg:flex-1 lg:overflow-y-auto m-0 p-5 space-y-2">
               {purchases.length === 0 ? <EmptyState icon={<ShoppingCart size={36} />} text="No purchase orders yet" /> : (
                 <>
                   {/* Status filter pills */}
@@ -352,18 +352,34 @@ export default function VendorDetailPage() {
                     const isExpanded = expandedPoId === po.id;
                     return (
                       <div key={po.id} className={cn('border rounded-xl overflow-hidden transition-all duration-150', isExpanded ? 'border-primary/40 shadow-sm' : 'border-border/60 hover:border-border')}>
-                        <button className="w-full grid grid-cols-[24px_1fr_96px_100px_100px_100px_72px] gap-3 items-center px-3 py-3.5 hover:bg-muted/20 transition-colors text-left"
+                        <button className="w-full px-3 py-3.5 hover:bg-muted/20 transition-colors text-left"
                           onClick={() => setExpandedPoId(isExpanded ? null : po.id)}>
-                          <ChevronRight size={14} className={cn('text-muted-foreground/50 transition-transform shrink-0', isExpanded && 'rotate-90 text-primary')} />
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold truncate font-mono">{poNumber(po)}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(po.date_created)}{po.items?.length > 0 && <span className="ml-1.5 text-muted-foreground/60">· {po.items.length} item{po.items.length !== 1 ? 's' : ''}</span>}</p>
+                          {/* Mobile: simple two-line card */}
+                          <div className="flex items-center gap-2 md:hidden">
+                            <ChevronRight size={14} className={cn('text-muted-foreground/50 transition-transform shrink-0', isExpanded && 'rotate-90 text-primary')} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold truncate font-mono">{poNumber(po)}</p>
+                              <p className="text-[10px] text-muted-foreground">{fmtDate(po.date_created)}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs font-bold tabular-nums">{fmtPKR(po.total)}</p>
+                              {po.remaining > 0.5 && <p className="text-[10px] text-rose-600 tabular-nums">{fmtPKR(po.remaining)} due</p>}
+                            </div>
+                            <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0', st.cls)}>{st.label}</span>
                           </div>
-                          <p className="text-xs font-bold text-right tabular-nums">{fmtPKR(po.total)}</p>
-                          <p className="text-xs font-semibold text-right text-emerald-600 tabular-nums">{fmtPKR(po.amountPaid)}</p>
-                          <p className={cn('text-xs font-bold text-right tabular-nums', po.remaining > 0.5 ? 'text-rose-600' : 'text-muted-foreground')}>{fmtPKR(Math.max(0, po.remaining))}</p>
-                          <p className="text-[10px] text-center text-muted-foreground font-medium capitalize">{po.payment_method === 'credit' ? 'Credit' : po.payment_method === 'online' ? 'Online' : 'Cash'}</p>
-                          <div className="flex justify-center"><span className={cn('text-[10px] font-bold px-2.5 py-0.5 rounded-full', st.cls)}>{st.label}</span></div>
+                          {/* Desktop: full grid */}
+                          <div className="hidden md:grid grid-cols-[24px_1fr_96px_100px_100px_100px_72px] gap-3 items-center">
+                            <ChevronRight size={14} className={cn('text-muted-foreground/50 transition-transform shrink-0', isExpanded && 'rotate-90 text-primary')} />
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold truncate font-mono">{poNumber(po)}</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(po.date_created)}{po.items?.length > 0 && <span className="ml-1.5 text-muted-foreground/60">· {po.items.length} item{po.items.length !== 1 ? 's' : ''}</span>}</p>
+                            </div>
+                            <p className="text-xs font-bold text-right tabular-nums">{fmtPKR(po.total)}</p>
+                            <p className="text-xs font-semibold text-right text-emerald-600 tabular-nums">{fmtPKR(po.amountPaid)}</p>
+                            <p className={cn('text-xs font-bold text-right tabular-nums', po.remaining > 0.5 ? 'text-rose-600' : 'text-muted-foreground')}>{fmtPKR(Math.max(0, po.remaining))}</p>
+                            <p className="text-[10px] text-center text-muted-foreground font-medium capitalize">{po.payment_method === 'credit' ? 'Credit' : po.payment_method === 'online' ? 'Online' : 'Cash'}</p>
+                            <div className="flex justify-center"><span className={cn('text-[10px] font-bold px-2.5 py-0.5 rounded-full', st.cls)}>{st.label}</span></div>
+                          </div>
                         </button>
 
                         {isExpanded && (
@@ -502,7 +518,7 @@ export default function VendorDetailPage() {
             </TabsContent>
 
             {/* PRODUCTS */}
-            <TabsContent value="products" className="flex-1 overflow-y-auto m-0 p-5">
+            <TabsContent value="products" className="lg:flex-1 lg:overflow-y-auto m-0 p-5">
               {products.length === 0 ? <EmptyState icon={<Package size={36} />} text="No products from this vendor" /> : (
                 <div>
                   {/* 3-stat banner */}
@@ -552,7 +568,7 @@ export default function VendorDetailPage() {
             </TabsContent>
 
             {/* PAYMENTS */}
-            <TabsContent value="payments" className="flex-1 overflow-y-auto m-0 p-5">
+            <TabsContent value="payments" className="lg:flex-1 lg:overflow-y-auto m-0 p-5">
               {payments.length === 0 ? <EmptyState icon={<CreditCard size={36} />} text="No payments recorded yet" /> : (
                 <div>
                   <div className="grid grid-cols-[1fr_130px_120px_40px] gap-3 px-3 pb-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b border-border">
@@ -584,7 +600,7 @@ export default function VendorDetailPage() {
             </TabsContent>
 
             {/* RETURNS */}
-            <TabsContent value="returns" className="flex-1 overflow-y-auto m-0 p-5">
+            <TabsContent value="returns" className="lg:flex-1 lg:overflow-y-auto m-0 p-5">
               {returns.length === 0 ? <EmptyState icon={<Undo2 size={36} />} text="No returns recorded" /> : (
                 <div className="space-y-2">
                   {returns.map((r) => (
@@ -611,7 +627,7 @@ export default function VendorDetailPage() {
             </TabsContent>
 
             {/* ACTIVITY */}
-            <TabsContent value="activity" className="flex-1 overflow-y-auto m-0 p-5">
+            <TabsContent value="activity" className="lg:flex-1 lg:overflow-y-auto m-0 p-5">
               {activity.length === 0 ? <EmptyState icon={<History size={36} />} text="No activity recorded" /> : (
                 <div className="relative pl-4">
                   <div className="absolute left-[18px] top-3 bottom-3 w-px bg-border/50" />
