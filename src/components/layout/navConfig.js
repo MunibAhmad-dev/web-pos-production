@@ -17,6 +17,7 @@ import {
   BarChart3,
   TrendingUp,
   Settings,
+  Scale,
 } from 'lucide-react';
 
 export const navGroups = [
@@ -57,6 +58,7 @@ export const navGroups = [
       { to: '/daily-close', label: 'Daily Close', icon: CalendarCheck },
       { to: '/payment-ledger', label: 'Payment Ledger', icon: CreditCard },
       { to: '/transactions', label: 'Transactions', icon: Receipt },
+      { to: '/loans', label: 'Receivables & Payables', icon: Scale },
     ],
   },
   {

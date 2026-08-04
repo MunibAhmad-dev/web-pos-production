@@ -33,6 +33,7 @@ import CashRegisterPage from './pages/finance/CashRegisterPage';
 import DailyClosePage from './pages/finance/DailyClosePage';
 import PaymentLedgerPage from './pages/finance/PaymentLedgerPage';
 import TransactionsPage from './pages/finance/TransactionsPage';
+import LoansPage from './pages/finance/LoansPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import BalanceSheetPage from './pages/reports/BalanceSheetPage';
 import SettingsPage from './pages/settings/SettingsPage';
@@ -130,6 +131,7 @@ export default function App() {
                   <Route path="/daily-close" element={<DailyClosePage />} />
                   <Route path="/payment-ledger" element={<PaymentLedgerPage />} />
                   <Route path="/transactions" element={<TransactionsPage />} />
+                  <Route path="/loans" element={<LoansPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/balance-sheet" element={<BalanceSheetPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
