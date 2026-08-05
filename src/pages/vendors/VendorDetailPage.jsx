@@ -4,7 +4,7 @@ import {
   Phone, Mail, MapPin, CreditCard, ShoppingCart, Undo2, History,
   MessageCircle, ChevronDown, ChevronRight, Plus, Printer, Download,
   Trash2, Check, Clock, FileText, TrendingUp, Package, ArrowLeft, X,
-  Boxes, DollarSign,
+  Boxes, DollarSign, CheckCircle2, Eye, Tag, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -17,6 +17,7 @@ import { getReceiptSettings, printInvoice, downloadInvoicePdf } from '../../util
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' }) : '—';
+const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
 const GRADIENTS = ['from-indigo-500 to-blue-500', 'from-violet-500 to-purple-500', 'from-orange-500 to-amber-500', 'from-teal-500 to-emerald-500', 'from-rose-500 to-pink-500'];
 const getGrad = (name = '') => GRADIENTS[name.charCodeAt(0) % GRADIENTS.length];
@@ -60,10 +61,8 @@ export default function VendorDetailPage() {
   const [tab, setTab] = useState('purchases');
   const [posPage, setPosPage] = useState(1);
   const [poFilter, setPoFilter] = useState('all');
-  const [expandedPoId, setExpandedPoId] = useState(null);
-  const [payingPoId, setPayingPoId] = useState(null);
-  const [payAmount, setPayAmount] = useState('');
-  const [payNotes, setPayNotes] = useState('');
+  const [payAmounts, setPayAmounts] = useState({});
+  const [payNotesByPO, setPayNotesByPO] = useState({});
   const [genPayAmount, setGenPayAmount] = useState('');
   const [genPayNotes, setGenPayNotes] = useState('');
 
@@ -116,20 +115,40 @@ export default function VendorDetailPage() {
     return { purchases: enhancedPOs, payments: vendPayments, returns: vendReturns, products: vendorProducts, activity, totalPurchased, totalPaid, totalReturned, balance, stockCostValue, totalStock };
   }, [vendor, allPurchases, allPurchaseItems, allPayments, allReturns, allProducts]);
 
+  const timeline = useMemo(() => {
+    if (!data) return [];
+    const filteredPOs = data.purchases.filter((p) => {
+      if (poFilter === 'all') return true;
+      if (poFilter === 'cancelled') return p.status === 'Cancelled';
+      if (p.status === 'Cancelled') return false;
+      if (poFilter === 'settled') return p.remaining <= 0.5;
+      if (poFilter === 'partial') return p.remaining > 0.5 && p.amountPaid > 0;
+      if (poFilter === 'unpaid') return p.remaining > 0.5 && p.amountPaid <= 0;
+      return true;
+    });
+    const pagedPOs = filteredPOs.slice(0, posPage * POS_PER_PAGE);
+    return [
+      ...pagedPOs.map((p) => ({ ...p, _type: 'purchase', _sortDate: new Date(p.date_created || 0).getTime() })),
+      ...data.payments.map((p) => ({ ...p, _type: 'payment', _sortDate: new Date(p.date_added || 0).getTime() })),
+    ].sort((a, b) => b._sortDate - a._sortDate);
+  }, [data, poFilter, posPage]);
+
   const recordPayment = async (purchaseId) => {
-    const amt = Number(purchaseId ? payAmount : genPayAmount);
+    const amt = Number(purchaseId ? payAmounts[purchaseId] : genPayAmount);
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
     try {
       await pushEntity('vendor_payment', 'create', {
         vendor_id: vendor.id,
         amount: amt,
-        notes: (purchaseId ? payNotes : genPayNotes) || '',
+        notes: (purchaseId ? (payNotesByPO[purchaseId] || '') : genPayNotes) || '',
         purchase_id: purchaseId || null,
         date_added: new Date().toISOString(),
       });
       showToast('Payment recorded');
-      if (purchaseId) { setPayingPoId(null); setPayAmount(''); setPayNotes(''); }
-      else { setGenPayAmount(''); setGenPayNotes(''); }
+      if (purchaseId) {
+        setPayAmounts((prev) => { const n = { ...prev }; delete n[purchaseId]; return n; });
+        setPayNotesByPO((prev) => { const n = { ...prev }; delete n[purchaseId]; return n; });
+      } else { setGenPayAmount(''); setGenPayNotes(''); }
     } catch { showToast('Failed to record payment', 'error'); }
   };
 
@@ -158,8 +177,7 @@ export default function VendorDetailPage() {
     if (poFilter === 'unpaid') return p.remaining > 0.5 && p.amountPaid <= 0;
     return true;
   });
-  const visiblePOs = filteredPOs.slice(0, posPage * POS_PER_PAGE);
-  const hasMorePOs = visiblePOs.length < filteredPOs.length;
+  const hasMorePOs = filteredPOs.length > posPage * POS_PER_PAGE;
   const settledCount = purchases.filter((p) => p.remaining <= 0.5 && p.status !== 'Cancelled').length;
   const pendingCount = purchases.filter((p) => p.remaining > 0.5 && p.status !== 'Cancelled').length;
 
@@ -315,11 +333,11 @@ export default function VendorDetailPage() {
             <div className="border-b border-border px-6 pt-4 pb-0 shrink-0">
               <TabsList className="h-9 mb-0">
                 {[
-                  ['purchases', ShoppingCart, 'Purchases', purchases.length],
-                  ['products',  Package,      'Products',  products.length],
-                  ['payments',  CreditCard,   'Payments',  payments.length],
-                  ['returns',   Undo2,        'Returns',   returns.length],
-                  ['activity',  History,      'Activity',  0],
+                  ['purchases', ShoppingCart, 'Transactions', purchases.length],
+                  ['products',  Package,      'Products',     products.length],
+                  ['payments',  CreditCard,   'Ledger',       payments.length],
+                  ['returns',   Undo2,        'Returns',      returns.length],
+                  ['activity',  History,      'Activity Log', 0],
                 ].map(([val, Icon, lbl, cnt]) => (
                   <TabsTrigger key={val} value={val} className="gap-1.5 text-xs">
                     <Icon size={12} /> {lbl}
@@ -329,191 +347,161 @@ export default function VendorDetailPage() {
               </TabsList>
             </div>
 
-            {/* PURCHASES */}
-            <TabsContent value="purchases" className="lg:flex-1 lg:overflow-y-auto m-0 p-5 space-y-2">
+            {/* TRANSACTIONS — mixed timeline of POs + payments */}
+            <TabsContent value="purchases" className="lg:flex-1 lg:overflow-y-auto m-0 p-4">
               {purchases.length === 0 ? <EmptyState icon={<ShoppingCart size={36} />} text="No purchase orders yet" /> : (
-                <>
+                <div className="space-y-3">
                   {/* Status filter pills */}
-                  <div className="flex gap-1.5 pb-2 flex-wrap">
+                  <div className="flex gap-1.5 pb-1 overflow-x-auto scrollbar-none" style={{ scrollbarWidth: 'none' }}>
                     {[['all', 'All'], ['unpaid', 'Unpaid'], ['partial', 'Partial'], ['settled', 'Settled'], ['cancelled', 'Cancelled']].map(([val, lbl]) => (
                       <button key={val} onClick={() => { setPoFilter(val); setPosPage(1); }}
-                        className={cn('px-3 py-1.5 text-xs font-semibold rounded-full transition-colors',
+                        className={cn('px-3 py-1.5 text-xs font-semibold rounded-full transition-colors shrink-0',
                           poFilter === val ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/60 text-muted-foreground hover:text-foreground')}>
                         {lbl}
                       </button>
                     ))}
-                    <span className="ml-auto text-xs text-muted-foreground self-center">{filteredPOs.length} order{filteredPOs.length !== 1 ? 's' : ''}</span>
+                    <span className="ml-auto text-xs text-muted-foreground self-center shrink-0 pl-2">{filteredPOs.length} order{filteredPOs.length !== 1 ? 's' : ''}</span>
                   </div>
-                  <div className="hidden md:grid grid-cols-[24px_1fr_96px_100px_100px_100px_72px] gap-3 px-3 pb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b border-border">
-                    <span /><span>PO Number</span><span className="text-right">Total</span><span className="text-right">Paid</span><span className="text-right">Due</span><span className="text-center">Method</span><span className="text-center">Status</span>
-                  </div>
-                  {visiblePOs.map((po) => {
+
+                  {timeline.map((item) => {
+                    if (item._type === 'payment') {
+                      return (
+                        <div key={`pay-${item.id}`} className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-4 py-3">
+                          <div className="w-9 h-9 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                            <CheckCircle2 size={18} className="text-emerald-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-black tracking-wide text-emerald-700 dark:text-emerald-400">PAYMENT MADE</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDateTime(item.date_added)}</p>
+                            {item.notes && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{item.notes}</p>}
+                          </div>
+                          <p className="text-sm font-black text-emerald-600 tabular-nums shrink-0">{fmtPKR(item.amount)}</p>
+                          <button onClick={() => deletePayment(item.id)} className="ml-1 text-muted-foreground/30 hover:text-destructive transition-colors shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // PO card
+                    const po = item;
                     const st = poStatus(po);
-                    const isExpanded = expandedPoId === po.id;
+                    const paidPct = Math.min(100, Math.round(Number(po.total) > 0 ? (po.amountPaid / Number(po.total)) * 100 : 0));
                     return (
-                      <div key={po.id} className={cn('border rounded-xl overflow-hidden transition-all duration-150', isExpanded ? 'border-primary/40 shadow-sm' : 'border-border/60 hover:border-border')}>
-                        <button className="w-full px-3 py-3.5 hover:bg-muted/20 transition-colors text-left"
-                          onClick={() => setExpandedPoId(isExpanded ? null : po.id)}>
-                          {/* Mobile: simple two-line card */}
-                          <div className="flex items-center gap-2 md:hidden">
-                            <ChevronRight size={14} className={cn('text-muted-foreground/50 transition-transform shrink-0', isExpanded && 'rotate-90 text-primary')} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold truncate font-mono">{poNumber(po)}</p>
-                              <p className="text-[10px] text-muted-foreground">{fmtDate(po.date_created)}</p>
+                      <div key={`po-${po.id}`} className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
+                        {/* Gradient top accent */}
+                        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-violet-500" />
+
+                        {/* Header */}
+                        <div className="flex items-start justify-between px-4 pt-3 pb-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black font-mono">{poNumber(po)}</span>
+                              <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', st.cls)}>{st.label}</span>
                             </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-xs font-bold tabular-nums">{fmtPKR(po.total)}</p>
-                              {po.remaining > 0.5 && <p className="text-[10px] text-rose-600 tabular-nums">{fmtPKR(po.remaining)} due</p>}
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
+                              <CalendarDays size={11} />
+                              {fmtDate(po.date_created)}
                             </div>
-                            <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0', st.cls)}>{st.label}</span>
                           </div>
-                          {/* Desktop: full grid */}
-                          <div className="hidden md:grid grid-cols-[24px_1fr_96px_100px_100px_100px_72px] gap-3 items-center">
-                            <ChevronRight size={14} className={cn('text-muted-foreground/50 transition-transform shrink-0', isExpanded && 'rotate-90 text-primary')} />
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold truncate font-mono">{poNumber(po)}</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(po.date_created)}{po.items?.length > 0 && <span className="ml-1.5 text-muted-foreground/60">· {po.items.length} item{po.items.length !== 1 ? 's' : ''}</span>}</p>
-                            </div>
-                            <p className="text-xs font-bold text-right tabular-nums">{fmtPKR(po.total)}</p>
-                            <p className="text-xs font-semibold text-right text-emerald-600 tabular-nums">{fmtPKR(po.amountPaid)}</p>
-                            <p className={cn('text-xs font-bold text-right tabular-nums', po.remaining > 0.5 ? 'text-rose-600' : 'text-muted-foreground')}>{fmtPKR(Math.max(0, po.remaining))}</p>
-                            <p className="text-[10px] text-center text-muted-foreground font-medium capitalize">{po.payment_method === 'credit' ? 'Credit' : po.payment_method === 'online' ? 'Online' : 'Cash'}</p>
-                            <div className="flex justify-center"><span className={cn('text-[10px] font-bold px-2.5 py-0.5 rounded-full', st.cls)}>{st.label}</span></div>
+                          <button onClick={() => printInvoice(poInvoiceData(po))}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors">
+                            <Eye size={15} />
+                          </button>
+                        </div>
+
+                        {/* TOTAL / PAID / BALANCE */}
+                        <div className="grid grid-cols-3 gap-2 px-4 pb-3">
+                          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</p>
+                            <p className="text-xs font-black mt-0.5 tabular-nums">{fmtPKR(po.total)}</p>
                           </div>
-                        </button>
+                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30 px-3 py-2 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Paid</p>
+                            <p className="text-xs font-black mt-0.5 text-emerald-600 tabular-nums">{fmtPKR(po.amountPaid)}</p>
+                          </div>
+                          <div className={cn('rounded-lg px-3 py-2 text-center border', po.remaining > 0.5 ? 'border-rose-200 bg-rose-50 dark:border-rose-900/40 dark:bg-rose-950/30' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30')}>
+                            <p className={cn('text-[9px] font-black uppercase tracking-widest', po.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>Balance</p>
+                            <p className={cn('text-xs font-black mt-0.5 tabular-nums', po.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(po.remaining)}</p>
+                          </div>
+                        </div>
 
-                        {isExpanded && (
-                          <div className="border-t border-border/40 bg-muted/10">
-                            {/* PO actions — print / PDF / WhatsApp status, like Electron */}
-                            <div className="flex items-center gap-2 px-5 pt-3 flex-wrap">
-                              <button onClick={() => printInvoice(poInvoiceData(po))}
-                                className="h-7 px-3 text-[11px] font-semibold rounded-lg border border-border bg-background hover:bg-muted flex items-center gap-1.5 transition-colors">
-                                <Printer size={11} /> Print
-                              </button>
-                              <button onClick={() => downloadInvoicePdf(poInvoiceData(po))}
-                                className="h-7 px-3 text-[11px] font-semibold rounded-lg border border-emerald-400/40 text-emerald-600 hover:bg-emerald-500/10 flex items-center gap-1.5 transition-colors">
-                                <Download size={11} /> PDF
-                              </button>
-                              {vendor.phone && (
-                                <button onClick={() => waPoStatus(po)}
-                                  className="h-7 px-3 text-[11px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 flex items-center gap-1.5 transition-colors">
-                                  <MessageCircle size={11} /> WhatsApp Status
-                                </button>
-                              )}
-                            </div>
-                            {/* Items */}
-                            {po.items?.length > 0 && (
-                              <div className="px-5 pt-4 pb-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2"><Package size={10} className="inline mr-1" /> Items</p>
-                                <table className="w-full">
-                                  <thead><tr className="text-[10px] text-muted-foreground border-b border-border/40">
-                                    <th className="text-left pb-1.5 font-semibold">Product</th>
-                                    <th className="text-center pb-1.5 font-semibold w-16">Added</th>
-                                    <th className="text-center pb-1.5 font-semibold w-20">Remaining</th>
-                                    <th className="text-right pb-1.5 font-semibold w-24">Cost</th>
-                                    <th className="text-right pb-1.5 font-semibold w-28">Total</th>
-                                  </tr></thead>
-                                  <tbody>{po.items.map((item) => (
-                                    <tr key={item.id} className="text-xs border-b border-border/20 last:border-0">
-                                      <td className="py-1.5 pr-2 font-medium">{item.product_name}</td>
-                                      <td className="py-1.5 text-center text-muted-foreground">{item.quantity}</td>
-                                      <td className="py-1.5 text-center text-muted-foreground">{item.remaining_quantity ?? item.quantity}</td>
-                                      <td className="py-1.5 text-right text-muted-foreground tabular-nums">{fmtPKR(item.cost_price || item.purchase_price)}</td>
-                                      <td className="py-1.5 text-right font-semibold tabular-nums">{fmtPKR((Number(item.cost_price || item.purchase_price || 0)) * Number(item.quantity))}</td>
-                                    </tr>
-                                  ))}</tbody>
-                                </table>
-                                <div className="mt-2 pt-2 border-t border-border/40 space-y-1 text-xs">
-                                  {po.amountReturned > 0 && <div className="flex justify-between text-muted-foreground"><span>Returned</span><span className="text-amber-600">−{fmtPKR(po.amountReturned)}</span></div>}
-                                  <div className="flex justify-between font-bold pt-0.5 border-t border-border/40"><span>Grand Total</span><span>{fmtPKR(po.total)}</span></div>
-                                  <div className="flex justify-between text-emerald-600"><span>Paid</span><span>{fmtPKR(po.amountPaid)}</span></div>
-                                  {po.remaining > 0.5 && <div className="flex justify-between font-bold text-rose-600"><span>Remaining</span><span>{fmtPKR(po.remaining)}</span></div>}
-                                </div>
-                              </div>
-                            )}
+                        {/* Progress bar */}
+                        <div className="px-4 pb-3">
+                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${paidPct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
+                        </div>
 
-                            {/* Linked payments */}
-                            {po.linkedPayments?.length > 0 && (
-                              <div className="px-5 py-3 border-t border-border/30">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2"><CreditCard size={10} className="inline mr-1" /> Payments on this order</p>
-                                <div className="space-y-1.5">
-                                  {po.linkedPayments.map((p) => (
-                                    <div key={p.id} className="flex items-center justify-between text-xs rounded-lg bg-emerald-500/5 border border-emerald-500/15 px-3 py-1.5">
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                        <span className="text-muted-foreground">{fmtDateShort(p.date_added)}</span>
-                                        {p.notes && <span className="text-muted-foreground/60 truncate">· {p.notes}</span>}
-                                      </div>
-                                      <div className="flex items-center gap-2 shrink-0 ml-3">
-                                        <span className="font-bold text-emerald-600 tabular-nums">{fmtPKR(p.amount)}</span>
-                                        <button onClick={() => deletePayment(p.id)} className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10"><Trash2 size={11} /></button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Linked returns */}
-                            {po.linkedReturns?.length > 0 && (
-                              <div className="px-5 py-3 border-t border-border/30">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2"><Undo2 size={10} className="inline mr-1" /> Returns on this order</p>
-                                <div className="space-y-1.5">
-                                  {po.linkedReturns.map((r) => (
-                                    <div key={r.id} className="flex items-center justify-between text-xs rounded-lg bg-amber-500/5 border border-amber-500/15 px-3 py-1.5">
-                                      <div className="flex items-center gap-2">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                                        <span className="text-muted-foreground">{fmtDateShort(r.date_created)}</span>
-                                        {r.reason && <span className="text-muted-foreground/60">· {r.reason}</span>}
-                                      </div>
-                                      <span className="font-bold text-amber-600 tabular-nums">{fmtPKR(r.total_returned)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Inline pay */}
-                            {po.remaining > 0.5 && po.status !== 'Cancelled' && (
-                              <div className="px-5 py-3 border-t border-border/30">
-                                {payingPoId === po.id ? (
-                                  <div className="flex gap-2 items-center">
-                                    <div className="relative flex-1">
-                                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold">PKR</span>
-                                      <input type="number" autoFocus min="0" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={`Due: ${Math.round(po.remaining).toLocaleString()}`}
-                                        className="w-full pl-10 h-8 text-xs rounded-md border border-border bg-background focus:outline-none" />
-                                    </div>
-                                    <input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} placeholder="Notes"
-                                      className="flex-1 px-2 h-8 text-xs rounded-md border border-border bg-background focus:outline-none" />
-                                    <button disabled={!payAmount} onClick={() => recordPayment(po.id)}
-                                      className="h-8 px-3 text-xs bg-primary text-primary-foreground rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 shrink-0">
-                                      <Check size={11} /> Pay
-                                    </button>
-                                    <button onClick={() => { setPayingPoId(null); setPayAmount(''); setPayNotes(''); }}
-                                      className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center"><X size={12} /></button>
-                                  </div>
-                                ) : (
-                                  <button className="text-xs font-semibold text-primary hover:underline flex items-center gap-1.5"
-                                    onClick={() => { setPayingPoId(po.id); setPayAmount(String(Math.round(po.remaining))); }}>
-                                    <Plus size={12} /> Record payment for this order
-                                  </button>
-                                )}
-                              </div>
-                            )}
+                        {/* Items summary */}
+                        {po.items?.length > 0 && (
+                          <div className="mx-4 mb-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
+                              <span className="font-bold text-foreground">≡ Items: </span>
+                              {po.items.map((i, idx) => (
+                                <span key={idx}>
+                                  {idx > 0 && <span className="text-muted-foreground/40">, </span>}
+                                  {i.product_name} <span className="font-semibold text-foreground/80">×{i.quantity}</span>
+                                </span>
+                              ))}
+                            </p>
                           </div>
                         )}
+
+                        {/* Action bar */}
+                        <div className="flex items-center gap-2 px-4 pb-4">
+                          {po.remaining > 0.5 && po.status !== 'Cancelled' && (
+                            <>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
+                                <input
+                                  type="number" min="0"
+                                  value={payAmounts[po.id] ?? ''}
+                                  onChange={(e) => setPayAmounts((prev) => ({ ...prev, [po.id]: e.target.value }))}
+                                  placeholder={Math.round(po.remaining).toLocaleString()}
+                                  className="h-9 pl-9 pr-2 w-28 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/40 tabular-nums"
+                                />
+                              </div>
+                              <button
+                                disabled={!payAmounts[po.id] || Number(payAmounts[po.id]) <= 0}
+                                onClick={() => recordPayment(po.id)}
+                                className="h-9 px-4 text-xs rounded-lg bg-primary text-primary-foreground font-bold disabled:opacity-40 shrink-0 transition-opacity"
+                              >
+                                Pay
+                              </button>
+                            </>
+                          )}
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            <button onClick={() => printInvoice(poInvoiceData(po))}
+                              className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+                              <Eye size={14} />
+                            </button>
+                            {vendor.phone && (
+                              <button onClick={() => waPoStatus(po)}
+                                className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white hover:bg-emerald-600 transition-colors">
+                                <MessageCircle size={14} />
+                              </button>
+                            )}
+                            <button onClick={() => printInvoice(poInvoiceData(po))}
+                              className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors">
+                              <Printer size={14} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
+
                   {hasMorePOs && (
                     <div className="flex justify-center pt-2 pb-4">
                       <button onClick={() => setPosPage((p) => p + 1)}
                         className="flex items-center gap-2 h-8 px-4 text-xs rounded-lg border border-border bg-background hover:bg-muted">
-                        <ChevronDown size={13} /> Load {Math.min(POS_PER_PAGE, filteredPOs.length - visiblePOs.length)} more orders
+                        <ChevronDown size={13} /> Load {Math.min(POS_PER_PAGE, filteredPOs.length - posPage * POS_PER_PAGE)} more
                       </button>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </TabsContent>
 

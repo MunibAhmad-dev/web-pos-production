@@ -4,6 +4,7 @@ import {
   X, Phone, Mail, MapPin, CreditCard, Receipt, Undo2, History,
   MessageCircle, ChevronDown, ChevronRight, Plus, Printer,
   Trash2, Check, Clock, FileText, TrendingUp, Package, ArrowLeft,
+  CheckCircle2, Eye, Tag, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -16,6 +17,7 @@ import { getReceiptSettings, printInvoice, buildWhatsAppLink } from '../../utils
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' }) : '—';
+const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
 const GRADIENTS = ['from-purple-500 to-indigo-500', 'from-pink-500 to-rose-500', 'from-amber-500 to-orange-500', 'from-emerald-500 to-teal-500', 'from-blue-500 to-cyan-500'];
 const getGrad = (name = '') => GRADIENTS[name.charCodeAt(0) % GRADIENTS.length];
@@ -46,10 +48,8 @@ export default function CustomerDetailPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState('invoices');
   const [salesPage, setSalesPage] = useState(1);
-  const [expandedSaleId, setExpandedSaleId] = useState(null);
-  const [payingSaleId, setPayingSaleId] = useState(null);
-  const [payAmount, setPayAmount] = useState('');
-  const [payNotes, setPayNotes] = useState('');
+  const [payAmounts, setPayAmounts] = useState({});
+  const [payNotesBySale, setPayNotesBySale] = useState({});
   const [genPayAmount, setGenPayAmount] = useState('');
   const [genPayNotes, setGenPayNotes] = useState('');
 
@@ -97,27 +97,36 @@ export default function CustomerDetailPage() {
     return { sales: enhancedSales, payments: custPayments, returns: custReturns, activity, totalTaken, totalPaid, totalReturned, balance };
   }, [customer, allSales, allSaleItems, allPayments, allReturns]);
 
+  const timeline = useMemo(() => {
+    if (!data) return [];
+    const pagedSales = data.sales.slice(0, salesPage * SALES_PER_PAGE);
+    return [
+      ...pagedSales.map((s) => ({ ...s, _type: 'sale', _sortDate: new Date(s.date_created || 0).getTime() })),
+      ...data.payments.map((p) => ({ ...p, _type: 'payment', _sortDate: new Date(p.date_added || 0).getTime() })),
+    ].sort((a, b) => b._sortDate - a._sortDate);
+  }, [data, salesPage]);
+
   const recordPayment = async (saleId) => {
-    const amt = Number(saleId ? payAmount : genPayAmount);
+    const amt = Number(saleId ? payAmounts[saleId] : genPayAmount);
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
     try {
       await pushEntity('customer_payment', 'create', {
         customer_id: customer.id,
         amount: amt,
-        notes: (saleId ? payNotes : genPayNotes) || '',
+        notes: (saleId ? (payNotesBySale[saleId] || '') : genPayNotes) || '',
         sale_id: saleId || null,
         date_added: new Date().toISOString(),
       });
-      // Keep the cached outstanding_balance in step — same as the Electron
-      // add-customer-payment handler. Dashboard AR reads this field.
       await pushEntity('customer', 'update', {
         ...customer,
         outstanding_balance: Math.max(0, Number(customer.outstanding_balance || 0) - amt),
         updated_at: new Date().toISOString(),
       });
       showToast('Payment recorded');
-      if (saleId) { setPayingSaleId(null); setPayAmount(''); setPayNotes(''); }
-      else { setGenPayAmount(''); setGenPayNotes(''); }
+      if (saleId) {
+        setPayAmounts((prev) => { const n = { ...prev }; delete n[saleId]; return n; });
+        setPayNotesBySale((prev) => { const n = { ...prev }; delete n[saleId]; return n; });
+      } else { setGenPayAmount(''); setGenPayNotes(''); }
     } catch { showToast('Failed to record payment', 'error'); }
   };
 
@@ -162,8 +171,7 @@ export default function CustomerDetailPage() {
   if (!data) return null;
 
   const { sales, payments, returns, activity, totalTaken, totalPaid, totalReturned, balance } = data;
-  const visibleSales = sales.slice(0, salesPage * SALES_PER_PAGE);
-  const hasMoreSales = visibleSales.length < sales.length;
+  const hasMoreSales = sales.length > salesPage * SALES_PER_PAGE;
   const paidCount = sales.filter((s) => s.remaining <= 0.5 && s.status !== 'Cancelled').length;
   const unpaidCount = sales.filter((s) => s.remaining > 0.5 && s.status !== 'Cancelled').length;
 
@@ -279,10 +287,10 @@ export default function CustomerDetailPage() {
             <div className="border-b border-border px-6 pt-4 pb-0 shrink-0">
               <TabsList className="h-9 mb-0">
                 {[
-                  ['invoices', Receipt, 'Invoices', sales.length],
-                  ['payments', CreditCard, 'Payments', payments.length],
+                  ['invoices', Receipt, 'Transactions', sales.length],
+                  ['payments', CreditCard, 'Ledger', payments.length],
                   ['returns', Undo2, 'Returns', returns.length],
-                  ['activity', History, 'Activity', 0],
+                  ['activity', History, 'Activity Log', 0],
                 ].map(([val, Icon, lbl, cnt]) => (
                   <TabsTrigger key={val} value={val} className="gap-1.5 text-xs">
                     <Icon size={12} /> {lbl}
@@ -292,178 +300,158 @@ export default function CustomerDetailPage() {
               </TabsList>
             </div>
 
-            {/* INVOICES */}
-            <TabsContent value="invoices" className="lg:flex-1 lg:overflow-y-auto m-0 p-5 space-y-2">
-              {sales.length === 0 ? <EmptyState icon={<Receipt size={36} />} text="No invoices yet" /> : (
-                <>
-                  <div className="hidden md:grid grid-cols-[24px_1fr_96px_100px_100px_100px_72px] gap-3 px-3 pb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b border-border">
-                    <span /><span>Invoice</span><span className="text-right">Total</span><span className="text-right">Paid</span><span className="text-right">Due</span><span className="text-center">Method</span><span className="text-center">Status</span>
-                  </div>
-                  {visibleSales.map((sale) => {
-                    const st = saleStatus(sale);
-                    const isExpanded = expandedSaleId === sale.id;
-                    const invoiceNo = `INV-${String(sale.id).slice(-6).toUpperCase()}`;
-                    return (
-                      <div key={sale.id} className={cn('border rounded-xl overflow-hidden transition-all duration-150', isExpanded ? 'border-primary/40 shadow-sm' : 'border-border/60 hover:border-border')}>
-                        <button className="w-full px-3 py-3.5 hover:bg-muted/20 transition-colors text-left"
-                          onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}>
-                          {/* Mobile: simple two-line card */}
-                          <div className="flex items-center gap-2 md:hidden">
-                            <ChevronRight size={14} className={cn('text-muted-foreground/50 transition-transform shrink-0', isExpanded && 'rotate-90 text-primary')} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold truncate">{invoiceNo}</p>
-                              <p className="text-[10px] text-muted-foreground">{fmtDate(sale.date_created)}</p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-xs font-bold tabular-nums">{fmtPKR(sale.total)}</p>
-                              {sale.remaining > 0.5 && <p className="text-[10px] text-rose-600 tabular-nums">{fmtPKR(sale.remaining)} due</p>}
-                            </div>
-                            <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0', st.cls)}>{st.label}</span>
+            {/* TRANSACTIONS — mixed timeline of sales + payments */}
+            <TabsContent value="invoices" className="lg:flex-1 lg:overflow-y-auto m-0 p-4">
+              {timeline.length === 0 ? <EmptyState icon={<Receipt size={36} />} text="No transactions yet" /> : (
+                <div className="space-y-3">
+                  {timeline.map((item) => {
+                    if (item._type === 'payment') {
+                      return (
+                        <div key={`pay-${item.id}`} className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-4 py-3">
+                          <div className="w-9 h-9 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                            <CheckCircle2 size={18} className="text-emerald-500" />
                           </div>
-                          {/* Desktop: full grid */}
-                          <div className="hidden md:grid grid-cols-[24px_1fr_96px_100px_100px_100px_72px] gap-3 items-center">
-                            <ChevronRight size={14} className={cn('text-muted-foreground/50 transition-transform shrink-0', isExpanded && 'rotate-90 text-primary')} />
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold truncate">{invoiceNo}</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(sale.date_created)}{sale.items?.length > 0 && <span className="ml-1.5 text-muted-foreground/60">· {sale.items.length} item{sale.items.length !== 1 ? 's' : ''}</span>}</p>
-                            </div>
-                            <p className="text-xs font-bold text-right tabular-nums">{fmtPKR(sale.total)}</p>
-                            <p className="text-xs font-semibold text-right text-emerald-600 tabular-nums">{fmtPKR(sale.amountPaid)}</p>
-                            <p className={cn('text-xs font-bold text-right tabular-nums', sale.remaining > 0.5 ? 'text-rose-600' : 'text-muted-foreground')}>{fmtPKR(Math.max(0, sale.remaining))}</p>
-                            <p className="text-[10px] text-center text-muted-foreground font-medium capitalize">{sale.payment_method === 'udhaar' ? 'Udhaar' : sale.payment_method === 'online' ? 'Online' : 'Cash'}</p>
-                            <div className="flex justify-center"><span className={cn('text-[10px] font-bold px-2.5 py-0.5 rounded-full', st.cls)}>{st.label}</span></div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-black tracking-wide text-emerald-700 dark:text-emerald-400">PAYMENT COLLECTED</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDateTime(item.date_added)}</p>
+                            {item.notes && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{item.notes}</p>}
                           </div>
-                        </button>
+                          <p className="text-sm font-black text-emerald-600 tabular-nums shrink-0">{fmtPKR(item.amount)}</p>
+                          <button onClick={() => deletePayment(item)} className="ml-1 text-muted-foreground/30 hover:text-destructive transition-colors shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      );
+                    }
 
-                        {isExpanded && (
-                          <div className="border-t border-border/40 bg-muted/10">
-                            {/* Invoice actions — print / WhatsApp, like the Electron profile */}
-                            <div className="flex items-center gap-2 px-5 pt-3">
-                              <button
-                                onClick={() => printInvoice(invoiceDataFor(sale))}
-                                className="h-7 px-3 text-[11px] font-semibold rounded-lg border border-border bg-background hover:bg-muted flex items-center gap-1.5 transition-colors"
-                              >
-                                <Printer size={11} /> Print / PDF
-                              </button>
-                              {customer.phone && (
-                                <button
-                                  onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(sale)); if (url) window.open(url, '_blank'); }}
-                                  className="h-7 px-3 text-[11px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 flex items-center gap-1.5 transition-colors"
-                                >
-                                  <MessageCircle size={11} /> WhatsApp
-                                </button>
-                              )}
+                    // Sale card
+                    const sale = item;
+                    const st = saleStatus(sale);
+                    const paidPct = Math.min(100, Math.round(Number(sale.total) > 0 ? (sale.amountPaid / Number(sale.total)) * 100 : 0));
+                    return (
+                      <div key={`sale-${sale.id}`} className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
+                        {/* Gradient top accent */}
+                        <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-purple-500" />
+
+                        {/* Header */}
+                        <div className="flex items-start justify-between px-4 pt-3 pb-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black">SALE #{sale.id}</span>
+                              <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', st.cls)}>{st.label}</span>
                             </div>
-                            {/* Items */}
-                            {sale.items?.length > 0 && (
-                              <div className="px-5 pt-4 pb-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2"><Package size={10} className="inline mr-1" /> Items</p>
-                                <table className="w-full">
-                                  <thead><tr className="text-[10px] text-muted-foreground border-b border-border/40">
-                                    <th className="text-left pb-1.5 font-semibold">Product</th><th className="text-center pb-1.5 font-semibold w-16">Qty</th><th className="text-right pb-1.5 font-semibold w-24">Price</th><th className="text-right pb-1.5 font-semibold w-28">Total</th>
-                                  </tr></thead>
-                                  <tbody>{sale.items.map((item) => (
-                                    <tr key={item.id} className="text-xs border-b border-border/20 last:border-0">
-                                      <td className="py-1.5 pr-2 font-medium">{item.product_name}</td>
-                                      <td className="py-1.5 text-center text-muted-foreground">{item.quantity}</td>
-                                      <td className="py-1.5 text-right text-muted-foreground tabular-nums">{fmtPKR(item.price)}</td>
-                                      <td className="py-1.5 text-right font-semibold tabular-nums">{fmtPKR(Number(item.price) * Number(item.quantity))}</td>
-                                    </tr>
-                                  ))}</tbody>
-                                </table>
-                                <div className="mt-2 pt-2 border-t border-border/40 space-y-1 text-xs">
-                                  {sale.discount > 0 && <div className="flex justify-between text-muted-foreground"><span>Discount</span><span className="text-rose-600">−{fmtPKR(sale.discount)}</span></div>}
-                                  {sale.amountReturned > 0 && <div className="flex justify-between text-muted-foreground"><span>Returned</span><span className="text-amber-600">−{fmtPKR(sale.amountReturned)}</span></div>}
-                                  <div className="flex justify-between font-bold pt-0.5 border-t border-border/40"><span>Grand Total</span><span>{fmtPKR(sale.total)}</span></div>
-                                  <div className="flex justify-between text-emerald-600"><span>Paid</span><span>{fmtPKR(sale.amountPaid)}</span></div>
-                                  {sale.remaining > 0.5 && <div className="flex justify-between font-bold text-rose-600"><span>Remaining</span><span>{fmtPKR(sale.remaining)}</span></div>}
-                                </div>
-                              </div>
-                            )}
-                            {/* Linked payments */}
-                            {sale.linkedPayments?.length > 0 && (
-                              <div className="px-5 py-3 border-t border-border/30">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2"><CreditCard size={10} className="inline mr-1" /> Payments on this invoice</p>
-                                <div className="space-y-1.5">
-                                  {sale.linkedPayments.map((p) => (
-                                    <div key={p.id} className="flex items-center justify-between text-xs rounded-lg bg-emerald-500/5 border border-emerald-500/15 px-3 py-1.5">
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                        <span className="text-muted-foreground">{fmtDateShort(p.date_added)}</span>
-                                        {p.notes && <span className="text-muted-foreground/60 truncate">· {p.notes}</span>}
-                                      </div>
-                                      <div className="flex items-center gap-2 shrink-0 ml-3">
-                                        <span className="font-bold text-emerald-600 tabular-nums">{fmtPKR(p.amount)}</span>
-                                        <button onClick={() => deletePayment(p)} className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10"><Trash2 size={11} /></button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {/* Linked returns */}
-                            {sale.linkedReturns?.length > 0 && (
-                              <div className="px-5 py-3 border-t border-border/30">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2"><Undo2 size={10} className="inline mr-1" /> Returns on this invoice</p>
-                                <div className="space-y-1.5">
-                                  {sale.linkedReturns.map((r) => (
-                                    <div key={r.id} className="flex items-center justify-between text-xs rounded-lg bg-amber-500/5 border border-amber-500/15 px-3 py-1.5">
-                                      <div className="flex items-center gap-2">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                                        <span className="text-muted-foreground">{fmtDateShort(r.date_created)}</span>
-                                        {r.reason && <span className="text-muted-foreground/60">· {r.reason}</span>}
-                                      </div>
-                                      <span className="font-bold text-amber-600 tabular-nums">{fmtPKR(r.total_returned)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {/* Inline pay */}
-                            {sale.remaining > 0.5 && sale.status !== 'Cancelled' && (
-                              <div className="px-5 py-3 border-t border-border/30">
-                                {payingSaleId === sale.id ? (
-                                  <div className="flex gap-2 items-center">
-                                    <div className="relative flex-1">
-                                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold">PKR</span>
-                                      <input type="number" autoFocus min="0" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={`Due: ${Math.round(sale.remaining).toLocaleString()}`}
-                                        className="w-full pl-10 h-8 text-xs rounded-md border border-border bg-background focus:outline-none" />
-                                    </div>
-                                    <input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} placeholder="Notes"
-                                      className="flex-1 px-2 h-8 text-xs rounded-md border border-border bg-background focus:outline-none" />
-                                    <button disabled={!payAmount} onClick={() => recordPayment(sale.id)}
-                                      className="h-8 px-3 text-xs bg-primary text-primary-foreground rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 shrink-0">
-                                      <Check size={11} /> Pay
-                                    </button>
-                                    <button onClick={() => { setPayingSaleId(null); setPayAmount(''); setPayNotes(''); }}
-                                      className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center"><X size={12} /></button>
-                                  </div>
-                                ) : (
-                                  <button className="text-xs font-semibold text-primary hover:underline flex items-center gap-1.5"
-                                    onClick={() => { setPayingSaleId(sale.id); setPayAmount(String(Math.round(sale.remaining))); }}>
-                                    <Plus size={12} /> Record payment for this invoice
-                                  </button>
-                                )}
-                              </div>
-                            )}
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
+                              <CalendarDays size={11} />
+                              {fmtDate(sale.date_created)}
+                            </div>
+                          </div>
+                          <button onClick={() => printInvoice(invoiceDataFor(sale))}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors">
+                            <Eye size={15} />
+                          </button>
+                        </div>
+
+                        {/* TOTAL / PAID / BALANCE */}
+                        <div className="grid grid-cols-3 gap-2 px-4 pb-3">
+                          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</p>
+                            <p className="text-xs font-black mt-0.5 tabular-nums">{fmtPKR(sale.total)}</p>
+                          </div>
+                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30 px-3 py-2 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Paid</p>
+                            <p className="text-xs font-black mt-0.5 text-emerald-600 tabular-nums">{fmtPKR(sale.amountPaid)}</p>
+                          </div>
+                          <div className={cn('rounded-lg px-3 py-2 text-center border', sale.remaining > 0.5 ? 'border-rose-200 bg-rose-50 dark:border-rose-900/40 dark:bg-rose-950/30' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30')}>
+                            <p className={cn('text-[9px] font-black uppercase tracking-widest', sale.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>Balance</p>
+                            <p className={cn('text-xs font-black mt-0.5 tabular-nums', sale.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(sale.remaining)}</p>
+                          </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="px-4 pb-3">
+                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${paidPct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
+                        </div>
+
+                        {/* Items summary */}
+                        {sale.items?.length > 0 && (
+                          <div className="mx-4 mb-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
+                              <span className="font-bold text-foreground">≡ Items: </span>
+                              {sale.items.map((i, idx) => (
+                                <span key={idx}>
+                                  {idx > 0 && <span className="text-muted-foreground/40">, </span>}
+                                  {i.product_name} <span className="font-semibold text-foreground/80">×{i.quantity}</span>
+                                </span>
+                              ))}
+                            </p>
                           </div>
                         )}
+
+                        {/* Action bar */}
+                        <div className="flex items-center gap-2 px-4 pb-4">
+                          {sale.remaining > 0.5 && sale.status !== 'Cancelled' && (
+                            <>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
+                                <input
+                                  type="number" min="0"
+                                  value={payAmounts[sale.id] ?? ''}
+                                  onChange={(e) => setPayAmounts((prev) => ({ ...prev, [sale.id]: e.target.value }))}
+                                  placeholder={Math.round(sale.remaining).toLocaleString()}
+                                  className="h-9 pl-9 pr-2 w-28 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/40 tabular-nums"
+                                />
+                              </div>
+                              <button
+                                disabled={!payAmounts[sale.id] || Number(payAmounts[sale.id]) <= 0}
+                                onClick={() => recordPayment(sale.id)}
+                                className="h-9 px-4 text-xs rounded-lg bg-primary text-primary-foreground font-bold disabled:opacity-40 shrink-0 transition-opacity"
+                              >
+                                Pay
+                              </button>
+                            </>
+                          )}
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            {sale.remaining > 0.5 && sale.status !== 'Cancelled' && (
+                              <button className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+                                <Tag size={14} />
+                              </button>
+                            )}
+                            <button onClick={() => printInvoice(invoiceDataFor(sale))}
+                              className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+                              <Eye size={14} />
+                            </button>
+                            {customer.phone && (
+                              <button onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(sale)); if (url) window.open(url, '_blank'); }}
+                                className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white hover:bg-emerald-600 transition-colors">
+                                <MessageCircle size={14} />
+                              </button>
+                            )}
+                            <button onClick={() => printInvoice(invoiceDataFor(sale))}
+                              className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors">
+                              <Printer size={14} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
+
                   {hasMoreSales && (
                     <div className="flex justify-center pt-2 pb-4">
                       <button onClick={() => setSalesPage((p) => p + 1)}
                         className="flex items-center gap-2 h-8 px-4 text-xs rounded-lg border border-border bg-background hover:bg-muted">
-                        <ChevronDown size={13} /> Load {Math.min(SALES_PER_PAGE, sales.length - visibleSales.length)} more invoices
+                        <ChevronDown size={13} /> Load {Math.min(SALES_PER_PAGE, sales.length - salesPage * SALES_PER_PAGE)} more
                       </button>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </TabsContent>
 
-            {/* PAYMENTS */}
+            {/* LEDGER */}
             <TabsContent value="payments" className="lg:flex-1 lg:overflow-y-auto m-0 p-5">
               {payments.length === 0 ? <EmptyState icon={<CreditCard size={36} />} text="No payments recorded yet" /> : (
                 <div>
