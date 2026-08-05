@@ -312,11 +312,11 @@ export default function POSPage() {
           placeholder={barcodeMode ? 'Scan barcode — Enter auto-adds to cart…' : 'Search by name, category or barcode…'}
         />
 
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 flex gap-2 overflow-x-auto scrollbar-none pb-0.5" style={{ scrollbarWidth: 'none' }}>
           <button
             onClick={() => setCategoryFilter('all')}
             className={cn(
-              'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
               categoryFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
             )}
           >
@@ -325,7 +325,7 @@ export default function POSPage() {
           <button
             onClick={() => setCategoryFilter('uncategorized')}
             className={cn(
-              'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
               categoryFilter === 'uncategorized' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
             )}
           >
@@ -336,7 +336,7 @@ export default function POSPage() {
               key={c}
               onClick={() => setCategoryFilter(c)}
               className={cn(
-                'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
                 categoryFilter === c ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
               )}
             >
