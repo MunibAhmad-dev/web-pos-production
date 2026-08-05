@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/format';
+import { useModuleSettings } from '../../hooks/useModuleSettings';
 
 // ─── Format helper ────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(n ?? 0).toLocaleString('en-PK');
@@ -99,7 +100,7 @@ function autoDetectMapping(headers) {
 }
 
 // ─── Product Form Modal ───────────────────────────────────────────────────────
-function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categories, onClose, onSaved }) {
+function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categories, onClose, onSaved, modules = {} }) {
   const { pushEntity } = useDataStore();
   const { showToast } = useToast();
   const [current, setCurrent] = useState(initialProduct);
@@ -140,6 +141,30 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
         description: (current.description || '').trim(),
         vendor_id: current.vendor_id || null,
         metadata: current.metadata || {},
+        urdu_name: (current.urdu_name || '').trim() || null,
+        // Bakery fields
+        is_bakery: current.is_bakery ? 1 : 0,
+        expiry_date: current.expiry_date || null,
+        production_date: current.production_date || null,
+        weight_value: current.weight_value != null && current.weight_value !== '' ? Number(current.weight_value) : null,
+        unit_type: current.unit_type || 'piece',
+        price_per_kg: current.price_per_kg != null && current.price_per_kg !== '' ? Number(current.price_per_kg) : null,
+        auto_price_by_weight: current.auto_price_by_weight ? 1 : 0,
+        // Dry fruit fields
+        is_dry_fruit: current.is_dry_fruit ? 1 : 0,
+        quality_grade: current.quality_grade || null,
+        country_of_origin: current.country_of_origin || null,
+        dry_fruit_category: current.dry_fruit_category || null,
+        wholesale_price: current.wholesale_price != null && current.wholesale_price !== '' ? Number(current.wholesale_price) : null,
+        brand: current.brand || null,
+        wastage_percent: current.wastage_percent != null && current.wastage_percent !== '' ? Number(current.wastage_percent) : 0,
+        // Pharmacy fields
+        is_pharmacy: current.is_pharmacy ? 1 : 0,
+        generic_name: current.generic_name || null,
+        strength: current.strength || null,
+        medicine_type: current.medicine_type || null,
+        manufacturer: current.manufacturer || null,
+        requires_prescription: current.requires_prescription ? 1 : 0,
       };
       if (isEditing && current.id) {
         await pushEntity('product', 'update', { ...current, ...data, id: current.id, updated_at: now });
@@ -378,6 +403,172 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                 {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </div>
+
+            {/* ── Pharmacy Module ── */}
+            {modules.pharmacy_module_enabled && (
+              <div className="space-y-3 pt-2 border-t border-border/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">💊</span>
+                    <span className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">Pharmacy / Medicine Fields</span>
+                  </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!current.is_pharmacy}
+                      onChange={(e) => setCurrent((p) => ({ ...p, is_pharmacy: e.target.checked }))}
+                      className="h-4 w-4 rounded border-border accent-cyan-500"
+                      disabled={isSaving}
+                    />
+                    <span className="text-xs font-medium text-muted-foreground">Mark as medicine</span>
+                  </label>
+                </div>
+                {current.is_pharmacy && (
+                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Generic Name</label>
+                      <input type="text" value={current.generic_name || ''} onChange={(e) => setCurrent((p) => ({ ...p, generic_name: e.target.value }))} placeholder="e.g. Paracetamol" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-cyan-500/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Strength</label>
+                      <input type="text" value={current.strength || ''} onChange={(e) => setCurrent((p) => ({ ...p, strength: e.target.value }))} placeholder="e.g. 500mg" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-cyan-500/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Medicine Type</label>
+                      <select value={current.medicine_type || ''} onChange={(e) => setCurrent((p) => ({ ...p, medicine_type: e.target.value }))} disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none">
+                        <option value="">— select —</option>
+                        {['Tablet', 'Capsule', 'Syrup', 'Injection', 'Drops', 'Cream', 'Ointment', 'Inhaler', 'Suppository', 'Powder', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Manufacturer</label>
+                      <input type="text" value={current.manufacturer || ''} onChange={(e) => setCurrent((p) => ({ ...p, manufacturer: e.target.value }))} placeholder="e.g. GSK" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-cyan-500/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Expiry Date</label>
+                      <input type="date" value={current.expiry_date || ''} onChange={(e) => setCurrent((p) => ({ ...p, expiry_date: e.target.value }))} disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-cyan-500/30" />
+                    </div>
+                    <div className="flex items-center gap-2 pt-4">
+                      <input type="checkbox" id="rx-flag" checked={!!current.requires_prescription} onChange={(e) => setCurrent((p) => ({ ...p, requires_prescription: e.target.checked }))} disabled={isSaving} className="h-4 w-4 rounded border-border accent-cyan-500" />
+                      <label htmlFor="rx-flag" className="text-xs font-medium text-muted-foreground cursor-pointer">Requires Prescription (Rx)</label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Bakery Module ── */}
+            {modules.bakery_module_enabled && (
+              <div className="space-y-3 pt-2 border-t border-border/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🍞</span>
+                    <span className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Bakery Fields</span>
+                  </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!current.is_bakery}
+                      onChange={(e) => setCurrent((p) => ({ ...p, is_bakery: e.target.checked }))}
+                      className="h-4 w-4 rounded border-border accent-orange-500"
+                      disabled={isSaving}
+                    />
+                    <span className="text-xs font-medium text-muted-foreground">Mark as bakery product</span>
+                  </label>
+                </div>
+                {current.is_bakery && (
+                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-orange-500/20 bg-orange-500/5 p-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Unit Type</label>
+                      <select value={current.unit_type || 'piece'} onChange={(e) => setCurrent((p) => ({ ...p, unit_type: e.target.value }))} disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none">
+                        <option value="piece">Piece</option>
+                        <option value="kg">Kilogram (kg)</option>
+                        <option value="gram">Gram (g)</option>
+                        <option value="tray">Tray</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Weight (g)</label>
+                      <input type="number" min="0" step="0.01" value={current.weight_value ?? ''} onChange={(e) => setCurrent((p) => ({ ...p, weight_value: e.target.value }))} placeholder="e.g. 250" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Price / kg (PKR)</label>
+                      <input type="number" min="0" step="1" value={current.price_per_kg ?? ''} onChange={(e) => setCurrent((p) => ({ ...p, price_per_kg: e.target.value }))} placeholder="0" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Production Date</label>
+                      <input type="date" value={current.production_date || ''} onChange={(e) => setCurrent((p) => ({ ...p, production_date: e.target.value }))} disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Expiry Date</label>
+                      <input type="date" value={current.expiry_date || ''} onChange={(e) => setCurrent((p) => ({ ...p, expiry_date: e.target.value }))} disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/30" />
+                    </div>
+                    <div className="flex items-center gap-2 pt-4">
+                      <input type="checkbox" id="apbw-flag" checked={!!current.auto_price_by_weight} onChange={(e) => setCurrent((p) => ({ ...p, auto_price_by_weight: e.target.checked }))} disabled={isSaving} className="h-4 w-4 rounded border-border accent-orange-500" />
+                      <label htmlFor="apbw-flag" className="text-xs font-medium text-muted-foreground cursor-pointer">Auto-price by weight</label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Dry Fruits Module ── */}
+            {modules.dry_fruits_module_enabled && (
+              <div className="space-y-3 pt-2 border-t border-border/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🌰</span>
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Dry Fruit Fields</span>
+                  </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!current.is_dry_fruit}
+                      onChange={(e) => setCurrent((p) => ({ ...p, is_dry_fruit: e.target.checked }))}
+                      className="h-4 w-4 rounded border-border accent-amber-700"
+                      disabled={isSaving}
+                    />
+                    <span className="text-xs font-medium text-muted-foreground">Mark as dry fruit</span>
+                  </label>
+                </div>
+                {current.is_dry_fruit && (
+                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-amber-700/20 bg-amber-700/5 p-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Quality Grade</label>
+                      <select value={current.quality_grade || ''} onChange={(e) => setCurrent((p) => ({ ...p, quality_grade: e.target.value }))} disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none">
+                        <option value="">— select —</option>
+                        <option value="Premium">Premium</option>
+                        <option value="Standard">Standard</option>
+                        <option value="Economy">Economy</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Country of Origin</label>
+                      <input type="text" value={current.country_of_origin || ''} onChange={(e) => setCurrent((p) => ({ ...p, country_of_origin: e.target.value }))} placeholder="e.g. Afghanistan" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-amber-700/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Dry Fruit Category</label>
+                      <input type="text" value={current.dry_fruit_category || ''} onChange={(e) => setCurrent((p) => ({ ...p, dry_fruit_category: e.target.value }))} placeholder="e.g. Nuts, Seeds" list="df-cat-list" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-amber-700/30" />
+                      <datalist id="df-cat-list">
+                        {['Nuts', 'Seeds', 'Berries', 'Dates & Figs', 'Apricots', 'Raisins', 'Mixed'].map(c => <option key={c} value={c} />)}
+                      </datalist>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Wholesale Price (PKR/kg)</label>
+                      <input type="number" min="0" step="1" value={current.wholesale_price ?? ''} onChange={(e) => setCurrent((p) => ({ ...p, wholesale_price: e.target.value }))} placeholder="0" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-amber-700/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Brand</label>
+                      <input type="text" value={current.brand || ''} onChange={(e) => setCurrent((p) => ({ ...p, brand: e.target.value }))} placeholder="e.g. National" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-amber-700/30" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Wastage % (0–100)</label>
+                      <input type="number" min="0" max="100" step="0.1" value={current.wastage_percent ?? ''} onChange={(e) => setCurrent((p) => ({ ...p, wastage_percent: e.target.value }))} placeholder="0" disabled={isSaving} className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-amber-700/30" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Custom Fields */}
             <div className="space-y-3 pt-2 border-t border-border/40">
@@ -643,6 +834,7 @@ function ProductDetailModal({ product, onClose }) {
 export default function ProductsPage() {
   const { list, pushEntity } = useDataStore();
   const { showToast } = useToast();
+  const { modules } = useModuleSettings();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showDialog, setShowDialog] = useState(false);
@@ -1298,6 +1490,7 @@ export default function ProductsPage() {
         categories={categories}
         onClose={() => setShowDialog(false)}
         onSaved={() => {}}
+        modules={modules}
       />
 
       {/* ── Import Dialog ── */}

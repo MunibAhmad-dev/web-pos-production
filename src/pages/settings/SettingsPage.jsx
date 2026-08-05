@@ -11,6 +11,8 @@ import { setLowStockThreshold } from '../../utils/constants';
 import { getReceiptSettings, saveReceiptSettings } from '../../utils/receipt';
 import { Printer, FileText, Database, Download, Upload, FileSpreadsheet, FileJson } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
+import { useModuleSettings } from '../../hooks/useModuleSettings';
+import { cn } from '@/lib/utils';
 
 const statusTone = { approved: 'green', pending: 'orange', blocked: 'red' };
 
@@ -37,6 +39,7 @@ export default function SettingsPage() {
 
   const threshold = useLowStockThreshold();
   const [thresholdInput, setThresholdInput] = useState(threshold);
+  const { modules, toggle: toggleModule } = useModuleSettings();
 
   const [receipt, setReceipt] = useState(getReceiptSettings);
   const updateReceipt = (key, value) => setReceipt((r) => ({ ...r, [key]: value }));
@@ -246,6 +249,115 @@ export default function SettingsPage() {
           </p>
           <Button type="submit" className="self-start">Save Receipt Settings</Button>
         </form>
+      </Card>
+
+      {/* ── Business Modules ───────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader title="Business Modules" />
+        <div className="divide-y divide-border/40 px-5 pb-5">
+          <p className="text-xs text-muted-foreground pt-4 pb-5">
+            Enable the modules that match your shop type. Each module adds specialized product fields and is saved on this device.
+          </p>
+
+          {/* Bakery */}
+          <div className="py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0 text-base">🍞</div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Bakery Module</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Expiry dates, weight-based pricing, production dates, unit types</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleModule('bakery_module_enabled')}
+                className={cn(
+                  'relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 focus:outline-none shrink-0',
+                  modules.bakery_module_enabled ? 'bg-orange-500' : 'bg-muted'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200',
+                  modules.bakery_module_enabled ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+            {modules.bakery_module_enabled && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {['Expiry Date Tracking', 'Weight-Based Pricing', 'Production Date', 'Unit Types (kg/g/tray)'].map(f => (
+                  <span key={f} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-700 dark:text-orange-400 text-[11px] font-medium">✓ {f}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Dry Fruits */}
+          <div className="py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-amber-800/10 border border-amber-800/20 flex items-center justify-center shrink-0 text-base">🌰</div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Dry Fruits Module</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Quality grades, country of origin, wholesale pricing, wastage %</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleModule('dry_fruits_module_enabled')}
+                className={cn(
+                  'relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 focus:outline-none shrink-0',
+                  modules.dry_fruits_module_enabled ? 'bg-amber-700' : 'bg-muted'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200',
+                  modules.dry_fruits_module_enabled ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+            {modules.dry_fruits_module_enabled && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {['Quality Grades', 'Country of Origin', 'Wholesale Pricing', 'Brand', 'Wastage %'].map(f => (
+                  <span key={f} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-800/10 border border-amber-800/20 text-amber-800 dark:text-amber-400 text-[11px] font-medium">✓ {f}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Pharmacy */}
+          <div className="py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0 text-base">💊</div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Pharmacy / Medical Module</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Generic name, strength, medicine type, manufacturer, expiry, prescription flag</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleModule('pharmacy_module_enabled')}
+                className={cn(
+                  'relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 focus:outline-none shrink-0',
+                  modules.pharmacy_module_enabled ? 'bg-cyan-500' : 'bg-muted'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200',
+                  modules.pharmacy_module_enabled ? 'translate-x-6' : 'translate-x-1'
+                )} />
+              </button>
+            </div>
+            {modules.pharmacy_module_enabled && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {['Generic Name & Strength', 'Medicine Type', 'Manufacturer', 'Prescription Flag', 'Expiry Date'].map(f => (
+                  <span key={f} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-700 dark:text-cyan-400 text-[11px] font-medium">✓ {f}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </Card>
 
       <Card>
