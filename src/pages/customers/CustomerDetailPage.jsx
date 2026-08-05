@@ -50,8 +50,7 @@ export default function CustomerDetailPage() {
   const [salesPage, setSalesPage] = useState(1);
   const [payAmounts, setPayAmounts] = useState({});
   const [payNotesBySale, setPayNotesBySale] = useState({});
-  const [genPayAmount, setGenPayAmount] = useState('');
-  const [genPayNotes, setGenPayNotes] = useState('');
+  const [expandedSaleId, setExpandedSaleId] = useState(null);
 
   const customer = list('customer').find((c) => String(c.id) === String(id));
   const allSales = list('sale');
@@ -107,14 +106,14 @@ export default function CustomerDetailPage() {
   }, [data, salesPage]);
 
   const recordPayment = async (saleId) => {
-    const amt = Number(saleId ? payAmounts[saleId] : genPayAmount);
+    const amt = Number(payAmounts[saleId]);
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
     try {
       await pushEntity('customer_payment', 'create', {
         customer_id: customer.id,
         amount: amt,
-        notes: (saleId ? (payNotesBySale[saleId] || '') : genPayNotes) || '',
-        sale_id: saleId || null,
+        notes: payNotesBySale[saleId] || '',
+        sale_id: saleId,
         date_added: new Date().toISOString(),
       });
       await pushEntity('customer', 'update', {
@@ -123,11 +122,17 @@ export default function CustomerDetailPage() {
         updated_at: new Date().toISOString(),
       });
       showToast('Payment recorded');
-      if (saleId) {
-        setPayAmounts((prev) => { const n = { ...prev }; delete n[saleId]; return n; });
-        setPayNotesBySale((prev) => { const n = { ...prev }; delete n[saleId]; return n; });
-      } else { setGenPayAmount(''); setGenPayNotes(''); }
+      setPayAmounts((prev) => { const n = { ...prev }; delete n[saleId]; return n; });
+      setPayNotesBySale((prev) => { const n = { ...prev }; delete n[saleId]; return n; });
     } catch { showToast('Failed to record payment', 'error'); }
+  };
+
+  const cancelSale = async (sale) => {
+    if (!window.confirm(`Cancel Sale #${sale.id}? This cannot be undone.`)) return;
+    try {
+      await pushEntity('sale', 'update', { ...sale, status: 'Cancelled', updated_at: new Date().toISOString() });
+      showToast('Invoice cancelled');
+    } catch { showToast('Failed to cancel invoice', 'error'); }
   };
 
   const deletePayment = async (payment) => {
@@ -245,30 +250,6 @@ export default function CustomerDetailPage() {
             </div>
           </div>
 
-          {/* Quick payment */}
-          {balance > 0.5 && (
-            <div className="px-5 py-4 border-b border-border">
-              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Record Payment</p>
-              <div className="space-y-2">
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-bold">PKR</span>
-                  <input type="number" min="0" value={genPayAmount} onChange={(e) => setGenPayAmount(e.target.value)} placeholder="Amount"
-                    className="w-full pl-11 h-8 text-sm rounded-md border border-border bg-background focus:outline-none" />
-                </div>
-                <input value={genPayNotes} onChange={(e) => setGenPayNotes(e.target.value)} placeholder="Notes (optional)"
-                  className="w-full px-3 h-8 text-xs rounded-md border border-border bg-background focus:outline-none" />
-                <div className="flex gap-1.5">
-                  <button disabled={!genPayAmount} onClick={() => recordPayment(null)}
-                    className="flex-1 h-8 text-xs gap-1 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center">
-                    <Check size={12} /> Log Payment
-                  </button>
-                  <button onClick={() => setGenPayAmount(String(Math.round(balance)))}
-                    className="h-8 px-3 text-xs rounded-lg border border-border bg-background hover:bg-muted">Full</button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Count pills */}
           <div className="px-5 py-4 mt-auto">
             <div className="flex gap-2 text-[11px]">
@@ -328,6 +309,7 @@ export default function CustomerDetailPage() {
                     const sale = item;
                     const st = saleStatus(sale);
                     const paidPct = Math.min(100, Math.round(Number(sale.total) > 0 ? (sale.amountPaid / Number(sale.total)) * 100 : 0));
+                    const isExpanded = expandedSaleId === sale.id;
                     return (
                       <div key={`sale-${sale.id}`} className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
                         {/* Gradient top accent */}
@@ -345,8 +327,10 @@ export default function CustomerDetailPage() {
                               {fmtDate(sale.date_created)}
                             </div>
                           </div>
-                          <button onClick={() => printInvoice(invoiceDataFor(sale))}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors">
+                          <button
+                            onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                            className={cn('w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+                              isExpanded ? 'bg-primary/10 text-primary' : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted')}>
                             <Eye size={15} />
                           </button>
                         </div>
@@ -414,27 +398,93 @@ export default function CustomerDetailPage() {
                             </>
                           )}
                           <div className="flex items-center gap-1.5 ml-auto">
-                            {sale.remaining > 0.5 && sale.status !== 'Cancelled' && (
-                              <button className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
-                                <Tag size={14} />
-                              </button>
-                            )}
-                            <button onClick={() => printInvoice(invoiceDataFor(sale))}
-                              className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+                            <button
+                              onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                              title="View details"
+                              className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
+                                isExpanded ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}>
                               <Eye size={14} />
                             </button>
+                            {sale.status !== 'Cancelled' && (
+                              <button
+                                onClick={() => cancelSale(sale)}
+                                title="Cancel invoice"
+                                className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors">
+                                <X size={14} />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => navigate('/returns')}
+                              title="Record return"
+                              className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-amber-600 hover:border-amber-400/40 hover:bg-amber-500/10 transition-colors">
+                              <Undo2 size={14} />
+                            </button>
                             {customer.phone && (
-                              <button onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(sale)); if (url) window.open(url, '_blank'); }}
+                              <button
+                                onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(sale)); if (url) window.open(url, '_blank'); }}
+                                title="Send via WhatsApp"
                                 className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white hover:bg-emerald-600 transition-colors">
                                 <MessageCircle size={14} />
                               </button>
                             )}
-                            <button onClick={() => printInvoice(invoiceDataFor(sale))}
+                            <button
+                              onClick={() => printInvoice(invoiceDataFor(sale))}
+                              title="Print invoice"
                               className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors">
                               <Printer size={14} />
                             </button>
                           </div>
                         </div>
+
+                        {/* Expanded detail section */}
+                        {isExpanded && (
+                          <div className="border-t border-border/40 bg-muted/10 px-4 py-3 space-y-3">
+                            {sale.items?.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Items Breakdown</p>
+                                <div className="space-y-1.5">
+                                  {sale.items.map((item, idx) => (
+                                    <div key={idx} className="flex items-center text-xs gap-2">
+                                      <span className="font-medium flex-1 min-w-0 truncate">{item.product_name}</span>
+                                      <span className="text-muted-foreground shrink-0">×{item.quantity}</span>
+                                      <span className="text-muted-foreground shrink-0 tabular-nums w-20 text-right">{fmtPKR(item.price)}</span>
+                                      <span className="font-bold shrink-0 tabular-nums w-24 text-right">{fmtPKR(Number(item.price) * Number(item.quantity))}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-border/40 space-y-1 text-xs">
+                                  {sale.discount > 0 && (
+                                    <div className="flex justify-between text-muted-foreground">
+                                      <span>Discount</span><span className="text-rose-600 tabular-nums">−{fmtPKR(sale.discount)}</span>
+                                    </div>
+                                  )}
+                                  {sale.amountReturned > 0 && (
+                                    <div className="flex justify-between text-muted-foreground">
+                                      <span>Returns</span><span className="text-amber-600 tabular-nums">−{fmtPKR(sale.amountReturned)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between font-bold border-t border-border/40 pt-1 mt-1">
+                                    <span>Grand Total</span><span className="tabular-nums">{fmtPKR(sale.total)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {sale.linkedReturns?.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Returns on this Invoice</p>
+                                <div className="space-y-1">
+                                  {sale.linkedReturns.map((r) => (
+                                    <div key={r.id} className="flex items-center justify-between text-xs rounded-lg bg-amber-500/5 border border-amber-500/15 px-3 py-1.5">
+                                      <span className="text-muted-foreground">{fmtDate(r.date_created)}</span>
+                                      {r.reason && <span className="text-muted-foreground/60 truncate mx-2">{r.reason}</span>}
+                                      <span className="font-bold text-amber-600 tabular-nums">{fmtPKR(r.total_returned)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

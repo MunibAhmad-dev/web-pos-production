@@ -63,6 +63,7 @@ export default function VendorDetailPage() {
   const [poFilter, setPoFilter] = useState('all');
   const [payAmounts, setPayAmounts] = useState({});
   const [payNotesByPO, setPayNotesByPO] = useState({});
+  const [expandedPoId, setExpandedPoId] = useState(null);
   const [genPayAmount, setGenPayAmount] = useState('');
   const [genPayNotes, setGenPayNotes] = useState('');
 
@@ -134,22 +135,28 @@ export default function VendorDetailPage() {
   }, [data, poFilter, posPage]);
 
   const recordPayment = async (purchaseId) => {
-    const amt = Number(purchaseId ? payAmounts[purchaseId] : genPayAmount);
+    const amt = Number(payAmounts[purchaseId]);
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
     try {
       await pushEntity('vendor_payment', 'create', {
         vendor_id: vendor.id,
         amount: amt,
-        notes: (purchaseId ? (payNotesByPO[purchaseId] || '') : genPayNotes) || '',
-        purchase_id: purchaseId || null,
+        notes: payNotesByPO[purchaseId] || '',
+        purchase_id: purchaseId,
         date_added: new Date().toISOString(),
       });
       showToast('Payment recorded');
-      if (purchaseId) {
-        setPayAmounts((prev) => { const n = { ...prev }; delete n[purchaseId]; return n; });
-        setPayNotesByPO((prev) => { const n = { ...prev }; delete n[purchaseId]; return n; });
-      } else { setGenPayAmount(''); setGenPayNotes(''); }
+      setPayAmounts((prev) => { const n = { ...prev }; delete n[purchaseId]; return n; });
+      setPayNotesByPO((prev) => { const n = { ...prev }; delete n[purchaseId]; return n; });
     } catch { showToast('Failed to record payment', 'error'); }
+  };
+
+  const cancelPO = async (po) => {
+    if (!window.confirm(`Cancel ${poNumber(po)}? This cannot be undone.`)) return;
+    try {
+      await pushEntity('purchase', 'update', { ...po, status: 'Cancelled', updated_at: new Date().toISOString() });
+      showToast('Purchase order cancelled');
+    } catch { showToast('Failed to cancel order', 'error'); }
   };
 
   const deletePayment = async (paymentId) => {
@@ -291,30 +298,6 @@ export default function VendorDetailPage() {
             </div>
           </div>
 
-          {/* Quick payment */}
-          {balance > 0.5 && (
-            <div className="px-5 py-4 border-b border-border">
-              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Record Payment</p>
-              <div className="space-y-2">
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-bold">PKR</span>
-                  <input type="number" min="0" value={genPayAmount} onChange={(e) => setGenPayAmount(e.target.value)} placeholder="Amount"
-                    className="w-full pl-11 h-8 text-sm rounded-md border border-border bg-background focus:outline-none" />
-                </div>
-                <input value={genPayNotes} onChange={(e) => setGenPayNotes(e.target.value)} placeholder="Notes (optional)"
-                  className="w-full px-3 h-8 text-xs rounded-md border border-border bg-background focus:outline-none" />
-                <div className="flex gap-1.5">
-                  <button disabled={!genPayAmount} onClick={() => recordPayment(null)}
-                    className="flex-1 h-8 text-xs gap-1 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center">
-                    <Check size={12} /> Log Payment
-                  </button>
-                  <button onClick={() => setGenPayAmount(String(Math.round(balance)))}
-                    className="h-8 px-3 text-xs rounded-lg border border-border bg-background hover:bg-muted">Full</button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Count pills */}
           <div className="px-5 py-4 mt-auto">
             <div className="flex gap-2 text-[11px]">
@@ -387,6 +370,7 @@ export default function VendorDetailPage() {
                     const po = item;
                     const st = poStatus(po);
                     const paidPct = Math.min(100, Math.round(Number(po.total) > 0 ? (po.amountPaid / Number(po.total)) * 100 : 0));
+                    const isExpanded = expandedPoId === po.id;
                     return (
                       <div key={`po-${po.id}`} className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
                         {/* Gradient top accent */}
@@ -404,8 +388,10 @@ export default function VendorDetailPage() {
                               {fmtDate(po.date_created)}
                             </div>
                           </div>
-                          <button onClick={() => printInvoice(poInvoiceData(po))}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors">
+                          <button
+                            onClick={() => setExpandedPoId(isExpanded ? null : po.id)}
+                            className={cn('w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+                              isExpanded ? 'bg-primary/10 text-primary' : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted')}>
                             <Eye size={15} />
                           </button>
                         </div>
@@ -473,22 +459,88 @@ export default function VendorDetailPage() {
                             </>
                           )}
                           <div className="flex items-center gap-1.5 ml-auto">
-                            <button onClick={() => printInvoice(poInvoiceData(po))}
-                              className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+                            <button
+                              onClick={() => setExpandedPoId(isExpanded ? null : po.id)}
+                              title="View details"
+                              className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
+                                isExpanded ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}>
                               <Eye size={14} />
                             </button>
+                            {po.status !== 'Cancelled' && (
+                              <button
+                                onClick={() => cancelPO(po)}
+                                title="Cancel order"
+                                className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors">
+                                <X size={14} />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => navigate('/returns')}
+                              title="Record return"
+                              className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-amber-600 hover:border-amber-400/40 hover:bg-amber-500/10 transition-colors">
+                              <Undo2 size={14} />
+                            </button>
                             {vendor.phone && (
-                              <button onClick={() => waPoStatus(po)}
+                              <button
+                                onClick={() => waPoStatus(po)}
+                                title="Send status via WhatsApp"
                                 className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white hover:bg-emerald-600 transition-colors">
                                 <MessageCircle size={14} />
                               </button>
                             )}
-                            <button onClick={() => printInvoice(poInvoiceData(po))}
+                            <button
+                              onClick={() => printInvoice(poInvoiceData(po))}
+                              title="Print order"
                               className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors">
                               <Printer size={14} />
                             </button>
                           </div>
                         </div>
+
+                        {/* Expanded detail section */}
+                        {isExpanded && (
+                          <div className="border-t border-border/40 bg-muted/10 px-4 py-3 space-y-3">
+                            {po.items?.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Items Breakdown</p>
+                                <div className="space-y-1.5">
+                                  {po.items.map((item, idx) => (
+                                    <div key={idx} className="flex items-center text-xs gap-2">
+                                      <span className="font-medium flex-1 min-w-0 truncate">{item.product_name}</span>
+                                      <span className="text-muted-foreground shrink-0">×{item.quantity}</span>
+                                      <span className="text-muted-foreground shrink-0 tabular-nums w-20 text-right">{fmtPKR(item.cost_price || item.purchase_price)}</span>
+                                      <span className="font-bold shrink-0 tabular-nums w-24 text-right">{fmtPKR(Number(item.cost_price || item.purchase_price || 0) * Number(item.quantity))}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-border/40 space-y-1 text-xs">
+                                  {po.amountReturned > 0 && (
+                                    <div className="flex justify-between text-muted-foreground">
+                                      <span>Returns</span><span className="text-amber-600 tabular-nums">−{fmtPKR(po.amountReturned)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between font-bold border-t border-border/40 pt-1 mt-1">
+                                    <span>Grand Total</span><span className="tabular-nums">{fmtPKR(po.total)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {po.linkedReturns?.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Returns on this Order</p>
+                                <div className="space-y-1">
+                                  {po.linkedReturns.map((r) => (
+                                    <div key={r.id} className="flex items-center justify-between text-xs rounded-lg bg-amber-500/5 border border-amber-500/15 px-3 py-1.5">
+                                      <span className="text-muted-foreground">{fmtDate(r.date_created)}</span>
+                                      {r.reason && <span className="text-muted-foreground/60 truncate mx-2">{r.reason}</span>}
+                                      <span className="font-bold text-amber-600 tabular-nums">{fmtPKR(r.total_returned)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
