@@ -6,6 +6,7 @@ import {
   Truck,
   ClipboardList,
   Undo2,
+  ShieldAlert,
   Users,
   UserCog,
   Wallet,
@@ -38,6 +39,7 @@ export const navGroups = [
       { to: '/vendors', label: 'Vendors', icon: Truck },
       { to: '/purchases', label: 'Purchases / POs', icon: ClipboardList },
       { to: '/returns', label: 'Returns', icon: Undo2 },
+      { to: '/warranty', label: 'Warranty Claims', icon: ShieldAlert },
     ],
   },
   {

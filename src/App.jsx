@@ -27,6 +27,7 @@ import VendorDetailPage from './pages/vendors/VendorDetailPage';
 import EmployeesPage from './pages/employees/EmployeesPage';
 import PurchasesPage from './pages/purchases/PurchasesPage';
 import ReturnsPage from './pages/returns/ReturnsPage';
+import WarrantyPage from './pages/warranty/WarrantyPage';
 import AccountsPage from './pages/accounts/AccountsPage';
 import ExpensesPage from './pages/finance/ExpensesPage';
 import CashRegisterPage from './pages/finance/CashRegisterPage';
@@ -122,6 +123,7 @@ export default function App() {
                   <Route path="/vendors/:id" element={<VendorDetailPage />} />
                   <Route path="/purchases" element={<PurchasesPage />} />
                   <Route path="/returns" element={<ReturnsPage />} />
+                  <Route path="/warranty" element={<WarrantyPage />} />
                   <Route path="/customers" element={<CustomersPage />} />
                   <Route path="/customers/:id" element={<CustomerDetailPage />} />
                   <Route path="/employees" element={<EmployeesPage />} />
