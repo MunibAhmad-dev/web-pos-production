@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
+import CustomBillsPanel from '../../components/vendors/CustomBillsPanel';
 import {
   Phone, Mail, MapPin, CreditCard, ShoppingCart, Undo2, History,
   MessageCircle, ChevronDown, ChevronRight, Plus, Printer, Download,
@@ -66,6 +68,7 @@ export default function VendorDetailPage() {
   const [expandedPoId, setExpandedPoId] = useState(null);
   const [genPayAmount, setGenPayAmount] = useState('');
   const [genPayNotes, setGenPayNotes] = useState('');
+  const [showCustomBills, setShowCustomBills] = useState(false);
 
   const vendor = list('vendor').find((v) => String(v.id) === String(id));
   const allPurchases = list('purchase');
@@ -263,6 +266,10 @@ export default function VendorDetailPage() {
                 <MessageCircle size={13} /> Open WhatsApp
               </button>
             )}
+            <button onClick={() => setShowCustomBills(true)}
+              className="mt-2 w-full h-8 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 text-xs font-semibold flex items-center justify-center gap-2 transition-colors border border-amber-500/20">
+              <CreditCard size={13} /> Custom Bills
+            </button>
           </div>
 
           {/* Balance */}
@@ -695,6 +702,12 @@ export default function VendorDetailPage() {
           </Tabs>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showCustomBills && (
+          <CustomBillsPanel vendor={vendor} onClose={() => setShowCustomBills(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

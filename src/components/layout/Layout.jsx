@@ -5,6 +5,7 @@ import Topbar from './Topbar';
 import CommandPalette from './CommandPalette';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { navGroups } from './navConfig';
+import UdharReminderModal, { useUdharReminder } from '../sales/UdharReminderModal';
 
 const titleMap = navGroups
   .flatMap((group) => group.items)
@@ -14,6 +15,7 @@ const titleMap = navGroups
   });
 
 export default function Layout() {
+  const reminder = useUdharReminder();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -56,6 +58,15 @@ export default function Layout() {
       </div>
 
       <CommandPalette />
+
+      <UdharReminderModal
+        dueSales={reminder.dueSales}
+        open={reminder.open}
+        onClose={() => reminder.setOpen(false)}
+        onSnooze={reminder.handleSnooze}
+        onExtend={reminder.handleExtend}
+        onDismissAll={reminder.handleDismissAll}
+      />
     </div>
   );
 }

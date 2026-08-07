@@ -30,6 +30,8 @@ const PLURAL_TO_SINGULAR = {
   registers: 'register',
   financial_transactions: 'financial_transaction',
   warranty_claims: 'warranty_claim',
+  custom_bills: 'custom_bill',
+  custom_bill_payments: 'custom_bill_payment',
 };
 const ENTITY_TYPES = Object.values(PLURAL_TO_SINGULAR);
 const FULL_RESYNC_INTERVAL_MS = 10 * 60 * 1000; // catches deletions incremental pull can miss

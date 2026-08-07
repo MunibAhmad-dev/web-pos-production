@@ -4,12 +4,23 @@ import Button from '@/components/ui/action-button';
 import { Select, Input } from '@/components/form/fields';
 import Badge from '@/components/ui/status-badge';
 import { formatCurrency } from '../../utils/format';
+import { CalendarClock, CalendarIcon } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
 
 const paymentOptions = [
   { key: 'cash', label: 'Cash' },
   { key: 'online', label: 'Online' },
   { key: 'credit', label: 'Udhaar' },
 ];
+
+// Default due date: 7 days from today
+function defaultDueDate() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
 
 // Matches the desktop checkout modal: Amount Paid is editable for Cash/Online
 // (partial payment allowed, remainder goes to the customer's Qaraz/credit
@@ -19,6 +30,7 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [customerId, setCustomerId] = useState('');
   const [amountPaid, setAmountPaid] = useState(String(total));
+  const [dueDate, setDueDate] = useState(defaultDueDate());
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -27,6 +39,7 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
       setPaymentMethod('cash');
       setCustomerId('');
       setAmountPaid(String(total));
+      setDueDate(defaultDueDate());
       setError('');
     }
   }, [open, total]);
@@ -38,6 +51,7 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
 
   const paid = Number(amountPaid) || 0;
   const remaining = Math.max(0, total - paid);
+  const hasUdhar = remaining > 0.01 && customerId;
 
   const handleConfirm = async () => {
     setError('');
@@ -51,7 +65,7 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
     }
     setSubmitting(true);
     try {
-      await onConfirm({ paymentMethod, customerId, amountPaid: paid });
+      await onConfirm({ paymentMethod, customerId, amountPaid: paid, dueDate: hasUdhar ? dueDate : null });
       onClose();
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Checkout failed');
@@ -136,6 +150,26 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
             </p>
           )}
         </div>
+
+        {/* Due date — only shown when there's an outstanding amount with a customer */}
+        {hasUdhar && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <CalendarClock size={14} className="text-amber-600 shrink-0" />
+              <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">Payment Due Date</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Customer promised to pay by this date. A reminder will appear when the date arrives.
+            </p>
+            <input
+              type="date"
+              value={dueDate}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+            />
+          </div>
+        )}
 
         {error && <p className="text-sm text-brand-red">{error}</p>}
       </div>

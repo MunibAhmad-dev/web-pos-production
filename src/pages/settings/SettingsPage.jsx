@@ -8,8 +8,8 @@ import Button from '@/components/ui/action-button';
 import Badge from '@/components/ui/status-badge';
 import { useLowStockThreshold } from '../../hooks/useLowStockThreshold';
 import { setLowStockThreshold } from '../../utils/constants';
-import { getReceiptSettings, saveReceiptSettings } from '../../utils/receipt';
-import { Printer, FileText, Database, Download, Upload, FileSpreadsheet, FileJson } from 'lucide-react';
+import { getReceiptSettings, saveReceiptSettings, buildInvoiceHtml } from '../../utils/receipt';
+import { Printer, FileText, Database, Download, Upload, FileSpreadsheet, FileJson, Eye } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { useModuleSettings } from '../../hooks/useModuleSettings';
 import { cn } from '@/lib/utils';
@@ -43,6 +43,36 @@ export default function SettingsPage() {
 
   const [receipt, setReceipt] = useState(getReceiptSettings);
   const updateReceipt = (key, value) => setReceipt((r) => ({ ...r, [key]: value }));
+
+  // Auto-save invoice_style immediately on click — user expects selection to be live
+  const setInvoiceStyle = (style) => {
+    const next = { ...receipt, invoice_style: style };
+    setReceipt(next);
+    saveReceiptSettings(next);
+    showToast(`${style === 'formal' ? 'Formal A4' : 'Thermal'} invoice style saved`);
+  };
+
+  const previewInvoiceStyle = (style) => {
+    const sampleSettings = { ...receipt, invoice_style: style };
+    const html = buildInvoiceHtml({
+      saleId: 'DEMO',
+      date: new Date().toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }),
+      items: [
+        { name: 'Sample Product A', qty: 2, price: 1200 },
+        { name: 'Sample Product B', qty: 1, price: 3500 },
+      ],
+      subtotal: 5900, discount: 0, total: 5900,
+      amountPaid: 5900, balance: 0,
+      paymentMethod: 'cash',
+      customerName: 'John Doe',
+      customerPhone: '03001234567',
+      settings: { ...sampleSettings, store_name: sampleSettings.store_name || user?.store_name || 'My Store' },
+    });
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.open(); win.document.write(html); win.document.close();
+  };
+
   const handleSaveReceipt = (e) => {
     e.preventDefault();
     saveReceiptSettings(receipt);
@@ -213,22 +243,33 @@ export default function SettingsPage() {
             <p className="mb-2 text-sm font-medium text-ink">Invoice Style</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {INVOICE_STYLES.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => updateReceipt('invoice_style', opt.value)}
-                  className={`flex flex-col p-4 rounded-xl border-2 text-left transition-all cursor-pointer ${
-                    receipt.invoice_style === opt.value
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-border/50 hover:border-primary/30 hover:bg-muted/30'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <opt.icon size={16} className={receipt.invoice_style === opt.value ? 'text-primary' : 'text-muted-foreground'} />
-                    <span className="text-sm font-semibold">{opt.title}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{opt.desc}</span>
-                </button>
+                <div key={opt.value} className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setInvoiceStyle(opt.value)}
+                    className={`flex flex-col p-4 rounded-xl border-2 text-left transition-all cursor-pointer ${
+                      receipt.invoice_style === opt.value
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'border-border/50 hover:border-primary/30 hover:bg-muted/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <opt.icon size={16} className={receipt.invoice_style === opt.value ? 'text-primary' : 'text-muted-foreground'} />
+                      <span className="text-sm font-semibold">{opt.title}</span>
+                      {receipt.invoice_style === opt.value && (
+                        <span className="ml-auto text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">Active</span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">{opt.desc}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => previewInvoiceStyle(opt.value)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary px-2 py-1 rounded-lg hover:bg-primary/5 transition-colors self-start"
+                  >
+                    <Eye size={11} /> Preview {opt.title}
+                  </button>
+                </div>
               ))}
             </div>
           </div>

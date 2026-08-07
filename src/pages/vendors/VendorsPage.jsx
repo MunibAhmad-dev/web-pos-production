@@ -12,6 +12,7 @@ import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import CustomBillsPanel from '../../components/vendors/CustomBillsPanel';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -147,6 +148,7 @@ export default function VendorsPage() {
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [payAmount, setPayAmount] = useState('');
   const [paying, setPaying] = useState(false);
+  const [customBillsVendor, setCustomBillsVendor] = useState(null);
 
   const vendors = list('vendor');
   const allPurchases = list('purchase');
@@ -325,6 +327,9 @@ export default function VendorsPage() {
                         <DropdownMenuContent align="end" className="w-48">
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/vendors/${v.id}`); }}>
                             <ExternalLink size={13} className="mr-2" /> View Full Profile
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setCustomBillsVendor(v); }}>
+                            <Receipt size={13} className="mr-2" /> Custom Bills
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(v, e); }}>
                             <Pencil size={13} className="mr-2" /> Edit Vendor
@@ -576,6 +581,13 @@ export default function VendorsPage() {
         </div>,
         document.body
       )}
+
+      {/* ── Custom Bills Panel ── */}
+      <AnimatePresence>
+        {customBillsVendor && (
+          <CustomBillsPanel vendor={customBillsVendor} onClose={() => setCustomBillsVendor(null)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

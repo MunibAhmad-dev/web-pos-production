@@ -152,7 +152,7 @@ export default function POSPage() {
     setDiscount('');
   };
 
-  const handleConfirmCheckout = async ({ paymentMethod, customerId, amountPaid }) => {
+  const handleConfirmCheckout = async ({ paymentMethod, customerId, amountPaid, dueDate }) => {
     const now = new Date().toISOString();
     const saleId = nextId();
     const dueAmount = Math.max(0, total - amountPaid);
@@ -182,10 +182,8 @@ export default function POSPage() {
       payment_status: amountPaid >= total ? 'Paid' : amountPaid > 0 ? 'Partial' : 'Pending',
       status: 'Completed',
       notes: '',
-      // Not a desktop schema column — tracked here so cancellation/AR reporting
-      // can reverse the exact amount added to the customer's credit balance,
-      // since partial payment is allowed on any payment method, not just Udhaar.
       due_amount: dueAmount,
+      due_date: dueDate || null,
     };
 
     const events = [
