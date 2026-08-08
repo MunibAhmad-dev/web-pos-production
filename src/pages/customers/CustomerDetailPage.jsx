@@ -313,57 +313,62 @@ export default function CustomerDetailPage() {
                     return (
                       <div key={`sale-${sale.id}`} className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
                         {/* Gradient top accent */}
-                        <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-purple-500" />
+                        <div className="h-[3px] w-full bg-gradient-to-r from-blue-500 to-purple-500" />
 
-                        {/* Header */}
-                        <div className="flex items-start justify-between px-4 pt-3 pb-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-black">SALE #{sale.id}</span>
-                              <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', st.cls)}>{st.label}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
-                              <CalendarDays size={11} />
-                              {fmtDate(sale.date_created)}
-                            </div>
+                        {/* Header row: number + badges left | date + eye right */}
+                        <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-2">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <span className="text-sm font-black font-mono">INV #{sale.id}</span>
+                            <span className={cn('text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0', st.cls)}>{st.label}</span>
+                            {sale.items?.length > 0 && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-400/25 text-amber-700 dark:text-amber-400 shrink-0">
+                                {sale.items.length} item{sale.items.length !== 1 ? 's' : ''}
+                              </span>
+                            )}
                           </div>
-                          <button
-                            onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
-                            className={cn('w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
-                              isExpanded ? 'bg-primary/10 text-primary' : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted')}>
-                            <Eye size={15} />
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <CalendarDays size={9} />{fmtDate(sale.date_created)}
+                            </span>
+                            <button
+                              onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                              title="View details"
+                              className={cn('w-7 h-7 rounded-lg flex items-center justify-center transition-colors shrink-0',
+                                isExpanded ? 'bg-primary/10 text-primary' : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted')}>
+                              <Eye size={14} />
+                            </button>
+                          </div>
                         </div>
 
-                        {/* TOTAL / PAID / BALANCE */}
-                        <div className="grid grid-cols-3 gap-2 px-4 pb-3">
-                          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-center">
+                        {/* TOTAL / PAID / REMAINING — flat, no boxed cells */}
+                        <div className="grid grid-cols-3 px-4 pb-2 text-center">
+                          <div>
                             <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</p>
                             <p className="text-xs font-black mt-0.5 tabular-nums">{fmtPKR(sale.total)}</p>
                           </div>
-                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30 px-3 py-2 text-center">
+                          <div>
                             <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Paid</p>
                             <p className="text-xs font-black mt-0.5 text-emerald-600 tabular-nums">{fmtPKR(sale.amountPaid)}</p>
                           </div>
-                          <div className={cn('rounded-lg px-3 py-2 text-center border', sale.remaining > 0.5 ? 'border-rose-200 bg-rose-50 dark:border-rose-900/40 dark:bg-rose-950/30' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30')}>
-                            <p className={cn('text-[9px] font-black uppercase tracking-widest', sale.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>Balance</p>
+                          <div>
+                            <p className={cn('text-[9px] font-black uppercase tracking-widest', sale.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>Remaining</p>
                             <p className={cn('text-xs font-black mt-0.5 tabular-nums', sale.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(sale.remaining)}</p>
                           </div>
                         </div>
 
                         {/* Progress bar */}
-                        <div className="px-4 pb-3">
+                        <div className="px-4 pb-2">
                           <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                             <div className="h-full bg-emerald-500 transition-all" style={{ width: `${paidPct}%` }} />
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                         </div>
 
-                        {/* Items summary */}
+                        {/* Items inline */}
                         {sale.items?.length > 0 && (
-                          <div className="mx-4 mb-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
-                            <p className="text-[11px] text-muted-foreground leading-relaxed">
-                              <span className="font-bold text-foreground">≡ Items: </span>
+                          <div className="px-4 pb-2">
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                              <span className="font-bold text-foreground/60">≡ </span>
                               {sale.items.map((i, idx) => (
                                 <span key={idx}>
                                   {idx > 0 && <span className="text-muted-foreground/40">, </span>}
@@ -374,81 +379,63 @@ export default function CustomerDetailPage() {
                           </div>
                         )}
 
-                        {/* Action bar */}
-                        <div className="flex items-center gap-2 px-4 pb-4">
+                        {/* Action bar: Amount | Pay (green) | WA | Print | Cancel */}
+                        <div className="flex items-center gap-1.5 px-4 pb-3 flex-wrap">
                           {sale.remaining > 0.5 && sale.status !== 'Cancelled' && (
                             <>
                               <div className="relative">
-                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
                                 <input
                                   type="number" min="0"
                                   value={payAmounts[sale.id] ?? ''}
                                   onChange={(e) => setPayAmounts((prev) => ({ ...prev, [sale.id]: e.target.value }))}
                                   placeholder={Math.round(sale.remaining).toLocaleString()}
-                                  className="h-9 pl-9 pr-2 w-28 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/40 tabular-nums"
+                                  className="h-8 pl-8 pr-2 w-32 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
                                 />
                               </div>
                               <button
                                 disabled={!payAmounts[sale.id] || Number(payAmounts[sale.id]) <= 0}
                                 onClick={() => recordPayment(sale.id)}
-                                className="h-9 px-4 text-xs rounded-lg bg-primary text-primary-foreground font-bold disabled:opacity-40 shrink-0 transition-opacity"
-                              >
+                                className="h-8 px-4 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 transition-colors shrink-0">
                                 Pay
                               </button>
                             </>
                           )}
                           <div className="flex items-center gap-1.5 ml-auto">
-                            <button
-                              onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
-                              title="View details"
-                              className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
-                                isExpanded ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}>
-                              <Eye size={14} />
-                            </button>
-                            {sale.status !== 'Cancelled' && (
-                              <button
-                                onClick={() => cancelSale(sale)}
-                                title="Cancel invoice"
-                                className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors">
-                                <X size={14} />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => navigate('/returns')}
-                              title="Record return"
-                              className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-amber-600 hover:border-amber-400/40 hover:bg-amber-500/10 transition-colors">
-                              <Undo2 size={14} />
-                            </button>
                             {customer.phone && (
                               <button
                                 onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(sale)); if (url) window.open(url, '_blank'); }}
-                                title="Send via WhatsApp"
-                                className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white hover:bg-emerald-600 transition-colors">
-                                <MessageCircle size={14} />
+                                title="WhatsApp"
+                                className="w-8 h-8 rounded-full bg-[#25d366] flex items-center justify-center text-white hover:bg-[#1fba57] transition-colors shrink-0">
+                                <MessageCircle size={13} />
                               </button>
                             )}
-                            <button
-                              onClick={() => printInvoice(invoiceDataFor(sale))}
-                              title="Print invoice"
-                              className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors">
-                              <Printer size={14} />
+                            <button onClick={() => printInvoice(invoiceDataFor(sale))} title="Print"
+                              className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
+                              <Printer size={13} />
                             </button>
+                            {sale.status !== 'Cancelled' && (
+                              <button onClick={() => cancelSale(sale)} title="Cancel invoice"
+                                className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors shrink-0">
+                                <X size={13} />
+                              </button>
+                            )}
                           </div>
                         </div>
 
-                        {/* Expanded detail section */}
+                        {/* Expanded detail: items table + payments on invoice + returns */}
                         {isExpanded && (
                           <div className="border-t border-border/40 bg-muted/10 px-4 py-3 space-y-3">
                             {sale.items?.length > 0 && (
                               <div>
                                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Items Breakdown</p>
                                 <div className="space-y-1.5">
-                                  {sale.items.map((item, idx) => (
+                                  {sale.items.map((it, idx) => (
                                     <div key={idx} className="flex items-center text-xs gap-2">
-                                      <span className="font-medium flex-1 min-w-0 truncate">{item.product_name}</span>
-                                      <span className="text-muted-foreground shrink-0">×{item.quantity}</span>
-                                      <span className="text-muted-foreground shrink-0 tabular-nums w-20 text-right">{fmtPKR(item.price)}</span>
-                                      <span className="font-bold shrink-0 tabular-nums w-24 text-right">{fmtPKR(Number(item.price) * Number(item.quantity))}</span>
+                                      <span className="font-medium flex-1 min-w-0 truncate">{it.product_name}</span>
+                                      <span className="text-muted-foreground shrink-0">×{it.quantity}</span>
+                                      <span className="text-muted-foreground shrink-0 tabular-nums w-20 text-right">{fmtPKR(it.price)}</span>
+                                      <span className="font-bold shrink-0 tabular-nums w-24 text-right">{fmtPKR(Number(it.price) * Number(it.quantity))}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -463,9 +450,32 @@ export default function CustomerDetailPage() {
                                       <span>Returns</span><span className="text-amber-600 tabular-nums">−{fmtPKR(sale.amountReturned)}</span>
                                     </div>
                                   )}
-                                  <div className="flex justify-between font-bold border-t border-border/40 pt-1 mt-1">
+                                  <div className="flex justify-between font-bold border-t border-border/40 pt-1">
                                     <span>Grand Total</span><span className="tabular-nums">{fmtPKR(sale.total)}</span>
                                   </div>
+                                </div>
+                              </div>
+                            )}
+                            {sale.linkedPayments?.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Payments on this Invoice</p>
+                                <div className="space-y-1.5">
+                                  {sale.linkedPayments.map((p) => (
+                                    <div key={p.id} className="flex items-center justify-between text-xs rounded-lg bg-emerald-500/5 border border-emerald-500/15 px-3 py-1.5">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                        <span className="text-muted-foreground">{fmtDateShort(p.date_added)}</span>
+                                        {p.notes && <span className="text-muted-foreground/60 truncate">· {p.notes}</span>}
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                                        <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{fmtPKR(p.amount)}</span>
+                                        <button onClick={() => deletePayment(p)}
+                                          className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors">
+                                          <Trash2 size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             )}

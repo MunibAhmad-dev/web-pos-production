@@ -19,7 +19,7 @@ const paymentOptions = [
 function defaultDueDate() {
   const d = new Date();
   d.setDate(d.getDate() + 7);
-  return d.toISOString().slice(0, 10);
+  return d;
 }
 
 // Matches the desktop checkout modal: Amount Paid is editable for Cash/Online
@@ -65,7 +65,7 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
     }
     setSubmitting(true);
     try {
-      await onConfirm({ paymentMethod, customerId, amountPaid: paid, dueDate: hasUdhar ? dueDate : null });
+      await onConfirm({ paymentMethod, customerId, amountPaid: paid, dueDate: hasUdhar && dueDate ? dueDate.toISOString().slice(0, 10) : null });
       onClose();
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Checkout failed');
@@ -159,15 +159,31 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
               <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">Payment Due Date</p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Customer promised to pay by this date. A reminder will appear when the date arrives.
+              A reminder will appear when this date arrives.
             </p>
-            <input
-              type="date"
-              value={dueDate}
-              min={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
-            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-left hover:bg-muted/40 transition-colors">
+                  <CalendarIcon size={13} className="text-muted-foreground shrink-0" />
+                  <span className={dueDate ? 'text-foreground' : 'text-muted-foreground'}>
+                    {dueDate ? format(dueDate, 'dd MMM yyyy') : 'Pick a date'}
+                  </span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="w-auto p-0 z-[9999]"
+                align="start"
+                sideOffset={4}
+              >
+                <Calendar
+                  mode="single"
+                  selected={dueDate}
+                  onSelect={(d) => d && setDueDate(d)}
+                  disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
         )}
 

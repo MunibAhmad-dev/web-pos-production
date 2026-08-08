@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Truck, Pencil, Trash2, Phone, MessageCircle,
   X, ArrowRight, ShoppingCart, DollarSign, RefreshCw,
-  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink,
+  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink, Wallet, Printer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -13,6 +13,7 @@ import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import CustomBillsPanel from '../../components/vendors/CustomBillsPanel';
+import GlobalCustomBillsOverlay from '../../components/vendors/GlobalCustomBillsOverlay';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -149,6 +150,7 @@ export default function VendorsPage() {
   const [payAmount, setPayAmount] = useState('');
   const [paying, setPaying] = useState(false);
   const [customBillsVendor, setCustomBillsVendor] = useState(null);
+  const [showGlobalBills, setShowGlobalBills] = useState(false);
 
   const vendors = list('vendor');
   const allPurchases = list('purchase');
@@ -262,6 +264,10 @@ export default function VendorsPage() {
               </div>
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest ml-[52px]">{vendors.length} total vendors</p>
             </div>
+            <button onClick={() => setShowGlobalBills(true)}
+              className="flex items-center gap-2 h-10 px-4 rounded-xl border border-amber-400 bg-amber-500/5 hover:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-semibold transition-colors">
+              <Wallet size={15} /> All Custom Bills
+            </button>
             <button onClick={openAdd} className="flex items-center gap-2 h-10 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold transition-colors shadow-sm">
               <Plus size={15} /> New Vendor
             </button>
@@ -328,9 +334,6 @@ export default function VendorsPage() {
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/vendors/${v.id}`); }}>
                             <ExternalLink size={13} className="mr-2" /> View Full Profile
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setCustomBillsVendor(v); }}>
-                            <Receipt size={13} className="mr-2" /> Custom Bills
-                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(v, e); }}>
                             <Pencil size={13} className="mr-2" /> Edit Vendor
                           </DropdownMenuItem>
@@ -390,22 +393,19 @@ export default function VendorsPage() {
                     <X size={16} />
                   </button>
                 </div>
-                <div className="flex gap-2">
-                  {selectedVendor.phone && (
-                    <button onClick={() => window.open(`https://wa.me/92${selectedVendor.phone.replace(/^0/, '')}`, '_blank')}
-                      className="flex items-center justify-center gap-1.5 h-9 w-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm shrink-0">
-                      <MessageCircle size={13} />
-                    </button>
-                  )}
-                  <button onClick={() => navigate('/purchases')} className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold transition-colors">
-                    <ShoppingCart size={13} /> New Purchase
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => selectedVendor.phone && window.open(`https://wa.me/92${selectedVendor.phone.replace(/^0/, '')}`, '_blank')}
+                    disabled={!selectedVendor.phone}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-xl bg-[#25d366] hover:bg-[#1fba57] disabled:opacity-40 text-white text-xs font-semibold transition-colors shadow-sm">
+                    <MessageCircle size={13} /> WhatsApp
                   </button>
-                  <button onClick={(e) => openEdit(selectedVendor, e)} className="flex items-center justify-center h-9 w-9 rounded-xl border border-border bg-background hover:bg-muted transition-colors shrink-0">
-                    <Pencil size={13} />
+                  <button onClick={() => navigate('/purchases')} className="flex items-center justify-center gap-1.5 h-9 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold transition-colors">
+                    <ShoppingCart size={13} /> New PO
                   </button>
-                  <button onClick={() => navigate(`/vendors/${selectedVendor.id}`)}
-                    className="flex items-center justify-center h-9 w-9 rounded-xl border border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary transition-colors shrink-0" title="View Full Profile">
-                    <ExternalLink size={13} />
+                  <button onClick={() => setCustomBillsVendor(selectedVendor)}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-xl border border-amber-400 bg-amber-500/5 hover:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-semibold transition-colors">
+                    <Wallet size={13} /> Custom Bills
                   </button>
                 </div>
               </div>
@@ -482,31 +482,90 @@ export default function VendorsPage() {
                         if (row.kind === 'purchase') {
                           const p = row.purchase;
                           const items = getPurchaseItems(p.id);
-                          const isPending = row.remaining > 0.5;
+                          const paidAmt = row.amountPaid ?? (Number(p.total) - row.remaining);
+                          const paidPct = Math.min(100, Math.round(Number(p.total) > 0 ? (paidAmt / Number(p.total)) * 100 : 0));
+                          const stLabel = p.status || (row.remaining > 0.5 ? 'Pending' : 'Settled');
+                          const stCls = stLabel === 'Settled' || stLabel === 'Paid' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : stLabel === 'Cancelled' ? 'bg-muted text-muted-foreground' : 'bg-rose-500/10 text-rose-700 dark:text-rose-400';
                           return (
-                            <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden">
-                              <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20">
-                                <div className="flex items-center gap-2">
-                                  <ShoppingCart size={13} className="text-violet-500 shrink-0" />
-                                  <div>
-                                    <p className="text-xs font-bold">PO #{p.id}</p>
-                                    <p className="text-[10px] text-muted-foreground">{fmtDate(p.date_created)}</p>
-                                  </div>
+                            <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden bg-card">
+                              <div className="h-[2px] bg-gradient-to-r from-indigo-500 to-violet-500" />
+                              {/* Header */}
+                              <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <span className="text-xs font-black font-mono">PO #{p.id}</span>
+                                  <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0', stCls)}>{stLabel}</span>
+                                  {items.length > 0 && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-400/25 text-amber-700 dark:text-amber-400 shrink-0">
+                                      {items.length} item{items.length !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-xs font-black font-mono">{fmtPKR(p.total)}</p>
-                                  {isPending && <p className="text-[10px] text-rose-600 font-bold">Due: {fmtPKR(row.remaining)}</p>}
-                                  {!isPending && <p className="text-[10px] text-emerald-600 font-bold">Settled</p>}
+                                <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(p.date_created)}</span>
+                              </div>
+                              {/* Total / Paid / Remaining plain text */}
+                              <div className="grid grid-cols-3 px-3 pb-1.5 text-center">
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</p>
+                                  <p className="text-[11px] font-black tabular-nums">{fmtPKR(p.total)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Paid</p>
+                                  <p className="text-[11px] font-black text-emerald-600 tabular-nums">{fmtPKR(paidAmt)}</p>
+                                </div>
+                                <div>
+                                  <p className={cn('text-[9px] font-black uppercase tracking-widest', row.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>Remaining</p>
+                                  <p className={cn('text-[11px] font-black tabular-nums', row.remaining > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(row.remaining)}</p>
                                 </div>
                               </div>
+                              {/* Progress bar */}
+                              <div className="px-3 pb-1.5">
+                                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                                  <div className="h-full bg-emerald-500 transition-all" style={{ width: `${paidPct}%` }} />
+                                </div>
+                                <p className="text-[9px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
+                              </div>
+                              {/* Items inline */}
                               {items.length > 0 && (
-                                <div className="px-3 pb-2.5 pt-1.5 space-y-1 border-t border-border/20 bg-card">
-                                  {items.map((item) => (
-                                    <div key={item.id} className="flex justify-between text-[11px]">
-                                      <span className="text-muted-foreground">{item.product_name || item.name} × {item.quantity}</span>
-                                      <span className="font-semibold font-mono">{fmtPKR((item.cost_price || item.purchase_price || 0) * (item.quantity || 0))}</span>
-                                    </div>
-                                  ))}
+                                <div className="px-3 pb-1.5">
+                                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                    <span className="font-bold text-foreground/50">≡ </span>
+                                    {items.map((it, idx) => (
+                                      <span key={idx}>
+                                        {idx > 0 && <span className="text-muted-foreground/40">, </span>}
+                                        {it.product_name || it.name} <span className="font-semibold text-foreground/80">×{it.quantity}</span>
+                                      </span>
+                                    ))}
+                                  </p>
+                                </div>
+                              )}
+                              {/* Action bar */}
+                              {row.remaining > 0.5 && stLabel !== 'Cancelled' && (
+                                <div className="flex items-center gap-1.5 px-3 pb-3">
+                                  <div className="relative flex-1">
+                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
+                                    <input
+                                      type="number" min="0"
+                                      value={payAmount}
+                                      onChange={(e) => setPayAmount(e.target.value)}
+                                      placeholder={Math.round(row.remaining).toLocaleString()}
+                                      className="h-7 pl-7 pr-2 w-full text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
+                                    />
+                                  </div>
+                                  <button
+                                    disabled={!payAmount || paying}
+                                    onClick={handlePayment}
+                                    className="h-7 px-3 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 shrink-0 transition-colors">
+                                    Pay
+                                  </button>
+                                  {selectedVendor?.phone && (
+                                    <button onClick={() => window.open(`https://wa.me/92${selectedVendor.phone.replace(/^0/, '')}`, '_blank')}
+                                      className="w-7 h-7 rounded-full bg-[#25d366] flex items-center justify-center text-white hover:bg-[#1fba57] transition-colors shrink-0">
+                                      <MessageCircle size={11} />
+                                    </button>
+                                  )}
+                                  <button className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
+                                    <Printer size={11} />
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -582,12 +641,17 @@ export default function VendorsPage() {
         document.body
       )}
 
-      {/* ── Custom Bills Panel ── */}
+      {/* ── Per-vendor Custom Bills Panel ── */}
       <AnimatePresence>
         {customBillsVendor && (
           <CustomBillsPanel vendor={customBillsVendor} onClose={() => setCustomBillsVendor(null)} />
         )}
       </AnimatePresence>
+
+      {/* ── Global Custom Bills Overlay ── */}
+      {showGlobalBills && (
+        <GlobalCustomBillsOverlay onClose={() => setShowGlobalBills(false)} />
+      )}
     </div>
   );
 }

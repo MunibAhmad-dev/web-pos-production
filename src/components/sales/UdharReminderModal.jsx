@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, CalendarClock, CheckCircle2, ChevronRight, Clock, AlertTriangle } from 'lucide-react';
+import { Bell, X, CalendarClock, CalendarIcon, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
 import { useDataStore } from '../../store/dataStore';
 import { useNavigate } from 'react-router-dom';
 
@@ -61,12 +64,12 @@ function getDueSales(allSales, allCustomers) {
 
 function SaleRow({ sale, onSnooze, onExtend, onMarkPaid }) {
   const [extending, setExtending] = useState(false);
-  const [newDate, setNewDate]     = useState('');
+  const [newDate, setNewDate]     = useState(null);
 
   const startExtend = () => {
     const d = new Date();
     d.setDate(d.getDate() + 7);
-    setNewDate(d.toISOString().slice(0, 10));
+    setNewDate(d);
     setExtending(true);
   };
 
@@ -137,15 +140,27 @@ function SaleRow({ sale, onSnooze, onExtend, onMarkPaid }) {
               className="overflow-hidden"
             >
               <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-2">
-                <input
-                  type="date"
-                  value={newDate}
-                  min={todayStr()}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="flex items-center gap-2 h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm text-left hover:bg-muted/40 transition-colors">
+                      <CalendarIcon size={12} className="text-muted-foreground shrink-0" />
+                      <span className={newDate ? 'text-foreground' : 'text-muted-foreground'}>
+                        {newDate ? format(newDate, 'dd MMM yyyy') : 'Pick a date'}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 z-[9999]" align="start" sideOffset={4}>
+                    <Calendar
+                      mode="single"
+                      selected={newDate}
+                      onSelect={(d) => d && setNewDate(d)}
+                      disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
                 <button
-                  onClick={() => { if (newDate) { onExtend(sale, newDate); setExtending(false); } }}
+                  onClick={() => { if (newDate) { onExtend(sale, format(newDate, 'yyyy-MM-dd')); setExtending(false); } }}
                   disabled={!newDate}
                   className="h-8 px-3 text-xs font-bold rounded-lg bg-primary text-primary-foreground disabled:opacity-40"
                 >
