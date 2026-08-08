@@ -146,8 +146,7 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [paying, setPaying] = useState(false);
   const [perCardAmts, setPerCardAmts] = useState({});
-  const [expandedCards, setExpandedCards] = useState({});
-  const [itemVisibleCounts, setItemVisibleCounts] = useState({});
+  const [detailSale, setDetailSale] = useState(null);
 
   const customers = list('customer');
   const allSales = list('sale');
@@ -468,14 +467,12 @@ export default function CustomersPage() {
                           const amtPaid = Number(s.total || 0) - row.remaining;
                           const paidPct = Number(s.total) > 0 ? Math.min(100, Math.round((amtPaid / Number(s.total)) * 100)) : 0;
                           const invNo = `INV-${String(s.id).slice(-6).toUpperCase()}`;
-                          const isExpanded = expandedCards[s.id] || false;
-                          const visibleCount = itemVisibleCounts[s.id] || 10;
                           const linkedPayments = (customerDetails?.payments || []).filter(pay => String(pay.sale_id) === String(s.id));
                           return (
                             <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden bg-card">
                               <div className="h-[2px] bg-gradient-to-r from-blue-500 to-violet-500" />
                               {/* Header */}
-                              <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 gap-2">
+                              <div className="flex items-center justify-between px-3 pt-2.5 pb-1 gap-2">
                                 <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                                   <span className="text-xs font-black font-mono">{invNo}</span>
                                   <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0', isPending ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400')}>
@@ -487,18 +484,12 @@ export default function CustomersPage() {
                                     </span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span className="text-[10px] text-muted-foreground">{fmtDate(s.date_created)}</span>
-                                  <button onClick={() => printInvoice(s, items)}
-                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
-                                    <Printer size={12} />
-                                  </button>
-                                  <button onClick={() => setExpandedCards(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
-                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
-                                    <Eye size={12} />
-                                  </button>
-                                </div>
+                                <button onClick={() => setDetailSale({ sale: s, items, payments: linkedPayments })}
+                                  className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0">
+                                  <Eye size={12} />
+                                </button>
                               </div>
+                              <p className="px-3 pb-1 text-[10px] text-muted-foreground">{fmtDate(s.date_created)}</p>
                               {/* TOTAL / PAID / REMAINING */}
                               <div className="grid grid-cols-3 px-3 pb-1.5 text-center">
                                 <div>
@@ -524,14 +515,14 @@ export default function CustomersPage() {
                                 </div>
                                 <p className="text-[9px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                               </div>
-                              {/* Items inline (collapsed view) */}
-                              {items.length > 0 && !isExpanded && (
-                                <div className="px-3 pb-1.5">
+                              {/* Items inline — always visible */}
+                              {items.length > 0 && (
+                                <div className="mx-3 mb-2 px-2.5 py-1.5 rounded-lg bg-muted/30 border border-border/30">
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">≡ Items</p>
                                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                    <span className="font-bold text-foreground/50">≡ </span>
                                     {items.map((it, idx) => (
                                       <span key={idx}>
-                                        {idx > 0 && <span className="text-muted-foreground/40">, </span>}
+                                        {idx > 0 && <span className="text-muted-foreground/40"> · </span>}
                                         {it.product_name || it.name} <span className="font-semibold text-foreground/80">×{it.quantity}</span>
                                       </span>
                                     ))}
@@ -539,69 +530,44 @@ export default function CustomersPage() {
                                 </div>
                               )}
                               {/* Action bar */}
-                              {isPending && (
-                                <div className="flex items-center gap-1.5 px-3 pb-2.5">
-                                  <div className="relative flex-1">
-                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
-                                    <input
-                                      type="number" min="0"
-                                      value={perCardAmts[s.id] || ''}
-                                      onChange={(e) => setPerCardAmts(prev => ({ ...prev, [s.id]: e.target.value }))}
-                                      placeholder={Math.round(row.remaining).toLocaleString()}
-                                      className="h-7 pl-7 pr-2 w-full text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
-                                    />
-                                  </div>
-                                  <button
-                                    disabled={!perCardAmts[s.id] || paying}
-                                    onClick={() => handlePerCardPayment(s.id, row.remaining)}
-                                    className="h-7 px-3 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 shrink-0 transition-colors">
-                                    Pay
-                                  </button>
-                                  {selectedCustomer?.phone && (
-                                    <button onClick={() => sendWhatsApp(s)}
-                                      className="w-7 h-7 rounded-full bg-[#25d366] flex items-center justify-center text-white hover:bg-[#1fba57] transition-colors shrink-0">
-                                      <MessageCircle size={11} />
+                              <div className="flex items-center gap-1.5 px-3 pb-2.5">
+                                {isPending && (
+                                  <>
+                                    <div className="relative flex-1">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
+                                      <input
+                                        type="number" min="0"
+                                        value={perCardAmts[s.id] || ''}
+                                        onChange={(e) => setPerCardAmts(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                        placeholder={Math.round(row.remaining).toLocaleString()}
+                                        className="h-7 pl-7 pr-2 w-full text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
+                                      />
+                                    </div>
+                                    <button
+                                      disabled={!perCardAmts[s.id] || paying}
+                                      onClick={() => handlePerCardPayment(s.id, row.remaining)}
+                                      className="h-7 px-3 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 shrink-0 transition-colors">
+                                      Pay
                                     </button>
-                                  )}
-                                </div>
-                              )}
-                              {/* Expanded view: Items Breakdown + Payments */}
-                              {isExpanded && (
-                                <div className="border-t border-border/20">
-                                  {items.length > 0 && (
-                                    <div className="px-3 pt-2 pb-2">
-                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Items Breakdown</p>
-                                      <div className="space-y-1">
-                                        {items.slice(0, visibleCount).map((si) => (
-                                          <div key={si.id} className="flex justify-between items-center text-[11px]">
-                                            <span className="text-muted-foreground">{si.product_name || si.name} <span className="text-foreground">×{si.quantity}</span></span>
-                                            <span className="font-semibold font-mono">{fmtPKR((si.price || 0) * (si.quantity || 0))}</span>
-                                          </div>
-                                        ))}
-                                        {items.length > visibleCount && (
-                                          <button
-                                            onClick={() => setItemVisibleCounts(prev => ({ ...prev, [s.id]: (prev[s.id] || 10) + 10 }))}
-                                            className="w-full mt-1 text-[10px] text-primary font-semibold hover:underline text-center py-0.5">
-                                            Load {Math.min(10, items.length - visibleCount)} more…
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {linkedPayments.length > 0 && (
-                                    <div className="px-3 pb-2.5 border-t border-border/20 pt-2">
-                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Payments on this Invoice</p>
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {linkedPayments.map((pay) => (
-                                          <span key={pay.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/20 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                                            {fmtPKR(pay.amount)} · {fmtDate(pay.date_added || pay.created_at)}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                                  </>
+                                )}
+                                {selectedCustomer?.phone && (
+                                  <button onClick={() => sendWhatsApp(s)}
+                                    className="w-7 h-7 rounded-full bg-[#25d366] flex items-center justify-center text-white hover:bg-[#1fba57] transition-colors shrink-0">
+                                    <MessageCircle size={11} />
+                                  </button>
+                                )}
+                                <button onClick={() => printInvoice(s, items)}
+                                  className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
+                                  <Printer size={11} />
+                                </button>
+                                {isPending && (
+                                  <button onClick={() => setPerCardAmts(prev => ({ ...prev, [s.id]: '' }))}
+                                    className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-colors shrink-0 text-xs font-bold">
+                                    ×
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           );
                         }
@@ -645,6 +611,119 @@ export default function CustomersPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Sale Detail Modal ── */}
+      {detailSale && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setDetailSale(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-[480px] max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-border/40 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <Receipt size={16} className="text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-black">Invoice #{detailSale.sale.id}</p>
+                  <p className="text-[10px] text-muted-foreground">{fmtDate(detailSale.sale.date_created)}</p>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Grand Total</p>
+                <p className="text-base font-black text-rose-600 tabular-nums">{fmtPKR(detailSale.sale.total)}</p>
+                {detailSale.sale.total - (detailSale.payments.reduce((s, p) => s + Number(p.amount), 0)) > 0.5 ? (
+                  <p className="text-[10px] font-bold text-amber-600">Due: {fmtPKR(Math.max(0, Number(detailSale.sale.total) - detailSale.payments.reduce((s, p) => s + Number(p.amount), 0)))}</p>
+                ) : (
+                  <p className="text-[10px] font-bold text-emerald-600">Fully Paid</p>
+                )}
+              </div>
+            </div>
+            {/* Modal Body */}
+            <div className="overflow-y-auto flex-1 px-5 py-3 space-y-4">
+              {/* Payment History */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <RefreshCw size={11} className="text-muted-foreground" />
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Payment History</p>
+                </div>
+                {detailSale.payments.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground italic">No payments recorded for this invoice.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {detailSale.payments.map(pay => (
+                      <div key={pay.id} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-muted/40 border border-border/30">
+                        <span className="text-[10px] text-muted-foreground">{fmtDate(pay.date_added || pay.created_at)}</span>
+                        <span className="text-[11px] font-bold text-emerald-600 tabular-nums">{fmtPKR(pay.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Items Table */}
+              {detailSale.items.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Items</p>
+                  <div className="rounded-xl border border-border/40 overflow-hidden">
+                    <table className="w-full text-[10px]">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-2.5 py-1.5 font-bold text-muted-foreground">#</th>
+                          <th className="text-left px-2.5 py-1.5 font-bold text-muted-foreground">Product</th>
+                          <th className="text-right px-2.5 py-1.5 font-bold text-muted-foreground">Qty</th>
+                          <th className="text-right px-2.5 py-1.5 font-bold text-muted-foreground">Price</th>
+                          <th className="text-right px-2.5 py-1.5 font-bold text-muted-foreground">Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/20">
+                        {detailSale.items.map((it, idx) => (
+                          <tr key={it.id ?? idx} className="hover:bg-muted/20">
+                            <td className="px-2.5 py-1.5 text-muted-foreground">{idx + 1}</td>
+                            <td className="px-2.5 py-1.5 font-medium">{it.product_name || it.name}</td>
+                            <td className="px-2.5 py-1.5 text-right tabular-nums">{it.quantity}</td>
+                            <td className="px-2.5 py-1.5 text-right tabular-nums">{fmtPKR(it.price || it.unit_price || 0)}</td>
+                            <td className="px-2.5 py-1.5 text-right font-semibold tabular-nums">{fmtPKR((it.price || it.unit_price || 0) * (it.quantity || 0))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-muted/30 border-t border-border/40">
+                        <tr>
+                          <td colSpan={4} className="px-2.5 py-1.5 text-right font-black text-[11px]">Grand Total</td>
+                          <td className="px-2.5 py-1.5 text-right font-black text-[11px] tabular-nums text-rose-600">{fmtPKR(detailSale.sale.total)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-border/40 shrink-0">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setDetailSale(null)}
+                  className="h-8 px-3.5 text-xs rounded-lg border border-border bg-background hover:bg-muted/60 font-semibold transition-colors">
+                  Close
+                </button>
+                <button onClick={() => { setDetailSale(null); navigate('/returns'); }}
+                  className="h-8 px-3.5 text-xs rounded-lg bg-amber-500/10 border border-amber-400/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 font-bold transition-colors">
+                  Return Items
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => printInvoice(detailSale.sale, detailSale.items)}
+                  className="h-8 px-3.5 text-xs rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-bold transition-colors">
+                  Print Invoice
+                </button>
+                {selectedCustomer?.phone && (
+                  <button onClick={() => sendWhatsApp(detailSale.sale)}
+                    className="h-8 px-3.5 text-xs rounded-lg bg-[#25d366] hover:bg-[#1fba57] text-white font-bold transition-colors">
+                    WhatsApp
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ── Form Modal ── */}
       <CustomerFormModal

@@ -149,8 +149,7 @@ export default function VendorsPage() {
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [paying, setPaying] = useState(false);
   const [perCardAmts, setPerCardAmts] = useState({});
-  const [expandedCards, setExpandedCards] = useState({});
-  const [itemVisibleCounts, setItemVisibleCounts] = useState({});
+  const [detailPO, setDetailPO] = useState(null);
   const [customBillsVendor, setCustomBillsVendor] = useState(null);
   const [showGlobalBills, setShowGlobalBills] = useState(false);
 
@@ -472,14 +471,13 @@ export default function VendorsPage() {
                           const paidPct = Math.min(100, Math.round(Number(p.total) > 0 ? (paidAmt / Number(p.total)) * 100 : 0));
                           const stLabel = p.status || (row.remaining > 0.5 ? 'Pending' : 'Settled');
                           const stCls = stLabel === 'Settled' || stLabel === 'Paid' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : stLabel === 'Cancelled' ? 'bg-muted text-muted-foreground' : 'bg-rose-500/10 text-rose-700 dark:text-rose-400';
-                          const isExpanded = expandedCards[p.id] || false;
-                          const visibleCount = itemVisibleCounts[p.id] || 10;
                           const linkedPoPayments = (vendorDetails?.payments || []).filter(pay => String(pay.purchase_id) === String(p.id));
+                          const isPending = row.remaining > 0.5 && stLabel !== 'Cancelled';
                           return (
                             <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden bg-card">
                               <div className="h-[2px] bg-gradient-to-r from-indigo-500 to-violet-500" />
                               {/* Header */}
-                              <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 gap-2">
+                              <div className="flex items-center justify-between px-3 pt-2.5 pb-1 gap-2">
                                 <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                                   <span className="text-xs font-black font-mono">PO #{p.id}</span>
                                   <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0', stCls)}>{stLabel}</span>
@@ -489,19 +487,13 @@ export default function VendorsPage() {
                                     </span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span className="text-[10px] text-muted-foreground">{fmtDate(p.date_created)}</span>
-                                  <button onClick={() => printPO(p, items)}
-                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
-                                    <Printer size={12} />
-                                  </button>
-                                  <button onClick={() => setExpandedCards(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
-                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
-                                    <Eye size={12} />
-                                  </button>
-                                </div>
+                                <button onClick={() => setDetailPO({ po: p, items, payments: linkedPoPayments })}
+                                  className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0">
+                                  <Eye size={12} />
+                                </button>
                               </div>
-                              {/* Total / Paid / Remaining plain text */}
+                              <p className="px-3 pb-1 text-[10px] text-muted-foreground">{fmtDate(p.date_created)}</p>
+                              {/* TOTAL / PAID / REMAINING */}
                               <div className="grid grid-cols-3 px-3 pb-1.5 text-center">
                                 <div>
                                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</p>
@@ -519,18 +511,18 @@ export default function VendorsPage() {
                               {/* Progress bar */}
                               <div className="px-3 pb-1.5">
                                 <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                                  <div className="h-full bg-emerald-500 transition-all" style={{ width: `${paidPct}%` }} />
+                                  <div className={cn('h-full transition-all', isPending && paidPct > 0 ? 'bg-amber-500' : isPending ? 'bg-rose-400' : 'bg-emerald-500')} style={{ width: `${paidPct}%` }} />
                                 </div>
                                 <p className="text-[9px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                               </div>
-                              {/* Items inline (collapsed view) */}
-                              {items.length > 0 && !isExpanded && (
-                                <div className="px-3 pb-1.5">
+                              {/* Items inline — always visible */}
+                              {items.length > 0 && (
+                                <div className="mx-3 mb-2 px-2.5 py-1.5 rounded-lg bg-muted/30 border border-border/30">
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">≡ Items</p>
                                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                    <span className="font-bold text-foreground/50">≡ </span>
                                     {items.map((it, idx) => (
                                       <span key={idx}>
-                                        {idx > 0 && <span className="text-muted-foreground/40">, </span>}
+                                        {idx > 0 && <span className="text-muted-foreground/40"> · </span>}
                                         {it.product_name || it.name} <span className="font-semibold text-foreground/80">×{it.quantity}</span>
                                       </span>
                                     ))}
@@ -538,69 +530,44 @@ export default function VendorsPage() {
                                 </div>
                               )}
                               {/* Action bar */}
-                              {row.remaining > 0.5 && stLabel !== 'Cancelled' && (
-                                <div className="flex items-center gap-1.5 px-3 pb-2.5">
-                                  <div className="relative flex-1">
-                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
-                                    <input
-                                      type="number" min="0"
-                                      value={perCardAmts[p.id] || ''}
-                                      onChange={(e) => setPerCardAmts(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                      placeholder={Math.round(row.remaining).toLocaleString()}
-                                      className="h-7 pl-7 pr-2 w-full text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
-                                    />
-                                  </div>
-                                  <button
-                                    disabled={!perCardAmts[p.id] || paying}
-                                    onClick={() => handlePerCardPoPayment(p.id, row.remaining)}
-                                    className="h-7 px-3 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 shrink-0 transition-colors">
-                                    Pay
-                                  </button>
-                                  {selectedVendor?.phone && (
-                                    <button onClick={() => window.open(`https://wa.me/92${selectedVendor.phone.replace(/^0/, '')}`, '_blank')}
-                                      className="w-7 h-7 rounded-full bg-[#25d366] flex items-center justify-center text-white hover:bg-[#1fba57] transition-colors shrink-0">
-                                      <MessageCircle size={11} />
+                              <div className="flex items-center gap-1.5 px-3 pb-2.5">
+                                {isPending && (
+                                  <>
+                                    <div className="relative flex-1">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
+                                      <input
+                                        type="number" min="0"
+                                        value={perCardAmts[p.id] || ''}
+                                        onChange={(e) => setPerCardAmts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                        placeholder={Math.round(row.remaining).toLocaleString()}
+                                        className="h-7 pl-7 pr-2 w-full text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
+                                      />
+                                    </div>
+                                    <button
+                                      disabled={!perCardAmts[p.id] || paying}
+                                      onClick={() => handlePerCardPoPayment(p.id, row.remaining)}
+                                      className="h-7 px-3 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 shrink-0 transition-colors">
+                                      Pay
                                     </button>
-                                  )}
-                                </div>
-                              )}
-                              {/* Expanded view: Items Breakdown + Payments */}
-                              {isExpanded && (
-                                <div className="border-t border-border/20">
-                                  {items.length > 0 && (
-                                    <div className="px-3 pt-2 pb-2">
-                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Items Breakdown</p>
-                                      <div className="space-y-1">
-                                        {items.slice(0, visibleCount).map((it) => (
-                                          <div key={it.id} className="flex justify-between items-center text-[11px]">
-                                            <span className="text-muted-foreground">{it.product_name || it.name} <span className="text-foreground">×{it.quantity}</span></span>
-                                            <span className="font-semibold font-mono">{fmtPKR((it.price || it.cost || 0) * (it.quantity || 0))}</span>
-                                          </div>
-                                        ))}
-                                        {items.length > visibleCount && (
-                                          <button
-                                            onClick={() => setItemVisibleCounts(prev => ({ ...prev, [p.id]: (prev[p.id] || 10) + 10 }))}
-                                            className="w-full mt-1 text-[10px] text-primary font-semibold hover:underline text-center py-0.5">
-                                            Load {Math.min(10, items.length - visibleCount)} more…
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {linkedPoPayments.length > 0 && (
-                                    <div className="px-3 pb-2.5 border-t border-border/20 pt-2">
-                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Payments on this Order</p>
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {linkedPoPayments.map((pay) => (
-                                          <span key={pay.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/20 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                                            {fmtPKR(pay.amount)} · {fmtDate(pay.date_added)}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                                  </>
+                                )}
+                                {selectedVendor?.phone && (
+                                  <button onClick={() => window.open(`https://wa.me/92${selectedVendor.phone.replace(/^0/, '')}`, '_blank')}
+                                    className="w-7 h-7 rounded-full bg-[#25d366] flex items-center justify-center text-white hover:bg-[#1fba57] transition-colors shrink-0">
+                                    <MessageCircle size={11} />
+                                  </button>
+                                )}
+                                <button onClick={() => printPO(p, items)}
+                                  className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
+                                  <Printer size={11} />
+                                </button>
+                                {isPending && (
+                                  <button onClick={() => setPerCardAmts(prev => ({ ...prev, [p.id]: '' }))}
+                                    className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition-colors shrink-0 text-xs font-bold">
+                                    ×
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           );
                         }
@@ -670,6 +637,106 @@ export default function VendorsPage() {
               <button onClick={() => handleDelete(deleteConfirmId)} className="h-9 px-4 text-sm rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold">Delete</button>
             </div>
           </motion.div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── PO Detail Modal ── */}
+      {detailPO && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setDetailPO(null)}>
+          <div className="bg-card rounded-2xl w-full max-w-[480px] shadow-2xl overflow-hidden border border-border/50 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between p-5 border-b border-border/40">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
+                  <ShoppingCart size={18} className="text-indigo-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-black">Purchase #{detailPO.po.id}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDate(detailPO.po.date_created)}</p>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Grand Total</p>
+                <p className="text-xl font-black text-rose-600 tabular-nums">PKR {Math.round(Number(detailPO.po.total) || 0).toLocaleString()}</p>
+                {(() => { const due = Math.max(0, Number(detailPO.po.total) - detailPO.payments.reduce((s, p) => s + Number(p.amount), 0)); return due > 0.5 ? <p className="text-[10px] text-amber-600 font-semibold">Due: PKR {Math.round(due).toLocaleString()}</p> : <p className="text-[10px] text-emerald-600 font-semibold">Fully Paid</p>; })()}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <div className="mx-4 mt-4 rounded-xl border border-border/40 overflow-hidden">
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-muted/30 border-b border-border/30">
+                  <RefreshCw size={11} className="text-muted-foreground" />
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Payment History</p>
+                </div>
+                <div className="px-3 py-2.5">
+                  {detailPO.payments.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No payments recorded for this bill.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {detailPO.payments.map(p => (
+                        <div key={p.id} className="flex justify-between items-center text-xs">
+                          <span className="text-muted-foreground">{fmtDate(p.date_added)}{p.notes ? ` · ${p.notes}` : ''}</span>
+                          <span className="font-bold text-emerald-600 tabular-nums">PKR {Math.round(p.amount).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="mx-4 mt-3 mb-4 rounded-xl border border-border/40 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/30 border-b border-border/30">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-bold text-muted-foreground w-7">#</th>
+                        <th className="text-left px-3 py-2 font-bold text-muted-foreground">Product</th>
+                        <th className="text-right px-3 py-2 font-bold text-muted-foreground">Qty</th>
+                        <th className="text-right px-3 py-2 font-bold text-muted-foreground">Unit Cost</th>
+                        <th className="text-right px-3 py-2 font-bold text-muted-foreground">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailPO.items.map((it, idx) => (
+                        <tr key={it.id} className="border-t border-border/20 hover:bg-muted/10">
+                          <td className="px-3 py-1.5 text-muted-foreground">{idx + 1}</td>
+                          <td className="px-3 py-1.5 font-medium">{it.product_name || it.name}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{it.quantity}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">PKR {Math.round(it.price || it.cost || 0).toLocaleString()}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-emerald-600">PKR {Math.round((it.price || it.cost || 0) * (it.quantity || 0)).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-border">
+                        <td colSpan="4" className="px-3 py-2 font-bold text-sm">Grand Total</td>
+                        <td className="px-3 py-2 text-right font-black text-rose-600 tabular-nums text-sm">PKR {Math.round(Number(detailPO.po.total) || 0).toLocaleString()}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-border/40 space-y-2">
+              <div className="flex gap-2">
+                <button onClick={() => setDetailPO(null)} className="flex-1 h-10 rounded-xl border border-border text-sm font-semibold hover:bg-muted/50 transition-colors">Close</button>
+                <button onClick={() => { setDetailPO(null); navigate('/purchases'); }}
+                  className="flex-1 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+                  <RotateCcw size={14} /> Return Items
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => printPO(detailPO.po, detailPO.items)}
+                  className="flex-1 h-9 rounded-xl border border-border text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-muted/50 transition-colors">
+                  <Printer size={13} /> Print Invoice
+                </button>
+                {selectedVendor?.phone && (
+                  <button onClick={() => window.open(`https://wa.me/92${selectedVendor.phone.replace(/^0/, '')}?text=${encodeURIComponent(`Purchase #${detailPO.po.id}\nTotal: PKR ${Math.round(Number(detailPO.po.total)).toLocaleString()}`)}`, '_blank')}
+                    className="flex-1 h-9 rounded-xl bg-[#25d366] hover:bg-[#1fba57] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors">
+                    <MessageCircle size={13} /> WhatsApp to Vendor
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>,
         document.body
       )}
