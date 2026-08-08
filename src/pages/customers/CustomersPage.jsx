@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Users, Pencil, Trash2, Phone, MessageCircle,
-  X, ArrowRight, ShoppingBag, DollarSign, RefreshCw,
-  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink,
+  X, ArrowRight, ShoppingBag, RefreshCw,
+  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink, Eye, Printer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -144,9 +144,10 @@ export default function CustomersPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [payAmount, setPayAmount] = useState('');
   const [paying, setPaying] = useState(false);
-  const [payTargetSaleId, setPayTargetSaleId] = useState(null);
+  const [perCardAmts, setPerCardAmts] = useState({});
+  const [expandedCards, setExpandedCards] = useState({});
+  const [itemVisibleCounts, setItemVisibleCounts] = useState({});
 
   const customers = list('customer');
   const allSales = list('sale');
@@ -214,8 +215,8 @@ export default function CustomersPage() {
   const { paged, page, pageCount, setPage } = usePagination(filtered, 30);
 
   const openEdit = (c, e) => { e?.stopPropagation(); setFormInitial({ ...c }); setIsEditing(true); setShowForm(true); };
-  const openCustomer = (c) => { setSelectedCustomer(c); setPayAmount(''); setPayTargetSaleId(null); };
-  const closeCustomer = () => { setSelectedCustomer(null); setPayAmount(''); setPayTargetSaleId(null); };
+  const openCustomer = (c) => { setSelectedCustomer(c); setPerCardAmts({}); };
+  const closeCustomer = () => { setSelectedCustomer(null); setPerCardAmts({}); };
 
   const handleDelete = async (id) => {
     await pushEntity('customer', 'delete', { id });
@@ -239,24 +240,32 @@ export default function CustomersPage() {
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  const handlePayment = async () => {
-    const amount = Number(payAmount);
-    const balance = customerDetails?.balance || 0;
+  const handlePerCardPayment = async (saleId, remaining) => {
+    const amount = Number(perCardAmts[saleId] || 0);
     if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-    if (amount > balance + 0.5) { showToast(`Cannot exceed balance of ${fmtPKR(balance)}`, 'error'); return; }
+    if (amount > remaining + 0.5) { showToast(`Cannot exceed ${fmtPKR(remaining)}`, 'error'); return; }
     setPaying(true);
     try {
-      const now = new Date().toISOString();
       await pushEntity('customer_payment', 'create', {
         customer_id: selectedCustomer.id,
-        amount, date_added: now,
-        notes: payTargetSaleId ? `Payment for Sale #${payTargetSaleId}` : 'Manual account payment',
-        sale_id: payTargetSaleId || null,
+        amount,
+        date_added: new Date().toISOString(),
+        notes: `Payment for Invoice #${saleId}`,
+        sale_id: saleId,
       });
       showToast(`${fmtPKR(amount)} recorded`);
-      setPayAmount(''); setPayTargetSaleId(null);
+      setPerCardAmts(prev => ({ ...prev, [saleId]: '' }));
     } catch (err) { showToast(err.message || 'Failed', 'error'); }
     finally { setPaying(false); }
+  };
+
+  const printInvoice = (sale, items) => {
+    const win = window.open('', '_blank', 'width=420,height=600');
+    if (!win) return;
+    const invNo = `INV-${String(sale.id).slice(-6).toUpperCase()}`;
+    win.document.write(`<html><head><title>${invNo}</title><style>body{font-family:monospace;margin:24px;font-size:12px}.hdr{text-align:center;border-bottom:1px dashed #000;padding-bottom:10px;margin-bottom:10px}h2{margin:0;font-size:16px}p{margin:3px 0}.row{display:flex;justify-content:space-between;margin:4px 0}.tot{font-weight:bold;border-top:1px dashed #000;padding-top:6px;margin-top:6px}</style></head><body><div class="hdr"><h2>${invNo}</h2><p>${fmtDate(sale.date_created)}</p></div>${items.map(si => `<div class="row"><span>${si.product_name || si.name} × ${si.quantity}</span><span>PKR ${Math.round((si.price || 0) * (si.quantity || 0)).toLocaleString()}</span></div>`).join('')}<div class="row tot"><span>TOTAL</span><span>PKR ${Math.round(Number(sale.total) || 0).toLocaleString()}</span></div></body></html>`);
+    win.document.close();
+    win.print();
   };
 
   const getSaleItems = (saleId) => allSaleItems.filter((si) => String(si.sale_id) === String(saleId));
@@ -444,30 +453,6 @@ export default function CustomersPage() {
                   </div>
                 </div>
 
-                {/* Record Payment */}
-                {customerDetails.balance > 0 && (
-                  <div className="px-4 pb-3">
-                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5">
-                      <p className="text-xs font-bold text-primary mb-2.5 flex items-center gap-1.5"><DollarSign size={12} /> Record Payment</p>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground">PKR</span>
-                          <input
-                            type="number" min="1" max={customerDetails.balance}
-                            value={payAmount} onChange={(e) => setPayAmount(e.target.value)}
-                            placeholder={String(Math.round(customerDetails.balance))}
-                            className="w-full h-9 pl-10 pr-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                        </div>
-                        <button onClick={handlePayment} disabled={paying || !payAmount}
-                          className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors shrink-0">
-                          {paying ? '…' : 'Pay'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Timeline */}
                 <div className="px-4 pb-4">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Transaction History</p>
@@ -483,52 +468,137 @@ export default function CustomersPage() {
                           const amtPaid = Number(s.total || 0) - row.remaining;
                           const paidPct = Number(s.total) > 0 ? Math.min(100, Math.round((amtPaid / Number(s.total)) * 100)) : 0;
                           const invNo = `INV-${String(s.id).slice(-6).toUpperCase()}`;
+                          const isExpanded = expandedCards[s.id] || false;
+                          const visibleCount = itemVisibleCounts[s.id] || 10;
+                          const linkedPayments = (customerDetails?.payments || []).filter(pay => String(pay.sale_id) === String(s.id));
                           return (
-                            <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden">
-                              <div className="px-3 py-2.5 bg-muted/20">
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <Receipt size={13} className="text-blue-500 shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-bold">{invNo}</p>
-                                      <p className="text-[10px] text-muted-foreground">{fmtDate(s.date_created)}</p>
-                                    </div>
-                                  </div>
-                                  <span className={cn('text-[9px] font-bold px-2 py-0.5 rounded-full', isPending ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400')}>
+                            <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden bg-card">
+                              <div className="h-[2px] bg-gradient-to-r from-blue-500 to-violet-500" />
+                              {/* Header */}
+                              <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <span className="text-xs font-black font-mono">{invNo}</span>
+                                  <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0', isPending ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400')}>
                                     {isPending ? 'Partial' : 'Paid'}
                                   </span>
+                                  {items.length > 0 && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/10 border border-blue-400/25 text-blue-700 dark:text-blue-400 shrink-0">
+                                      {items.length} item{items.length !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
                                 </div>
-                                {/* Total / Paid / Remaining */}
-                                <div className="grid grid-cols-3 gap-1 mb-1.5 text-[10px]">
-                                  <div><p className="text-muted-foreground">Total</p><p className="font-bold tabular-nums">{fmtPKR(s.total)}</p></div>
-                                  <div><p className="text-muted-foreground">Paid</p><p className="font-bold text-emerald-600 tabular-nums">{fmtPKR(amtPaid)}</p></div>
-                                  <div><p className="text-muted-foreground">Remaining</p><p className={cn('font-bold tabular-nums', isPending ? 'text-rose-600' : 'text-muted-foreground')}>{fmtPKR(Math.max(0, row.remaining))}</p></div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="text-[10px] text-muted-foreground">{fmtDate(s.date_created)}</span>
+                                  <button onClick={() => printInvoice(s, items)}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
+                                    <Printer size={12} />
+                                  </button>
+                                  <button onClick={() => setExpandedCards(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
+                                    <Eye size={12} />
+                                  </button>
                                 </div>
-                                {/* Progress bar */}
+                              </div>
+                              {/* TOTAL / PAID / REMAINING */}
+                              <div className="grid grid-cols-3 px-3 pb-1.5 text-center">
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</p>
+                                  <p className="text-[11px] font-black tabular-nums">{fmtPKR(s.total)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Paid</p>
+                                  <p className="text-[11px] font-black text-emerald-600 tabular-nums">{fmtPKR(amtPaid)}</p>
+                                </div>
+                                <div>
+                                  <p className={cn('text-[9px] font-black uppercase tracking-widest', isPending ? 'text-rose-600' : 'text-emerald-600')}>Remaining</p>
+                                  <p className={cn('text-[11px] font-black tabular-nums', isPending ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(Math.max(0, row.remaining))}</p>
+                                </div>
+                              </div>
+                              {/* Progress bar */}
+                              <div className="px-3 pb-1.5">
                                 <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                                   <div
-                                    className={cn('h-full rounded-full', isPending && paidPct > 0 ? 'bg-amber-500' : isPending ? 'bg-rose-400' : 'bg-emerald-500')}
+                                    className={cn('h-full rounded-full transition-all', isPending && paidPct > 0 ? 'bg-amber-500' : isPending ? 'bg-rose-400' : 'bg-emerald-500')}
                                     style={{ width: `${paidPct}%` }}
                                   />
                                 </div>
                                 <p className="text-[9px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                               </div>
-                              {items.length > 0 && (
-                                <div className="px-3 pb-2.5 pt-1.5 space-y-1 border-t border-border/20 bg-card">
-                                  <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Items</p>
-                                  {items.map((si) => (
-                                    <div key={si.id} className="flex justify-between text-[11px]">
-                                      <span className="text-muted-foreground">{si.product_name || si.name} × {si.quantity}</span>
-                                      <span className="font-semibold font-mono">{fmtPKR((si.price || 0) * (si.quantity || 0))}</span>
-                                    </div>
-                                  ))}
-                                  {isPending && (
-                                    <button
-                                      onClick={() => { setPayTargetSaleId(s.id); setPayAmount(String(Math.round(row.remaining))); }}
-                                      className="mt-1.5 w-full h-7 rounded-lg text-[11px] font-semibold border border-primary/30 text-primary hover:bg-primary/8 transition-colors"
-                                    >
-                                      Pay {fmtPKR(row.remaining)}
+                              {/* Items inline (collapsed view) */}
+                              {items.length > 0 && !isExpanded && (
+                                <div className="px-3 pb-1.5">
+                                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                    <span className="font-bold text-foreground/50">≡ </span>
+                                    {items.map((it, idx) => (
+                                      <span key={idx}>
+                                        {idx > 0 && <span className="text-muted-foreground/40">, </span>}
+                                        {it.product_name || it.name} <span className="font-semibold text-foreground/80">×{it.quantity}</span>
+                                      </span>
+                                    ))}
+                                  </p>
+                                </div>
+                              )}
+                              {/* Action bar */}
+                              {isPending && (
+                                <div className="flex items-center gap-1.5 px-3 pb-2.5">
+                                  <div className="relative flex-1">
+                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
+                                    <input
+                                      type="number" min="0"
+                                      value={perCardAmts[s.id] || ''}
+                                      onChange={(e) => setPerCardAmts(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                      placeholder={Math.round(row.remaining).toLocaleString()}
+                                      className="h-7 pl-7 pr-2 w-full text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
+                                    />
+                                  </div>
+                                  <button
+                                    disabled={!perCardAmts[s.id] || paying}
+                                    onClick={() => handlePerCardPayment(s.id, row.remaining)}
+                                    className="h-7 px-3 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 shrink-0 transition-colors">
+                                    Pay
+                                  </button>
+                                  {selectedCustomer?.phone && (
+                                    <button onClick={() => sendWhatsApp(s)}
+                                      className="w-7 h-7 rounded-full bg-[#25d366] flex items-center justify-center text-white hover:bg-[#1fba57] transition-colors shrink-0">
+                                      <MessageCircle size={11} />
                                     </button>
+                                  )}
+                                </div>
+                              )}
+                              {/* Expanded view: Items Breakdown + Payments */}
+                              {isExpanded && (
+                                <div className="border-t border-border/20">
+                                  {items.length > 0 && (
+                                    <div className="px-3 pt-2 pb-2">
+                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Items Breakdown</p>
+                                      <div className="space-y-1">
+                                        {items.slice(0, visibleCount).map((si) => (
+                                          <div key={si.id} className="flex justify-between items-center text-[11px]">
+                                            <span className="text-muted-foreground">{si.product_name || si.name} <span className="text-foreground">×{si.quantity}</span></span>
+                                            <span className="font-semibold font-mono">{fmtPKR((si.price || 0) * (si.quantity || 0))}</span>
+                                          </div>
+                                        ))}
+                                        {items.length > visibleCount && (
+                                          <button
+                                            onClick={() => setItemVisibleCounts(prev => ({ ...prev, [s.id]: (prev[s.id] || 10) + 10 }))}
+                                            className="w-full mt-1 text-[10px] text-primary font-semibold hover:underline text-center py-0.5">
+                                            Load {Math.min(10, items.length - visibleCount)} more…
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {linkedPayments.length > 0 && (
+                                    <div className="px-3 pb-2.5 border-t border-border/20 pt-2">
+                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Payments on this Invoice</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {linkedPayments.map((pay) => (
+                                          <span key={pay.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/20 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                                            {fmtPKR(pay.amount)} · {fmtDate(pay.date_added || pay.created_at)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               )}

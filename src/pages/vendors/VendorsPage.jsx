@@ -4,8 +4,8 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Truck, Pencil, Trash2, Phone, MessageCircle,
-  X, ArrowRight, ShoppingCart, DollarSign, RefreshCw,
-  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink, Wallet, Printer,
+  X, ArrowRight, ShoppingCart, RefreshCw,
+  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink, Wallet, Printer, Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -147,8 +147,10 @@ export default function VendorsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [selectedVendor, setSelectedVendor] = useState(null);
-  const [payAmount, setPayAmount] = useState('');
   const [paying, setPaying] = useState(false);
+  const [perCardAmts, setPerCardAmts] = useState({});
+  const [expandedCards, setExpandedCards] = useState({});
+  const [itemVisibleCounts, setItemVisibleCounts] = useState({});
   const [customBillsVendor, setCustomBillsVendor] = useState(null);
   const [showGlobalBills, setShowGlobalBills] = useState(false);
 
@@ -214,8 +216,8 @@ export default function VendorsPage() {
 
   const openAdd = () => { setFormInitial({ name: '', phone: '', email: '', address: '' }); setIsEditing(false); setShowForm(true); };
   const openEdit = (v, e) => { e?.stopPropagation(); setFormInitial({ ...v }); setIsEditing(true); setShowForm(true); };
-  const openVendor = (v) => { setSelectedVendor(v); setPayAmount(''); };
-  const closeVendor = () => { setSelectedVendor(null); setPayAmount(''); };
+  const openVendor = (v) => { setSelectedVendor(v); setPerCardAmts({}); };
+  const closeVendor = () => { setSelectedVendor(null); setPerCardAmts({}); };
 
   const handleDelete = async (id) => {
     const balance = computeBalance(id);
@@ -226,24 +228,32 @@ export default function VendorsPage() {
     if (selectedVendor?.id === id) closeVendor();
   };
 
-  const handlePayment = async () => {
-    const amount = Number(payAmount);
-    const balance = vendorDetails?.balance || 0;
+  const handlePerCardPoPayment = async (poId, remaining) => {
+    const amount = Number(perCardAmts[poId] || 0);
     if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-    if (amount > balance + 0.5) { showToast(`Cannot exceed balance of ${fmtPKR(balance)}`, 'error'); return; }
+    if (amount > remaining + 0.5) { showToast(`Cannot exceed ${fmtPKR(remaining)}`, 'error'); return; }
     setPaying(true);
     try {
       await pushEntity('vendor_payment', 'create', {
         vendor_id: selectedVendor.id,
         amount,
         date_added: new Date().toISOString(),
-        notes: 'Manual account payment',
-        purchase_id: null,
+        notes: `Payment for PO #${poId}`,
+        purchase_id: poId,
       });
       showToast(`${fmtPKR(amount)} recorded`);
-      setPayAmount('');
+      setPerCardAmts(prev => ({ ...prev, [poId]: '' }));
     } catch (err) { showToast(err.message || 'Failed', 'error'); }
     finally { setPaying(false); }
+  };
+
+  const printPO = (po, items) => {
+    const win = window.open('', '_blank', 'width=420,height=600');
+    if (!win) return;
+    const poNum = `PO-${String(po.id).slice(-6).toUpperCase()}`;
+    win.document.write(`<html><head><title>${poNum}</title><style>body{font-family:monospace;margin:24px;font-size:12px}.hdr{text-align:center;border-bottom:1px dashed #000;padding-bottom:10px;margin-bottom:10px}h2{margin:0;font-size:16px}p{margin:3px 0}.row{display:flex;justify-content:space-between;margin:4px 0}.tot{font-weight:bold;border-top:1px dashed #000;padding-top:6px;margin-top:6px}</style></head><body><div class="hdr"><h2>${poNum}</h2><p>${fmtDate(po.date_created)}</p></div>${items.map(it => `<div class="row"><span>${it.product_name || it.name} × ${it.quantity}</span><span>PKR ${Math.round((it.price || it.cost || 0) * (it.quantity || 0)).toLocaleString()}</span></div>`).join('')}<div class="row tot"><span>TOTAL</span><span>PKR ${Math.round(Number(po.total) || 0).toLocaleString()}</span></div></body></html>`);
+    win.document.close();
+    win.print();
   };
 
   const getPurchaseItems = (poId) => allPurchaseItems.filter((i) => String(i.purchase_id) === String(poId));
@@ -447,30 +457,6 @@ export default function VendorsPage() {
                   </div>
                 </div>
 
-                {/* Record Payment */}
-                {vendorDetails.balance > 0 && (
-                  <div className="px-4 pb-3">
-                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5">
-                      <p className="text-xs font-bold text-primary mb-2.5 flex items-center gap-1.5"><DollarSign size={12} /> Record Payment</p>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground">PKR</span>
-                          <input
-                            type="number" min="1" max={vendorDetails.balance}
-                            value={payAmount} onChange={(e) => setPayAmount(e.target.value)}
-                            placeholder={String(Math.round(vendorDetails.balance))}
-                            className="w-full h-9 pl-10 pr-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                        </div>
-                        <button onClick={handlePayment} disabled={paying || !payAmount}
-                          className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors shrink-0">
-                          {paying ? '…' : 'Pay'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Timeline */}
                 <div className="px-4 pb-4">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Transaction History</p>
@@ -486,6 +472,9 @@ export default function VendorsPage() {
                           const paidPct = Math.min(100, Math.round(Number(p.total) > 0 ? (paidAmt / Number(p.total)) * 100 : 0));
                           const stLabel = p.status || (row.remaining > 0.5 ? 'Pending' : 'Settled');
                           const stCls = stLabel === 'Settled' || stLabel === 'Paid' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : stLabel === 'Cancelled' ? 'bg-muted text-muted-foreground' : 'bg-rose-500/10 text-rose-700 dark:text-rose-400';
+                          const isExpanded = expandedCards[p.id] || false;
+                          const visibleCount = itemVisibleCounts[p.id] || 10;
+                          const linkedPoPayments = (vendorDetails?.payments || []).filter(pay => String(pay.purchase_id) === String(p.id));
                           return (
                             <div key={row.id} className="rounded-xl border border-border/50 overflow-hidden bg-card">
                               <div className="h-[2px] bg-gradient-to-r from-indigo-500 to-violet-500" />
@@ -500,7 +489,17 @@ export default function VendorsPage() {
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(p.date_created)}</span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="text-[10px] text-muted-foreground">{fmtDate(p.date_created)}</span>
+                                  <button onClick={() => printPO(p, items)}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
+                                    <Printer size={12} />
+                                  </button>
+                                  <button onClick={() => setExpandedCards(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
+                                    <Eye size={12} />
+                                  </button>
+                                </div>
                               </div>
                               {/* Total / Paid / Remaining plain text */}
                               <div className="grid grid-cols-3 px-3 pb-1.5 text-center">
@@ -524,8 +523,8 @@ export default function VendorsPage() {
                                 </div>
                                 <p className="text-[9px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                               </div>
-                              {/* Items inline */}
-                              {items.length > 0 && (
+                              {/* Items inline (collapsed view) */}
+                              {items.length > 0 && !isExpanded && (
                                 <div className="px-3 pb-1.5">
                                   <p className="text-[10px] text-muted-foreground leading-relaxed">
                                     <span className="font-bold text-foreground/50">≡ </span>
@@ -540,20 +539,20 @@ export default function VendorsPage() {
                               )}
                               {/* Action bar */}
                               {row.remaining > 0.5 && stLabel !== 'Cancelled' && (
-                                <div className="flex items-center gap-1.5 px-3 pb-3">
+                                <div className="flex items-center gap-1.5 px-3 pb-2.5">
                                   <div className="relative flex-1">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
                                     <input
                                       type="number" min="0"
-                                      value={payAmount}
-                                      onChange={(e) => setPayAmount(e.target.value)}
+                                      value={perCardAmts[p.id] || ''}
+                                      onChange={(e) => setPerCardAmts(prev => ({ ...prev, [p.id]: e.target.value }))}
                                       placeholder={Math.round(row.remaining).toLocaleString()}
                                       className="h-7 pl-7 pr-2 w-full text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500/40 tabular-nums"
                                     />
                                   </div>
                                   <button
-                                    disabled={!payAmount || paying}
-                                    onClick={handlePayment}
+                                    disabled={!perCardAmts[p.id] || paying}
+                                    onClick={() => handlePerCardPoPayment(p.id, row.remaining)}
                                     className="h-7 px-3 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-40 shrink-0 transition-colors">
                                     Pay
                                   </button>
@@ -563,9 +562,43 @@ export default function VendorsPage() {
                                       <MessageCircle size={11} />
                                     </button>
                                   )}
-                                  <button className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
-                                    <Printer size={11} />
-                                  </button>
+                                </div>
+                              )}
+                              {/* Expanded view: Items Breakdown + Payments */}
+                              {isExpanded && (
+                                <div className="border-t border-border/20">
+                                  {items.length > 0 && (
+                                    <div className="px-3 pt-2 pb-2">
+                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Items Breakdown</p>
+                                      <div className="space-y-1">
+                                        {items.slice(0, visibleCount).map((it) => (
+                                          <div key={it.id} className="flex justify-between items-center text-[11px]">
+                                            <span className="text-muted-foreground">{it.product_name || it.name} <span className="text-foreground">×{it.quantity}</span></span>
+                                            <span className="font-semibold font-mono">{fmtPKR((it.price || it.cost || 0) * (it.quantity || 0))}</span>
+                                          </div>
+                                        ))}
+                                        {items.length > visibleCount && (
+                                          <button
+                                            onClick={() => setItemVisibleCounts(prev => ({ ...prev, [p.id]: (prev[p.id] || 10) + 10 }))}
+                                            className="w-full mt-1 text-[10px] text-primary font-semibold hover:underline text-center py-0.5">
+                                            Load {Math.min(10, items.length - visibleCount)} more…
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {linkedPoPayments.length > 0 && (
+                                    <div className="px-3 pb-2.5 border-t border-border/20 pt-2">
+                                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Payments on this Order</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {linkedPoPayments.map((pay) => (
+                                          <span key={pay.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/20 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                                            {fmtPKR(pay.amount)} · {fmtDate(pay.date_added)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
