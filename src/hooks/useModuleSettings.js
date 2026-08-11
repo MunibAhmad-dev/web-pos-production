@@ -5,6 +5,15 @@ const DEFAULTS = {
   bakery_module_enabled: false,
   dry_fruits_module_enabled: false,
   pharmacy_module_enabled: false,
+  electronics_module_enabled: false,
+  mobile_module_enabled: false,
+  laptop_module_enabled: false,
+  accessories_module_enabled: false,
+  clothing_module_enabled: false,
+  restaurant_module_enabled: false,
+  grocery_module_enabled: false,
+  paint_module_enabled: false,
+  accounting_module_enabled: false,
 };
 
 function load() {

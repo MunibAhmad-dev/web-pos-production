@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
-import { Eye, Ban, Pencil } from 'lucide-react';
+import { useMemo, useState, useCallback } from 'react';
+import { Eye, Ban, Pencil, ChevronDown, Clock } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
+import { WINDOW_DAYS } from '../../store/idb';
 import { useToast } from '../../context/ToastContext';
 import { Card } from '@/components/ui/panel';
 import Table from '@/components/ui/data-table';
@@ -21,7 +22,7 @@ const StatBlock = ({ label, value, tone = 'text-ink' }) => (
 );
 
 export default function SalesHistoryPage() {
-  const { list, pushBatch } = useDataStore();
+  const { list, pushBatch, loadOlderSales } = useDataStore();
   const { showToast } = useToast();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -29,6 +30,8 @@ export default function SalesHistoryPage() {
   const [editSale, setEditSale] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [noMoreOlder, setNoMoreOlder] = useState(false);
 
   const sales = list('sale');
   const saleItems = list('sale_item');
@@ -68,6 +71,18 @@ export default function SalesHistoryPage() {
     const pendingTotal = pending.reduce((sum, s) => sum + Number(s.due_amount || 0), 0);
     return { completedCount: completed.length, revenue, discounts, pendingCount: pending.length, pendingTotal };
   }, [filteredSales]);
+
+  const handleLoadOlder = useCallback(async () => {
+    const oldest = filteredSales[filteredSales.length - 1];
+    if (!oldest?.date_created) return;
+    setLoadingOlder(true);
+    try {
+      const count = await loadOlderSales(oldest.date_created, 100);
+      if (count === 0) setNoMoreOlder(true);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [filteredSales, loadOlderSales]);
 
   const handleCancelSale = async () => {
     const sale = cancelTarget;
@@ -216,7 +231,10 @@ export default function SalesHistoryPage() {
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <h2 className="text-lg font-semibold text-ink">Sales History</h2>
-          <p className="text-sm text-muted-foreground">All completed sales and receipts.</p>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+            <Clock size={12} className="shrink-0" />
+            Showing last {WINDOW_DAYS} days · use date filter or load older below
+          </p>
         </div>
         <div className="flex gap-2">
           <DatePicker label="From" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" />
@@ -234,6 +252,27 @@ export default function SalesHistoryPage() {
       <Card className="p-1">
         <Table columns={columns} data={filteredSales} emptyMessage="No sales recorded yet." />
       </Card>
+
+      {/* Load older sales from IndexedDB */}
+      {!from && !to && (
+        <div className="flex flex-col items-center gap-1 py-2">
+          {noMoreOlder ? (
+            <p className="text-xs text-muted-foreground">All historical sales loaded.</p>
+          ) : (
+            <button
+              onClick={handleLoadOlder}
+              disabled={loadingOlder || filteredSales.length === 0}
+              className="flex items-center gap-1.5 h-8 px-4 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 transition-all"
+            >
+              <ChevronDown size={13} className={loadingOlder ? 'animate-bounce' : ''} />
+              {loadingOlder ? 'Loading older sales…' : 'Load 100 older sales'}
+            </button>
+          )}
+          <p className="text-[10px] text-muted-foreground/60">
+            Reads from local cache — no internet needed
+          </p>
+        </div>
+      )}
 
       <Modal open={Boolean(viewSale)} onClose={() => setViewSale(null)} title={viewSale ? `INV-${String(viewSale.id).slice(-6)}` : ''}>
         {viewSale && (

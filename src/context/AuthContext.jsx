@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { getSession, loginShop, registerShop, logoutShop, fetchInstanceStatus, hasApiKey } from '../api/cloudAuth';
+import { clearDataCache } from '../store/dataStore';
 
 const AuthContext = createContext(null);
 
@@ -40,6 +41,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    clearDataCache().catch(() => {}); // async IDB clear, fire and forget
     logoutShop();
     setSession(null);
   }, []);
