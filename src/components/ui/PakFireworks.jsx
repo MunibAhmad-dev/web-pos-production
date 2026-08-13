@@ -17,13 +17,11 @@ export default function PakFireworks() {
     resize();
     window.addEventListener('resize', resize);
 
-    /* ── Particle ─────────────────────────────────────────────────
-       No save/restore, no shadowBlur — fast flat draw.
-       `lighter` composite in the loop gives the glow for free.    */
+    /* ── Particle ─────────────────────────────────────────────── */
     function Particle(x, y, color, angle, speed, opts = {}) {
       this.x = x; this.y = y; this.color = color;
-      this.vx = Math.cos(angle) * speed;
-      this.vy = Math.sin(angle) * speed;
+      this.vx      = Math.cos(angle) * speed;
+      this.vy      = Math.sin(angle) * speed;
       this.alpha   = 1;
       this.decay   = opts.decay   ?? (0.006 + Math.random() * 0.009);
       this.r       = opts.r       ?? (1.4 + Math.random() * 2);
@@ -45,16 +43,16 @@ export default function PakFireworks() {
       ctx.fill();
     };
 
-    /* ── Rocket ──────────────────────────────────────────────────*/
+    /* ── Normal Rocket ────────────────────────────────────────── */
     function Rocket() {
-      this.x = canvas.width * (0.1 + Math.random() * 0.8);
-      this.y = canvas.height + 10;
+      this.x       = canvas.width * (0.05 + Math.random() * 0.9);
+      this.y       = canvas.height + 10;
       this.targetY = canvas.height * (0.08 + Math.random() * 0.38);
-      this.color = COLOURS[Math.floor(Math.random() * COLOURS.length)];
-      this.vx = (Math.random() - 0.5) * 3;
-      this.vy = -(17 + Math.random() * 8);
-      this.trail = [];
-      this.done  = false;
+      this.color   = COLOURS[Math.floor(Math.random() * COLOURS.length)];
+      this.vx      = (Math.random() - 0.5) * 3;
+      this.vy      = -(17 + Math.random() * 8);
+      this.trail   = [];
+      this.done    = false;
     }
     Rocket.prototype.update = function () {
       this.trail.push({ x: this.x, y: this.y });
@@ -79,78 +77,143 @@ export default function PakFireworks() {
       ctx.fill();
     };
     Rocket.prototype.explode = function (parts) {
-      // hard cap so a backlog of rockets can't flood the particle pool
-      if (parts.length > 2000) return;
-
+      if (parts.length > 2200) return;
       const count = 60 + Math.floor(Math.random() * 30);
       const alt   = COLOURS[Math.floor(Math.random() * COLOURS.length)];
-
-      // ① Main starburst — spreads outward, slow decay so it stays visible
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2;
-        const speed = 2 + Math.random() * 5.5;
-        parts.push(new Particle(
-          this.x, this.y,
-          i % 5 === 0 ? alt : this.color,
-          angle + (Math.random() - 0.5) * 0.35,
-          speed,
-          { decay: 0.005 + Math.random() * 0.007, gravity: 0.09, drag: 0.97 }
-        ));
+        parts.push(new Particle(this.x, this.y, i % 5 === 0 ? alt : this.color,
+          angle + (Math.random() - 0.5) * 0.35, 2 + Math.random() * 5.5,
+          { decay: 0.005 + Math.random() * 0.007, gravity: 0.09, drag: 0.97 }));
       }
-
-      // ② Bright white flash ring — short-lived, fast
       for (let i = 0; i < 18; i++) {
-        parts.push(new Particle(
-          this.x, this.y, '#FFFFFF',
-          Math.random() * Math.PI * 2,
-          7 + Math.random() * 4,
-          { decay: 0.03, r: 1, gravity: 0.05, drag: 0.96 }
-        ));
+        parts.push(new Particle(this.x, this.y, '#FFFFFF',
+          Math.random() * Math.PI * 2, 7 + Math.random() * 4,
+          { decay: 0.03, r: 1, gravity: 0.05, drag: 0.96 }));
       }
-
-      // ③ Ember rain — fall straight down with slight drift, long-lived
-      //    These create the lingering "rain" streaks after the burst.
-      for (let i = 0; i < 30; i++) {
-        // angle biased downward (π/2) with small random spread
-        const angle = Math.PI / 2 + (Math.random() - 0.5) * 0.9;
-        const speed = 0.4 + Math.random() * 1.8;
-        const col   = i % 3 === 0 ? '#FFD700' : (i % 3 === 1 ? this.color : '#FFFFFF');
+      for (let i = 0; i < 28; i++) {
+        const col = i % 3 === 0 ? '#FFD700' : i % 3 === 1 ? this.color : '#FFFFFF';
         parts.push(new Particle(
-          this.x + (Math.random() - 0.5) * 30,
-          this.y + (Math.random() - 0.5) * 10,
-          col, angle, speed,
-          { decay: 0.003 + Math.random() * 0.005, r: 1 + Math.random(), gravity: 0.12, drag: 0.99 }
-        ));
+          this.x + (Math.random() - 0.5) * 30, this.y + (Math.random() - 0.5) * 10,
+          col, Math.PI / 2 + (Math.random() - 0.5) * 0.9, 0.4 + Math.random() * 1.8,
+          { decay: 0.003 + Math.random() * 0.005, r: 1 + Math.random(), gravity: 0.12, drag: 0.99 }));
       }
     };
 
-    /* ── State ───────────────────────────────────────────────── */
+    /* ── Ballistic Rocket ─────────────────────────────────────────
+       Slow, majestic, thick-trailed — explodes in a massive burst. */
+    function BallisticRocket() {
+      this.x       = canvas.width * (0.2 + Math.random() * 0.6);
+      this.y       = canvas.height + 10;
+      this.targetY = canvas.height * (0.02 + Math.random() * 0.1);  // near top of screen
+      this.color   = COLOURS[Math.floor(Math.random() * COLOURS.length)];
+      this.vx      = (Math.random() - 0.5) * 1.5;  // nearly straight up
+      this.vy      = -(11 + Math.random() * 4);     // slower than normal
+      this.trail   = [];
+      this.done    = false;
+    }
+    BallisticRocket.prototype.update = function () {
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > 35) this.trail.shift();  // long dramatic trail
+      this.x += this.vx; this.y += this.vy;
+      this.vy += 0.10;  // light gravity — climbs far
+      if (this.y <= this.targetY || this.vy >= -0.5) this.done = true;
+    };
+    BallisticRocket.prototype.draw = function () {
+      const n = this.trail.length;
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        ctx.globalAlpha = t * 0.8;
+        ctx.fillStyle   = this.color;
+        ctx.beginPath();
+        ctx.arc(this.trail[i].x, this.trail[i].y, 2 + t * 3, 0, Math.PI * 2);  // trail widens toward head
+        ctx.fill();
+      }
+      // Glowing white core
+      ctx.globalAlpha = 1;
+      ctx.fillStyle   = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      // Large colored halo around the head
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle   = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 13, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    BallisticRocket.prototype.explode = function (parts) {
+      if (parts.length > 2200) return;
+      const count = 220 + Math.floor(Math.random() * 80);
+      const alt1  = COLOURS[Math.floor(Math.random() * COLOURS.length)];
+      const alt2  = COLOURS[Math.floor(Math.random() * COLOURS.length)];
+      // Massive starburst
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
+        const col   = i % 7 === 0 ? alt1 : i % 7 === 1 ? alt2 : this.color;
+        parts.push(new Particle(this.x, this.y, col,
+          angle + (Math.random() - 0.5) * 0.2, 3 + Math.random() * 9,
+          { decay: 0.004 + Math.random() * 0.006, r: 2 + Math.random() * 3, gravity: 0.10, drag: 0.97 }));
+      }
+      // White shockwave ring
+      for (let i = 0; i < 55; i++) {
+        parts.push(new Particle(this.x, this.y, '#FFFFFF',
+          Math.random() * Math.PI * 2, 11 + Math.random() * 6,
+          { decay: 0.035, r: 1.5, gravity: 0.04, drag: 0.96 }));
+      }
+      // Gold glitter core
+      for (let i = 0; i < 35; i++) {
+        parts.push(new Particle(this.x, this.y, '#FFD700',
+          Math.random() * Math.PI * 2, 1 + Math.random() * 3,
+          { decay: 0.012, r: 2.5, gravity: 0.06, drag: 0.98 }));
+      }
+      // Heavy long-lasting ember rain
+      for (let i = 0; i < 65; i++) {
+        const col = i % 3 === 0 ? '#FFD700' : i % 3 === 1 ? this.color : '#FFFFFF';
+        parts.push(new Particle(
+          this.x + (Math.random() - 0.5) * 70, this.y + (Math.random() - 0.5) * 15,
+          col, Math.PI / 2 + (Math.random() - 0.5) * 1.2, 0.5 + Math.random() * 2.2,
+          { decay: 0.002 + Math.random() * 0.004, r: 1.5 + Math.random(), gravity: 0.14, drag: 0.99 }));
+      }
+    };
+
+    /* ── Spawn helper ─────────────────────────────────────────── */
     let rockets   = [];
     let particles = [];
     let animId;
+    let burstTimer;
     const tids = [];
     const later = (fn, ms) => { const id = setTimeout(fn, ms); tids.push(id); };
 
-    const SHOW_MS  = 6000;   // active window before pause countdown starts
-    const PAUSE_MS = 10000;  // 10-second gap between shows
-
-    const runShow = () => {
-      // Wave 1: 12–15 rockets all at once (80ms apart so they feel simultaneous)
-      const w1 = 12 + Math.floor(Math.random() * 4);
-      for (let i = 0; i < w1; i++) later(() => rockets.push(new Rocket()), i * 80);
-
-      // Wave 2: 5–8 rockets ~2 seconds after the main burst
-      const w2 = 5 + Math.floor(Math.random() * 4);
-      for (let i = 0; i < w2; i++) later(() => rockets.push(new Rocket()), 2000 + i * 120);
-
-      later(() => later(() => { particles = []; rockets = []; runShow(); }, PAUSE_MS), SHOW_MS);
+    const spawnRocket = () => {
+      // ~15% chance of ballistic on any given launch
+      rockets.push(Math.random() < 0.15 ? new BallisticRocket() : new Rocket());
     };
+
+    // Continuously schedule bursts — no pause ever
+    const scheduleBurst = () => {
+      burstTimer = setTimeout(() => {
+        const count = 3 + Math.floor(Math.random() * 6);  // 3–8 per burst
+        for (let i = 0; i < count; i++) setTimeout(spawnRocket, i * 110);
+        scheduleBurst();
+      }, 1500 + Math.random() * 1000);  // every 1.5–2.5 s
+    };
+
+    // Opening salvo: 12–15 at once
+    const w1 = 12 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < w1; i++) later(spawnRocket, i * 80);
+
+    // Second wave 2 s later
+    const w2 = 5 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < w2; i++) later(spawnRocket, 2000 + i * 120);
+
+    // Then continuous forever
+    scheduleBurst();
 
     /* ── Loop ────────────────────────────────────────────────── */
     const loop = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Rockets — normal blending
       ctx.globalCompositeOperation = 'source-over';
       rockets = rockets.filter(r => {
         r.update();
@@ -159,7 +222,6 @@ export default function PakFireworks() {
         return true;
       });
 
-      // Particles — additive blending = natural glow, no shadowBlur needed
       ctx.globalCompositeOperation = 'lighter';
       const alive = [];
       for (const p of particles) {
@@ -175,10 +237,10 @@ export default function PakFireworks() {
     };
 
     loop();
-    runShow();
 
     return () => {
       cancelAnimationFrame(animId);
+      clearTimeout(burstTimer);
       tids.forEach(clearTimeout);
       window.removeEventListener('resize', resize);
     };
