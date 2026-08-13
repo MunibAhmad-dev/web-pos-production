@@ -1123,14 +1123,18 @@ export default function ProductsPage() {
           <p className="text-sm text-muted-foreground mt-0.5">Manage products, categories and inventory</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => setShowImportDialog(true)} className="flex items-center gap-2 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors">
-            <Upload size={15} /> Import Excel
+          <button onClick={() => setShowImportDialog(true)} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors" title="Import Excel">
+            <Upload size={15} />
+            <span className="hidden sm:inline">Import</span>
           </button>
-          <button onClick={exportToExcel} className="flex items-center gap-2 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors">
-            <Download size={15} /> Export Excel
+          <button onClick={exportToExcel} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors" title="Export Excel">
+            <Download size={15} />
+            <span className="hidden sm:inline">Export</span>
           </button>
-          <button onClick={openAdd} className="flex items-center gap-2 h-9 px-4 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
-            <Plus size={15} /> Add Product
+          <button onClick={openAdd} className="flex items-center gap-1.5 h-9 px-3 sm:px-4 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
+            <Plus size={15} />
+            <span className="hidden sm:inline">Add Product</span>
+            <span className="sm:hidden">Add</span>
           </button>
         </div>
       </motion.div>

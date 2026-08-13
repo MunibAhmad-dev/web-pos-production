@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area,
 } from 'recharts';
 import {
-  BarChart2, TrendingUp, ShoppingCart, Percent, ChevronRight, Calendar, X, Package,
+  BarChart2, TrendingUp, ShoppingCart, Percent, ChevronRight, Calendar, X, Package, RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -24,8 +24,29 @@ const fadeUp = {
   visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: Math.min(i, 5) * 0.055, ease: [0.23, 1, 0.32, 1] } }),
 };
 
+const PERIOD_OPTS = [
+  { id: 'today', label: 'Today' },
+  { id: 'week',  label: '7 Days' },
+  { id: 'month', label: 'Month' },
+  { id: 'year',  label: 'Year' },
+  { id: 'custom', label: 'Custom' },
+];
+
+function periodRange(period, from, to) {
+  const now = new Date();
+  const end = new Date(now);
+  let start = new Date(now);
+  if      (period === 'today')  start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  else if (period === 'week')   start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+  else if (period === 'month')  start = new Date(now.getFullYear(), now.getMonth(), 1);
+  else if (period === 'year')   start = new Date(now.getFullYear(), 0, 1);
+  else if (period === 'custom') return { start: from ? new Date(from) : null, end: to ? new Date(new Date(to).getTime() + 86400000) : null };
+  return { start, end };
+}
+
 export default function ReportsPage() {
   const { list } = useDataStore();
+  const [period, setPeriod] = useState('month');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
@@ -34,18 +55,20 @@ export default function ReportsPage() {
   const expenses = list('expense');
   const customerById = useMemo(() => new Map(list('customer').map((c) => [String(c.id), c])), [list]);
 
+  const { start: rangeStart, end: rangeEnd } = useMemo(() => periodRange(period, from, to), [period, from, to]);
+
   const sales = useMemo(() => {
     return allSales
       .filter((s) => s.status === 'Completed')
       .filter((s) => {
         if (!s.date_created) return true;
-        const d = new Date(s.date_created);
-        if (from && d < new Date(from)) return false;
-        if (to && d > new Date(new Date(to).getTime() + 86400000)) return false;
+        const d = new Date(String(s.date_created).replace(' ', 'T'));
+        if (rangeStart && d < rangeStart) return false;
+        if (rangeEnd   && d > rangeEnd)   return false;
         return true;
       })
       .sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
-  }, [allSales, from, to]);
+  }, [allSales, rangeStart, rangeEnd]);
 
   const saleIds = useMemo(() => new Set(sales.map((s) => String(s.id))), [sales]);
   const itemsInRange = useMemo(() => saleItems.filter((i) => saleIds.has(String(i.sale_id))), [saleItems, saleIds]);
@@ -83,10 +106,12 @@ export default function ReportsPage() {
     }
     const expenseByDay = {};
     for (const e of expenses) {
-      const day = String(e.date_added || '').slice(0, 10);
-      if (!day) continue;
-      if (from && day < from) continue;
-      if (to && day > to) continue;
+      const raw = e.date_added ?? e.date ?? e.created_at;
+      if (!raw) continue;
+      const d = new Date(String(raw).replace(' ', 'T'));
+      if (rangeStart && d < rangeStart) continue;
+      if (rangeEnd   && d > rangeEnd)   continue;
+      const day = d.toLocaleDateString('en-CA');
       expenseByDay[day] = (expenseByDay[day] || 0) + Number(e.amount || 0);
     }
     const days = Array.from(new Set([...Object.keys(revenueByDay), ...Object.keys(cogsByDay), ...Object.keys(expenseByDay)])).sort();
@@ -96,9 +121,7 @@ export default function ReportsPage() {
       const expAmt = expenseByDay[date] || 0;
       return { date, revenue, cogs, expenses: expAmt, gross: revenue - cogs, net: revenue - cogs - expAmt };
     });
-  }, [sales, itemsInRange, expenses, from, to]);
-
-  const clearFilters = () => { setFrom(''); setTo(''); };
+  }, [sales, itemsInRange, expenses, rangeStart, rangeEnd]);
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl">
@@ -108,25 +131,38 @@ export default function ReportsPage() {
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <span>Home</span><ChevronRight size={12} /><span className="text-foreground font-medium">Reports</span>
         </div>
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Sales performance and profitability overview</p>
           </div>
-          {/* Date filters */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center gap-1.5">
-              <Calendar size={13} className="text-muted-foreground" />
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-                className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none" />
+          {/* Period tabs + custom date inputs */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-xl bg-muted/40 border border-border/30 p-0.5 gap-0.5">
+              {PERIOD_OPTS.map(({ id, label }) => (
+                <button key={id} onClick={() => setPeriod(id)}
+                  className={cn('px-3 h-8 rounded-lg text-sm font-semibold transition-all',
+                    period === id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  )}>
+                  {label}
+                </button>
+              ))}
             </div>
-            <span className="text-muted-foreground text-xs">—</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-              className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none" />
-            {(from || to) && (
-              <button onClick={clearFilters} className="h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted">
-                <X size={12} />
-              </button>
+            {period === 'custom' && (
+              <div className="flex items-center gap-2">
+                <Calendar size={13} className="text-muted-foreground" />
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+                  className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none" />
+                <span className="text-muted-foreground text-xs">—</span>
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+                  className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none" />
+                {(from || to) && (
+                  <button onClick={() => { setFrom(''); setTo(''); }}
+                    className="h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted">
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>

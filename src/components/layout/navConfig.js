@@ -1,6 +1,7 @@
 import {
   LayoutGrid,
   ShoppingCart,
+  History,
   Package,
   Boxes,
   Truck,
@@ -27,7 +28,8 @@ export const navGroups = [
     emoji: '🏠',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid, end: true },
-      { to: '/sales', label: 'Sales', icon: ShoppingCart },
+      { to: '/sales', label: 'New Sale', icon: ShoppingCart, end: true },
+      { to: '/sales/history', label: 'Sales History', icon: History },
     ],
   },
   {

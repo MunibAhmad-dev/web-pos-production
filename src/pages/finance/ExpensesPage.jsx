@@ -215,19 +215,21 @@ export default function ExpensesPage() {
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1}
         className="flex flex-col sm:flex-row gap-2 items-start sm:items-center"
       >
-        <div className="flex gap-1 rounded-xl bg-muted/60 border border-border/40 p-1">
-          {DATE_FILTERS.map(f => (
-            <button key={f.key} onClick={() => setDateFilter(f.key)}
-              className={cn(
-                'px-3.5 py-1.5 text-sm font-medium rounded-lg transition-all duration-200',
-                dateFilter === f.key
-                  ? 'bg-background text-foreground shadow-sm border border-border/60'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+        <div className="overflow-x-auto pb-0.5 -mb-0.5">
+          <div className="flex gap-1 rounded-xl bg-muted/60 border border-border/40 p-1 min-w-max">
+            {DATE_FILTERS.map(f => (
+              <button key={f.key} onClick={() => setDateFilter(f.key)}
+                className={cn(
+                  'px-3.5 py-1.5 text-sm font-medium rounded-lg transition-all duration-200',
+                  dateFilter === f.key
+                    ? 'bg-background text-foreground shadow-sm border border-border/60'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
         <AnimatePresence>
           {dateFilter === 'custom' && (
@@ -521,7 +523,7 @@ export default function ExpensesPage() {
                     <div className="flex items-center justify-center self-center">
                       <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                         onClick={() => setDeleteTarget(e)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-rose-500 hover:bg-rose-500/10 transition-all opacity-0 group-hover:opacity-100"
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-rose-500 hover:bg-rose-500/10 transition-all sm:opacity-0 sm:group-hover:opacity-100"
                       >
                         <Trash2 size={13} />
                       </motion.button>

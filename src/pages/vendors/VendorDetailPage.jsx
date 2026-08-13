@@ -432,17 +432,18 @@ export default function VendorDetailPage() {
                           <p className="text-[10px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                         </div>
 
-                        {/* Items inline */}
+                        {/* Items inline — capped at 3, overflow hidden */}
                         {po.items?.length > 0 && (
                           <div className="px-4 pb-2">
-                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                            <p className="text-[10px] text-muted-foreground leading-snug truncate">
                               <span className="font-bold text-foreground/60">≡ </span>
-                              {po.items.map((i, idx) => (
+                              {po.items.slice(0, 3).map((i, idx) => (
                                 <span key={idx}>
                                   {idx > 0 && <span className="text-muted-foreground/40">, </span>}
                                   {i.product_name} <span className="font-semibold text-foreground/80">×{i.quantity}</span>
                                 </span>
                               ))}
+                              {po.items.length > 3 && <span className="text-muted-foreground/50"> +{po.items.length - 3} more</span>}
                             </p>
                           </div>
                         )}

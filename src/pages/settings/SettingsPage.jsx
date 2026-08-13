@@ -9,7 +9,7 @@ import { printInvoice } from '../../lib/invoicePrint';
 import {
   Printer, FileText, Database, Download, Upload, FileSpreadsheet, FileJson,
   Eye, EyeOff, Building2, ShieldCheck, Puzzle, MessageSquare, Receipt,
-  Store, Image, Trash2, Lock, Bell, CreditCard, Search, RotateCcw,
+  Store, Image, Trash2, Lock, Bell, CreditCard, Search, RotateCcw, RefreshCw,
 } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { useModuleSettings } from '../../hooks/useModuleSettings';

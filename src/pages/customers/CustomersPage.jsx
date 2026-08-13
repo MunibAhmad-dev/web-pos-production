@@ -515,17 +515,18 @@ export default function CustomersPage() {
                                 </div>
                                 <p className="text-[9px] text-muted-foreground mt-0.5">{paidPct}% paid</p>
                               </div>
-                              {/* Items inline — always visible */}
+                              {/* Items inline — capped at 3, overflow hidden */}
                               {items.length > 0 && (
                                 <div className="mx-3 mb-2 px-2.5 py-1.5 rounded-lg bg-muted/30 border border-border/30">
                                   <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">≡ Items</p>
-                                  <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                    {items.map((it, idx) => (
+                                  <p className="text-[10px] text-muted-foreground leading-snug truncate">
+                                    {items.slice(0, 3).map((it, idx) => (
                                       <span key={idx}>
                                         {idx > 0 && <span className="text-muted-foreground/40"> · </span>}
                                         {it.product_name || it.name} <span className="font-semibold text-foreground/80">×{it.quantity}</span>
                                       </span>
                                     ))}
+                                    {items.length > 3 && <span className="text-muted-foreground/50"> +{items.length - 3} more</span>}
                                   </p>
                                 </div>
                               )}

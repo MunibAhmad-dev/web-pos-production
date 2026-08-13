@@ -26,9 +26,9 @@ function defaultDueDate() {
 // (partial payment allowed, remainder goes to the customer's Qaraz/credit
 // balance — requires a customer, blocked for walk-in), and forced to 0 for
 // Udhaar (full credit only).
-export default function CheckoutModal({ open, onClose, onConfirm, total, customers, onAddCustomer }) {
+export default function CheckoutModal({ open, onClose, onConfirm, total, customers, onAddCustomer, initialCustomerId = '' }) {
   const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [customerId, setCustomerId] = useState('');
+  const [customerId, setCustomerId] = useState(initialCustomerId);
   const [amountPaid, setAmountPaid] = useState(String(total));
   const [dueDate, setDueDate] = useState(defaultDueDate());
   const [error, setError] = useState('');
@@ -37,7 +37,7 @@ export default function CheckoutModal({ open, onClose, onConfirm, total, custome
   useEffect(() => {
     if (open) {
       setPaymentMethod('cash');
-      setCustomerId('');
+      setCustomerId(initialCustomerId);
       setAmountPaid(String(total));
       setDueDate(defaultDueDate());
       setError('');

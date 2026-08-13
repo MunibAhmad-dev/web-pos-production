@@ -492,18 +492,61 @@ export default function Dashboard() {
       {/* ── Accounts summary ── */}
       {accounts.length > 0 && (
         <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2}>
-          <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/10">
-              <div className="flex items-center gap-2.5"><Banknote size={15} className="text-muted-foreground" /><h2 className="text-base font-bold">Accounts & Cash</h2></div>
-              <Link to="/accounts" className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">View All<ArrowUpRight size={11} /></Link>
-            </div>
-            <div className="grid grid-cols-3 divide-x divide-border/30">
-              {[['Cash', accountsSummary.cashTotal, 'text-emerald-600'], ['Bank', accountsSummary.bankTotal, 'text-blue-600'], ['Net Total', accountsSummary.netTotal, 'text-foreground']].map(([lbl, val, cls]) => (
-                <div key={lbl} className="flex flex-col items-center py-4 gap-0.5 bg-muted/5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{lbl}</p>
-                  <p className={cn('text-lg font-black font-mono', cls)}>{fmtPKR(val)}</p>
+          <div className="rounded-2xl bg-card relative overflow-hidden"
+            style={{ border: '1px solid rgba(16,185,129,0.2)', boxShadow: '0 4px 24px -4px rgba(16,185,129,0.10), 0 1px 4px rgba(0,0,0,0.05)' }}>
+            {/* Top accent bar */}
+            <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-400" />
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                  <Wallet size={15} className="text-emerald-600 dark:text-emerald-400" />
                 </div>
-              ))}
+                <div>
+                  <h3 className="text-sm font-bold">Accounts & Cash</h3>
+                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">Live balances across all accounts</p>
+                </div>
+              </div>
+              <Link to="/accounts" className="h-8 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground rounded-xl px-2 transition-colors">
+                View All <ArrowUpRight size={12} />
+              </Link>
+            </div>
+            <div className="px-5 pb-5">
+              {/* Summary totals */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {[
+                  { label: 'Cash in Hand', value: accountsSummary.cashTotal, borderCls: 'border-emerald-500/20 bg-emerald-500/5', valCls: 'text-emerald-600 dark:text-emerald-400' },
+                  { label: 'Bank Total',   value: accountsSummary.bankTotal, borderCls: 'border-blue-500/20 bg-blue-500/5',       valCls: 'text-blue-600 dark:text-blue-400' },
+                  { label: 'Net Funds',    value: accountsSummary.netTotal,  borderCls: accountsSummary.netTotal >= 0 ? 'border-violet-500/20 bg-violet-500/5' : 'border-red-400/20 bg-red-500/5', valCls: accountsSummary.netTotal >= 0 ? 'text-violet-600 dark:text-violet-400' : 'text-red-600 dark:text-red-400' },
+                ].map(({ label, value, borderCls, valCls }) => (
+                  <div key={label} className={cn('rounded-xl border px-3 py-2.5', borderCls)}>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{label}</p>
+                    <p className={cn('text-sm font-black mt-0.5 truncate', valCls)}>{fmtPKR(value)}</p>
+                  </div>
+                ))}
+              </div>
+              {/* Per-account cards */}
+              {accountsSummary.accounts.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {accountsSummary.accounts.map((acc) => (
+                    <div key={acc.id} className={cn(
+                      'flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-colors',
+                      acc.type === 'cash'
+                        ? 'bg-emerald-500/5 border-emerald-500/10 hover:border-emerald-500/25'
+                        : 'bg-blue-500/5 border-blue-500/10 hover:border-blue-500/25'
+                    )}>
+                      <div className={cn('w-2 h-2 rounded-full flex-shrink-0', acc.type === 'cash' ? 'bg-emerald-500' : 'bg-blue-500')} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-semibold truncate text-foreground">{acc.name}</p>
+                        {acc.bank_name && <p className="text-[9px] text-muted-foreground/60 truncate">{acc.bank_name}</p>}
+                        <p className={cn('text-[11px] font-black truncate', acc.type === 'cash' ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400')}>
+                          {fmtPKR(acc.balance)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </motion.div>
