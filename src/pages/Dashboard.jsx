@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import PakFireworks from '../components/ui/PakFireworks';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   ComposedChart, Bar, Line,
@@ -444,6 +445,37 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
+
+      {/* ── Pakistan Independence Day fireworks overlay ── */}
+      <PakFireworks />
+
+      {/* ── Independence Day banner ── */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5 }}
+        className="relative rounded-2xl overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, #01411C 0%, #025C28 55%, #013318 100%)' }}
+      >
+        {/* dot-grid overlay */}
+        <div className="absolute inset-0 opacity-10"
+          style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
+        {/* subtle shimmer bar */}
+        <div className="absolute top-0 left-0 right-0 h-[3px]"
+          style={{ background: 'linear-gradient(90deg, transparent, #FFD700, #FFFFFF, #FFD700, transparent)' }} />
+        <div className="relative flex items-center justify-between px-6 py-5 gap-4">
+          <div>
+            <p className="text-white/60 text-[11px] font-bold uppercase tracking-widest mb-1">🇵🇰 Pakistan · 14 August 2026</p>
+            <h2 className="text-white text-xl sm:text-2xl font-black tracking-tight leading-tight">
+              جشنِ آزادی مبارک! &nbsp;Happy 79th Independence Day
+            </h2>
+            <p className="text-white/70 text-sm mt-1.5">
+              آزادی کی خوشیاں منائیں &nbsp;·&nbsp; Celebrating the spirit of Pakistan 🌙⭐
+            </p>
+          </div>
+          <div className="text-5xl sm:text-6xl select-none shrink-0 drop-shadow-lg">🎆</div>
+        </div>
+      </motion.div>
 
       {/* ── Header ── */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>

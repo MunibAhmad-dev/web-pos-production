@@ -11,7 +11,7 @@ import {
   Eye, EyeOff, Building2, ShieldCheck, Puzzle, MessageSquare, Receipt,
   Store, Image, Trash2, Lock, Bell, CreditCard, Search, RotateCcw, RefreshCw,
 } from 'lucide-react';
-import { useDataStore } from '../../store/dataStore';
+import { useDataStore, clearDataCache } from '../../store/dataStore';
 import { useModuleSettings } from '../../hooks/useModuleSettings';
 import Badge from '@/components/ui/status-badge';
 import { cn } from '@/lib/utils';
@@ -210,8 +210,9 @@ export default function SettingsPage() {
   });
 
   // Backup
-  const { collections, pushBatch } = useDataStore();
+  const { collections, pushBatch, bootstrap } = useDataStore();
   const [importing, setImporting] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -317,6 +318,19 @@ export default function SettingsPage() {
     const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
+  const handleClearCache = async () => {
+    setClearingCache(true);
+    try {
+      await clearDataCache();
+      await bootstrap({ force: true });
+      showToast('Cache cleared — data re-synced from server');
+    } catch {
+      showToast('Re-sync failed — check your connection', 'error');
+    } finally {
+      setClearingCache(false);
+    }
+  };
+
   const stamp = () => new Date().toISOString().slice(0, 10);
   const exportJson = () => {
     downloadBlob(new Blob([JSON.stringify({ exported_at: new Date().toISOString(), store: user?.store_name, data: allData() }, null, 2)], { type: 'application/json' }), `pos-backup-${stamp()}.json`);
@@ -840,6 +854,30 @@ export default function SettingsPage() {
                 <input type="file" accept=".json,.xlsx,.xls" className="hidden"
                   onChange={e => { handleImportFile(e.target.files?.[0]); e.target.value = ''; }} />
               </label>
+            </div>
+
+            {/* Force Re-sync */}
+            <div className="border-t border-border/40 pt-5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                <RefreshCw size={11} /> Force Re-sync
+              </p>
+              <p className="text-xs text-muted-foreground mb-3">
+                If your data looks stale or out of sync, clear the local cache and pull everything fresh from the server. This won't delete any data — it just re-downloads it.
+              </p>
+              <button
+                type="button"
+                onClick={handleClearCache}
+                disabled={clearingCache}
+                className={cn(
+                  'h-9 px-4 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-colors',
+                  clearingCache
+                    ? 'border-border bg-muted text-muted-foreground cursor-not-allowed opacity-60'
+                    : 'border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10'
+                )}
+              >
+                <RefreshCw size={13} className={clearingCache ? 'animate-spin' : ''} />
+                {clearingCache ? 'Clearing cache & re-syncing…' : 'Clear local cache & re-sync'}
+              </button>
             </div>
           </div>
         </SectionCard>
