@@ -80,7 +80,7 @@ export default function PakFireworks() {
     };
     Rocket.prototype.explode = function (parts) {
       // hard cap so a backlog of rockets can't flood the particle pool
-      if (parts.length > 900) return;
+      if (parts.length > 2000) return;
 
       const count = 60 + Math.floor(Math.random() * 30);
       const alt   = COLOURS[Math.floor(Math.random() * COLOURS.length)];
@@ -131,11 +131,18 @@ export default function PakFireworks() {
     const tids = [];
     const later = (fn, ms) => { const id = setTimeout(fn, ms); tids.push(id); };
 
-    const SHOW_MS  = 6000;
-    const PAUSE_MS = 5000;
+    const SHOW_MS  = 6000;   // active window before pause countdown starts
+    const PAUSE_MS = 10000;  // 10-second gap between shows
 
     const runShow = () => {
-      for (let i = 0; i < 10; i++) later(() => rockets.push(new Rocket()), i * 450);
+      // Wave 1: 12–15 rockets all at once (80ms apart so they feel simultaneous)
+      const w1 = 12 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < w1; i++) later(() => rockets.push(new Rocket()), i * 80);
+
+      // Wave 2: 5–8 rockets ~2 seconds after the main burst
+      const w2 = 5 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < w2; i++) later(() => rockets.push(new Rocket()), 2000 + i * 120);
+
       later(() => later(() => { particles = []; rockets = []; runShow(); }, PAUSE_MS), SHOW_MS);
     };
 
