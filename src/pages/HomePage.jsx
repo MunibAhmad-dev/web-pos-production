@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { Link, Navigate } from 'react-router-dom';
+import PakFireworks from '../components/ui/PakFireworks';
 import { useTheme } from 'next-themes';
 import { useAuth } from '../context/AuthContext';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -271,6 +272,7 @@ export default function HomePage() {
 
   return (
     <div style={{ fontFamily: 'Inter, system-ui, sans-serif', overflowX: 'hidden' }}>
+      <PakFireworks />
 
       {/* ══ HERO ══════════════════════════════════════════ */}
       <section style={{ background: GRAD, minHeight: '100vh', position: 'relative', overflow: 'hidden' }}>
