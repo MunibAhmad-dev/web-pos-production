@@ -43,7 +43,7 @@ const SALES_PER_PAGE = 10;
 export default function CustomerDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { list, pushEntity } = useDataStore();
+  const { list, pushEntity, pushBatch } = useDataStore();
   const { showToast } = useToast();
   const { user } = useAuth();
   const [tab, setTab] = useState('invoices');
@@ -129,8 +129,30 @@ export default function CustomerDetailPage() {
 
   const cancelSale = async (sale) => {
     if (!window.confirm(`Cancel Sale #${sale.id}? This cannot be undone.`)) return;
+    const products = list('product');
+    const now = new Date().toISOString();
     try {
-      await pushEntity('sale', 'update', { ...sale, status: 'Cancelled', updated_at: new Date().toISOString() });
+      const events = [{ entityType: 'sale', operation: 'update', payload: { ...sale, status: 'Cancelled', updated_at: now } }];
+
+      for (const item of (sale.items || [])) {
+        if (item.product_id == null) continue;
+        const product = products.find((p) => String(p.id) === String(item.product_id));
+        if (!product) continue;
+        const newStock = Number(product.stock || 0) + Number(item.quantity || 0);
+        events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: newStock, updated_at: now } });
+      }
+
+      const remaining = Number(sale.remaining ?? sale.due_amount ?? 0);
+      if (remaining > 0.01) {
+        const newBalance = Math.max(0, Number(customer.outstanding_balance || 0) - remaining);
+        events.push({ entityType: 'customer', operation: 'update', payload: { ...customer, outstanding_balance: newBalance, updated_at: now } });
+      }
+
+      for (const payment of (sale.linkedPayments || [])) {
+        events.push({ entityType: 'customer_payment', operation: 'delete', payload: { id: payment.id } });
+      }
+
+      await pushBatch(events);
       showToast('Invoice cancelled');
     } catch { showToast('Failed to cancel invoice', 'error'); }
   };

@@ -38,6 +38,7 @@ export default function SalesHistoryPage() {
   const saleReturns = list('sale_return');
   const customers = list('customer');
   const products = list('product');
+  const customerPayments = list('customer_payment');
 
   const customerById = useMemo(() => new Map(customers.map((c) => [String(c.id), c])), [customers]);
   const itemsBySale = useMemo(() => {
@@ -100,19 +101,24 @@ export default function SalesHistoryPage() {
         events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: newStock, updated_at: now } });
       }
 
-      // Reverse whatever amount this sale actually added to the customer's
-      // credit balance (partial payment applies on any method, not just Udhaar).
-      const dueAmount = Number(sale.due_amount || 0);
-      if (dueAmount > 0.01 && sale.customer_id != null) {
+      // Compute actual remaining rather than original due_amount — subsequent
+      // payments reduce outstanding_balance but don't update sale.due_amount.
+      const salePayments = customerPayments.filter((p) => String(p.sale_id) === String(sale.id));
+      const totalPaidForSale = salePayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+      const remainingForSale = Math.max(0, Number(sale.total || 0) - totalPaidForSale);
+      if (remainingForSale > 0.01 && sale.customer_id != null) {
         const customer = customerById.get(String(sale.customer_id));
         if (customer) {
-          const newBalance = Math.max(0, Number(customer.outstanding_balance || 0) - dueAmount);
+          const newBalance = Math.max(0, Number(customer.outstanding_balance || 0) - remainingForSale);
           events.push({
             entityType: 'customer',
             operation: 'update',
             payload: { ...customer, outstanding_balance: newBalance, updated_at: now },
           });
         }
+      }
+      for (const payment of salePayments) {
+        events.push({ entityType: 'customer_payment', operation: 'delete', payload: { id: payment.id } });
       }
 
       await pushBatch(events);
@@ -171,7 +177,7 @@ export default function SalesHistoryPage() {
       events.push({
         entityType: 'product',
         operation: 'update',
-        payload: { ...product, stock: Math.max(0, Number(product.stock || 0) + delta), updated_at: now },
+        payload: { ...product, stock: Number(product.stock || 0) + delta, updated_at: now },
       });
     }
 

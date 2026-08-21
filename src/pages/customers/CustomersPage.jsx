@@ -168,7 +168,7 @@ export default function CustomersPage() {
     const cid = String(selectedCustomer.id);
 
     const sales = allSales
-      .filter((s) => String(s.customer_id) === cid && s.status !== 'cancelled')
+      .filter((s) => String(s.customer_id) === cid && s.status !== 'Cancelled')
       .sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
 
     const payments = allPayments
@@ -203,7 +203,7 @@ export default function CustomersPage() {
     const m = new Map();
     for (const c of customers) {
       const cid = String(c.id);
-      const taken = allSales.filter(s => String(s.customer_id) === cid && s.status !== 'cancelled').reduce((a, s) => a + (Number(s.total) || 0), 0);
+      const taken = allSales.filter(s => String(s.customer_id) === cid && s.status !== 'Cancelled').reduce((a, s) => a + (Number(s.total) || 0), 0);
       const paid  = allPayments.filter(p => String(p.customer_id) === cid).reduce((a, p) => a + (Number(p.amount) || 0), 0);
       const ret   = allReturns.filter(r => String(r.customer_id) === cid).reduce((a, r) => a + (Number(r.total_returned) || 0), 0);
       m.set(cid, Math.max(0, taken - paid - ret));
@@ -251,6 +251,11 @@ export default function CustomersPage() {
         date_added: new Date().toISOString(),
         notes: `Payment for Invoice #${saleId}`,
         sale_id: saleId,
+      });
+      await pushEntity('customer', 'update', {
+        ...selectedCustomer,
+        outstanding_balance: Math.max(0, Number(selectedCustomer.outstanding_balance || 0) - amount),
+        updated_at: new Date().toISOString(),
       });
       showToast(`${fmtPKR(amount)} recorded`);
       setPerCardAmts(prev => ({ ...prev, [saleId]: '' }));

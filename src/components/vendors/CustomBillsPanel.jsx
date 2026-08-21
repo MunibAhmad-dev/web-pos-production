@@ -53,7 +53,7 @@ async function downloadSingleBillPdf(bill, vendor, storeName) {
       <td style="padding:6px 8px;color:#888">${i + 1}</td>
       <td style="padding:6px 8px;font-weight:600;color:#059669">${PKR(p.amount)}</td>
       <td style="padding:6px 8px;color:#555">${p.note || '—'}</td>
-      <td style="padding:6px 8px;color:#888">${fmtDate(p.date_added)}</td>
+      <td style="padding:6px 8px;color:#888">${fmtDate(p.date_created ?? p.date_added)}</td>
     </tr>`).join('');
 
   const html = `<div style="font-family:Arial,sans-serif;font-size:13px;color:#111;padding:32px;max-width:600px">
@@ -191,14 +191,14 @@ function PaymentActivity({ bills, allPayments }) {
   }, [bills]);
 
   const filtered = useMemo(
-    () => allPayments.filter(p => inPeriod(p.date_added, filter, customFrom, customTo)),
+    () => allPayments.filter(p => inPeriod(p.date_created ?? p.date_added, filter, customFrom, customTo)),
     [allPayments, filter, customFrom, customTo]
   );
 
   const byBill = useMemo(() => {
     const m = {};
     for (const p of filtered) {
-      const bid = String(p.bill_id);
+      const bid = String(p.khata_id ?? p.bill_id);
       if (!m[bid]) m[bid] = { bill: billMap[bid], total: 0 };
       m[bid].total += Number(p.amount || 0);
     }
@@ -299,13 +299,13 @@ function NewBillModal({ vendor, purchases, open, onClose }) {
     if (!amt || amt <= 0) { showToast('Amount must be greater than 0', 'error'); return; }
     setSaving(true);
     try {
-      await pushEntity('custom_bill', 'create', {
-        vendor_id:   vendor.id,
-        title:       form.title.trim(),
+      await pushEntity('vendor_khata', 'create', {
+        vendor_id:    vendor.id,
+        title:        form.title.trim(),
         total_amount: amt,
-        notes:       form.notes.trim() || null,
-        purchase_id: form.purchase_id ? Number(form.purchase_id) : null,
-        status:      'active',
+        notes:        form.notes.trim() || null,
+        purchase_id:  form.purchase_id ? Number(form.purchase_id) : null,
+        status:       'open',
         date_created: new Date().toISOString(),
       });
       showToast('Bill created');
@@ -442,19 +442,19 @@ function BillCard({ bill, vendor, purchases, onDeleteBill, deletingBill }) {
         const mirrored = await pushEntity('vendor_payment', 'create', {
           vendor_id:   vendor.id,
           amount:      amtNum,
-          notes:       payNote.trim() || 'Custom bill payment',
-          purchase_id: bill.purchase_id,
-          date_added:  new Date().toISOString(),
+          notes:        payNote.trim() || 'Custom bill payment',
+          purchase_id:  bill.purchase_id,
+          date_created: new Date().toISOString(),
         });
         mirroredId = mirrored?.id ?? null;
       }
 
-      await pushEntity('custom_bill_payment', 'create', {
-        bill_id:                   bill.id,
+      await pushEntity('vendor_khata_payment', 'create', {
+        khata_id:                  bill.id,
         amount:                    amtNum,
         note:                      payNote.trim() || null,
-        date_added:                new Date().toISOString(),
-        mirrored_vendor_payment_id: mirroredId,
+        date_created:              new Date().toISOString(),
+        vendor_payment_id:         mirroredId,
       });
 
       showToast('Payment recorded');
@@ -469,10 +469,10 @@ function BillCard({ bill, vendor, purchases, onDeleteBill, deletingBill }) {
   const handleDeletePayment = async (payment) => {
     setDeletingPayId(payment.id);
     try {
-      if (payment.mirrored_vendor_payment_id) {
-        await pushEntity('vendor_payment', 'delete', { id: payment.mirrored_vendor_payment_id });
+      if (payment.vendor_payment_id ?? payment.mirrored_vendor_payment_id) {
+        await pushEntity('vendor_payment', 'delete', { id: payment.vendor_payment_id ?? payment.mirrored_vendor_payment_id });
       }
-      await pushEntity('custom_bill_payment', 'delete', { id: payment.id });
+      await pushEntity('vendor_khata_payment', 'delete', { id: payment.id });
       showToast('Payment removed');
     } catch (e) {
       showToast(e.message || 'Failed to delete payment', 'error');
@@ -655,7 +655,7 @@ function BillCard({ bill, vendor, purchases, onDeleteBill, deletingBill }) {
                           <CheckCircle2 size={11} className="text-emerald-500 shrink-0" />
                           <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums shrink-0">{PKR(p.amount)}</span>
                           <span className="text-muted-foreground truncate flex-1 min-w-0">{p.note || ''}</span>
-                          <span className="text-muted-foreground shrink-0">{fmtDate(p.date_added)}</span>
+                          <span className="text-muted-foreground shrink-0">{fmtDate(p.date_created ?? p.date_added)}</span>
                           <button onClick={() => handleDeletePayment(p)} disabled={deletingPayId === p.id}
                             className="shrink-0 h-6 w-6 flex items-center justify-center rounded text-rose-500 hover:bg-rose-500/10 transition-colors disabled:opacity-40">
                             {deletingPayId === p.id ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
@@ -756,8 +756,8 @@ export default function CustomBillsPanel({ vendor, onClose }) {
   const [deletingBillIds, setDeletingBillIds] = useState(new Set());
 
   // Raw collections
-  const rawBills        = list('custom_bill');
-  const rawBillPayments = list('custom_bill_payment');
+  const rawBills        = list('vendor_khata');
+  const rawBillPayments = list('vendor_khata_payment');
   const allPurchases    = list('purchase');
 
   // Purchases for this vendor (for linking)
@@ -774,8 +774,8 @@ export default function CustomBillsPanel({ vendor, onClose }) {
       .sort((a, b) => new Date(b.date_created) - new Date(a.date_created))
       .map(bill => {
         const bPays = rawBillPayments
-          .filter(p => String(p.bill_id) === String(bill.id))
-          .sort((a, b) => new Date(b.date_added) - new Date(a.date_added));
+          .filter(p => String(p.khata_id ?? p.bill_id) === String(bill.id))
+          .sort((a, b) => new Date(b.date_created ?? b.date_added) - new Date(a.date_created ?? a.date_added));
         const amount_paid = bPays.reduce((s, p) => s + Number(p.amount || 0), 0);
         const balance_due = Math.max(0, Number(bill.total_amount || 0) - amount_paid);
         return { ...bill, amount_paid, balance_due, payments: bPays };
@@ -790,19 +790,19 @@ export default function CustomBillsPanel({ vendor, onClose }) {
   const allBillPayments = useMemo(() => {
     const billIds = new Set(bills.map(b => String(b.id)));
     return rawBillPayments
-      .filter(p => billIds.has(String(p.bill_id)))
-      .sort((a, b) => new Date(b.date_added) - new Date(a.date_added));
+      .filter(p => billIds.has(String(p.khata_id ?? p.bill_id)))
+      .sort((a, b) => new Date(b.date_created ?? b.date_added) - new Date(a.date_created ?? a.date_added));
   }, [rawBillPayments, bills]);
 
   const handleDeleteBill = async (billId) => {
     if (!window.confirm('Delete this bill? All its payments will also be deleted. Mirrored vendor payments are kept.')) return;
     setDeletingBillIds(prev => new Set([...prev, billId]));
     try {
-      const billPays = rawBillPayments.filter(p => String(p.bill_id) === String(billId));
+      const billPays = rawBillPayments.filter(p => String(p.khata_id ?? p.bill_id) === String(billId));
       for (const p of billPays) {
-        await pushEntity('custom_bill_payment', 'delete', { id: p.id });
+        await pushEntity('vendor_khata_payment', 'delete', { id: p.id });
       }
-      await pushEntity('custom_bill', 'delete', { id: billId });
+      await pushEntity('vendor_khata', 'delete', { id: billId });
       showToast('Bill deleted');
     } catch (e) {
       showToast(e.message || 'Failed to delete bill', 'error');

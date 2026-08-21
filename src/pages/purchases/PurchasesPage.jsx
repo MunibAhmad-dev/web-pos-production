@@ -456,7 +456,7 @@ export default function PurchasesPage() {
   // Cancel purchase
   const handleCancel = async (purchase) => {
     const now = new Date().toISOString();
-    const events = [{ entityType: 'purchase', operation: 'update', payload: { ...purchase, status: 'cancelled', updated_at: now } }];
+    const events = [{ entityType: 'purchase', operation: 'update', payload: { ...purchase, status: 'Cancelled', updated_at: now } }];
     // Reverse stock
     const items = purchaseItems.filter((pi) => String(pi.purchase_id) === String(purchase.id));
     for (const pi of items) {
@@ -486,9 +486,9 @@ export default function PurchasesPage() {
       })
       .filter((p) => {
         if (historyStatusFilter === 'pending' && p.status !== 'pending') return false;
-        if (historyStatusFilter === 'received' && (p.status === 'cancelled' || p.due <= 0.5 && p.status === 'received')) return false;
+        if (historyStatusFilter === 'received' && (p.status === 'Cancelled' || p.due <= 0.5 && p.status === 'received')) return false;
         if (historyStatusFilter === 'paid' && p.due > 0.5) return false;
-        if (historyStatusFilter === 'cancelled' && p.status !== 'cancelled') return false;
+        if (historyStatusFilter === 'cancelled' && p.status !== 'Cancelled') return false;
         if (q) {
           const pool = [String(p.id), p.vendorName, p.bill_no || ''].join(' ').toLowerCase();
           if (!pool.includes(q)) return false;

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import PakFireworks from '../components/ui/PakFireworks';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   ComposedChart, Bar, Line,
@@ -50,11 +49,13 @@ function rangeForPeriod(period, from, to) {
 }
 
 // For gram-unit products: stock is in grams, purchase_price is per-kg.
-// Also caps purchase_price at the product's retail price and at 500,000 PKR —
-// the cloud still has pre-migration corrupt values for some products and we
-// cannot fix that server-side, so we guard here.
-function gramCorrectedCost(qty, purchasePrice, unitType, retailPrice) {
-  const cap = (retailPrice > 0) ? Math.min(Number(retailPrice), 500_000) : 500_000;
+// Matches the Electron desktop's COGS cap:
+//   MIN(si.purchase_price, COALESCE(NULLIF(si.price, 0), 500000))
+// i.e. cap purchase_price at the sale-line price, using 500K as a fallback
+// when the line price is 0/null. We use item.price (sale-time price) not
+// product.price so that price changes after the sale don't distort history.
+function gramCorrectedCost(qty, purchasePrice, unitType, itemPrice) {
+  const cap = (Number(itemPrice) > 0) ? Number(itemPrice) : 500_000;
   const pp  = Math.min(Number(purchasePrice) || 0, cap);
   return unitType === 'gram'
     ? (Number(qty) / 1000) * pp
@@ -76,7 +77,8 @@ function buildPnl(analyticsData, saleItems, sales, productById = {}) {
     // Fall back to product's own purchase_price when the sale_item stored 0
     // (happens for records created before the Electron batch-cost bug was fixed).
     const pp = Number(item.purchase_price) > 0 ? item.purchase_price : (product?.purchase_price ?? 0);
-    const cogs = gramCorrectedCost(item.quantity ?? 0, pp, product?.unit_type, product?.price);
+    // Pass item.price as the cap denominator — matches desktop's si.price column
+    const cogs = gramCorrectedCost(item.quantity ?? 0, pp, product?.unit_type, item.price);
     cogsByDay[day] = (cogsByDay[day] || 0) + cogs;
   }
   const revenueByDay = {};
@@ -268,12 +270,13 @@ export default function Dashboard() {
       // guard against astronomically wrong stock counts from cloud (pre-migration)
       const cappedStock = Math.min(Math.max(0, stock), isGram ? 100_000_000 : 1_000_000);
       const qty = isGram ? cappedStock / 1000 : cappedStock;
-      // cap unit prices at 500,000 PKR, cost ≤ retail, then cap per-product at
-      // 5,000,000 PKR — mirrors the Electron dashboard's MIN(..., 5000000) guard
-      const retailPP = Math.min(Number(p.price || 0), 500_000);
-      const pp = Math.min(Number(p.purchase_price || 0), retailPP);
-      stockValue       += Math.min(qty * pp,       5_000_000);
-      retailStockValue += Math.min(qty * retailPP, 5_000_000);
+      // Match desktop SQL exactly:
+      //   cost_value:   SUM(MIN(qty * MIN(purchase_price, 50M), 50M))
+      //   retail_value: SUM(qty * price)  — no per-product cap on retail side
+      const retailPrice = Number(p.price || 0);
+      const pp = Math.min(Number(p.purchase_price || 0), 50_000_000);
+      stockValue       += Math.min(qty * pp, 50_000_000);
+      retailStockValue += qty * retailPrice;
       if (stock <= 0)                           { outOfStockCount++; }
       else if (stock <= LOW_STOCK_THRESHOLD)    { lowStockCount++;   lowStockProducts.push(p); }
       else                                       { inStockCount++; }
@@ -351,7 +354,7 @@ export default function Dashboard() {
     const expByDayMap = {};
     let expTotal = 0;
     for (const e of expensesList) {
-      const raw = e.date_added ?? e.date ?? e.created_at;
+      const raw = e.date_created ?? e.date_added ?? e.date ?? e.created_at;
       if (!raw) continue;
       const d = new Date(String(raw).replace(' ', 'T'));
       if (isNaN(d) || d < start || d > end) continue;
@@ -445,37 +448,6 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-
-      {/* ── Pakistan Independence Day fireworks overlay ── */}
-      <PakFireworks />
-
-      {/* ── Independence Day banner ── */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.97 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
-        className="relative rounded-2xl overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #01411C 0%, #025C28 55%, #013318 100%)' }}
-      >
-        {/* dot-grid overlay */}
-        <div className="absolute inset-0 opacity-10"
-          style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
-        {/* subtle shimmer bar */}
-        <div className="absolute top-0 left-0 right-0 h-[3px]"
-          style={{ background: 'linear-gradient(90deg, transparent, #FFD700, #FFFFFF, #FFD700, transparent)' }} />
-        <div className="relative flex items-center justify-between px-6 py-5 gap-4">
-          <div>
-            <p className="text-white/60 text-[11px] font-bold uppercase tracking-widest mb-1">🇵🇰 Pakistan · 14 August 2026</p>
-            <h2 className="text-white text-xl sm:text-2xl font-black tracking-tight leading-tight">
-              جشنِ آزادی مبارک! &nbsp;Happy 79th Independence Day
-            </h2>
-            <p className="text-white/70 text-sm mt-1.5">
-              آزادی کی خوشیاں منائیں &nbsp;·&nbsp; Celebrating the spirit of Pakistan 🌙⭐
-            </p>
-          </div>
-          <div className="text-5xl sm:text-6xl select-none shrink-0 drop-shadow-lg">🎆</div>
-        </div>
-      </motion.div>
 
       {/* ── Header ── */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>

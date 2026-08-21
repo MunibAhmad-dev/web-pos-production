@@ -21,6 +21,7 @@ const PLURAL_TO_SINGULAR = {
   sale_returns:          'sale_return',
   sale_return_items:     'sale_return_item',
   purchases:             'purchase',
+  purchase_items:        'purchase_item',
   inventory_batches:     'inventory_batch',
   purchase_returns:      'purchase_return',
   purchase_return_items: 'purchase_return_item',
@@ -33,8 +34,8 @@ const PLURAL_TO_SINGULAR = {
   registers:             'register',
   financial_transactions:'financial_transaction',
   warranty_claims:       'warranty_claim',
-  custom_bills:          'custom_bill',
-  custom_bill_payments:  'custom_bill_payment',
+  vendor_khatas:         'vendor_khata',
+  vendor_khata_payments: 'vendor_khata_payment',
 };
 const ENTITY_TYPES = Object.values(PLURAL_TO_SINGULAR);
 
@@ -68,6 +69,8 @@ function cleanLegacyCache() {
 
 export function DataStoreProvider({ children }) {
   const [collections, setCollections] = useState(emptyCollections);
+  const collectionsRef = useRef(emptyCollections());
+  useEffect(() => { collectionsRef.current = collections; }, [collections]);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [loading, setLoading]           = useState(false);
   const lastSyncRef = useRef(null);
@@ -286,13 +289,16 @@ export function DataStoreProvider({ children }) {
   const pushEntity = useCallback(
     async (entityType, operation, payload) => {
       const final = payload.id != null ? payload : { ...payload, id: nextId() };
+      const snapshot = collectionsRef.current[entityType]?.get(String(final.id));
       applyLocal(entityType, operation, final);
       try {
         await pushEvents([{ entity_type: entityType, operation, payload: final, local_id: final.id }]);
         // Persist to IDB so it survives a refresh
         void openPosDB().then(db => idbPutMany(db, entityType, [{ ...final, id: String(final.id) }])).catch(() => {});
       } catch (err) {
-        applyLocal(entityType, 'delete', final);
+        // Restore previous state on error — don't delete entities that already existed
+        if (snapshot != null) applyLocal(entityType, 'update', snapshot);
+        else applyLocal(entityType, 'delete', final);
         throw err;
       }
       return final;
@@ -307,6 +313,7 @@ export function DataStoreProvider({ children }) {
         operation:  e.operation,
         payload:    e.payload.id != null ? e.payload : { ...e.payload, id: nextId() },
       }));
+      const snapshots = prepared.map(e => collectionsRef.current[e.entityType]?.get(String(e.payload.id)));
       for (const e of prepared) applyLocal(e.entityType, e.operation, e.payload);
       try {
         await pushEvents(
@@ -316,7 +323,11 @@ export function DataStoreProvider({ children }) {
           Promise.all(prepared.map(e => idbPutMany(db, e.entityType, [{ ...e.payload, id: String(e.payload.id) }]).catch(() => {})))
         ).catch(() => {});
       } catch (err) {
-        for (const e of prepared) applyLocal(e.entityType, 'delete', e.payload);
+        for (let i = 0; i < prepared.length; i++) {
+          const snapshot = snapshots[i];
+          if (snapshot != null) applyLocal(prepared[i].entityType, 'update', snapshot);
+          else applyLocal(prepared[i].entityType, 'delete', prepared[i].payload);
+        }
         throw err;
       }
       return prepared.map(e => e.payload);

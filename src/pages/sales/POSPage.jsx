@@ -220,7 +220,7 @@ export default function POSPage() {
       if (item.isCustom) continue;
       const product = products.find((p) => String(p.id) === String(item.product));
       if (!product) continue;
-      const newStock = Math.max(0, Number(product.stock || 0) - item.qty);
+      const newStock = Number(product.stock || 0) - item.qty;
       events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: newStock, updated_at: now } });
     }
 

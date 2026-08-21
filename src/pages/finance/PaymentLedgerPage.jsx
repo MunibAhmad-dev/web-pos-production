@@ -92,7 +92,7 @@ export default function PaymentLedgerPage() {
     for (const p of purchases) {
       if (p.status === 'cancelled' || p.status === 'Cancelled') continue;
       const vid = String(p.vendor_id);
-      owedByV.set(vid, (owedByV.get(vid) || 0) + Number(p.total || 0));
+      owedByV.set(vid, (owedByV.get(vid) || 0) + Number(p.grand_total || p.total || 0));
     }
     const paidByV = new Map();
     for (const p of vendorPayments) {
@@ -102,7 +102,7 @@ export default function PaymentLedgerPage() {
     const returnedByV = new Map();
     for (const r of purchaseReturns) {
       const vid = String(r.vendor_id);
-      returnedByV.set(vid, (returnedByV.get(vid) || 0) + Number(r.total || 0));
+      returnedByV.set(vid, (returnedByV.get(vid) || 0) + Number(r.total_returned || r.total || 0));
     }
     const txnsByV = new Map();
     for (const t of ledger) {

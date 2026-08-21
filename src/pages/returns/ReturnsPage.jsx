@@ -225,7 +225,7 @@ export default function ReturnsPage() {
   const { paged: pagedPurchaseReturns, page: prPage, pageCount: prPageCount, setPage: setPrPage } = usePagination(filteredPurchaseReturns, 30);
 
   // Form: returnable documents
-  const returnableSales = useMemo(() => sales.filter((s) => s.status === 'Completed' || s.status === 'completed'), [sales]);
+  const returnableSales = useMemo(() => sales.filter((s) => s.status === 'Completed'), [sales]);
   const returnablePurchases = useMemo(() => purchases.filter((p) => p.status === 'received'), [purchases]);
 
   const selectedDoc = useMemo(() => {

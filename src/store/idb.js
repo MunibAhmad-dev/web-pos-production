@@ -20,7 +20,7 @@ export const WINDOW_DAYS = 60;
 export const WINDOWED_TYPES = new Set([
   'sale', 'sale_item',
   'sale_return', 'sale_return_item',
-  'purchase', 'inventory_batch',
+  'purchase', 'purchase_item', 'inventory_batch',
   'purchase_return', 'purchase_return_item',
   'expense',
   'financial_transaction', 'account_txn',
@@ -30,10 +30,10 @@ export const WINDOWED_TYPES = new Set([
 export const ALL_IDB_TYPES = [
   'product', 'customer', 'vendor', 'employee', 'employee_advance',
   'sale', 'sale_item', 'sale_return', 'sale_return_item',
-  'purchase', 'inventory_batch', 'purchase_return', 'purchase_return_item',
+  'purchase', 'purchase_item', 'inventory_batch', 'purchase_return', 'purchase_return_item',
   'stock_adjustment', 'customer_payment', 'vendor_payment',
   'expense', 'account', 'account_txn', 'register', 'financial_transaction',
-  'warranty_claim', 'custom_bill', 'custom_bill_payment',
+  'warranty_claim', 'vendor_khata', 'vendor_khata_payment',
 ];
 
 // ── DB lifecycle ──────────────────────────────────────────────────────────────

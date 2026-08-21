@@ -57,7 +57,7 @@ const POS_PER_PAGE = 10;
 export default function VendorDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { list, pushEntity } = useDataStore();
+  const { list, pushEntity, pushBatch } = useDataStore();
   const { showToast } = useToast();
   const { user } = useAuth();
   const [tab, setTab] = useState('purchases');
@@ -86,13 +86,13 @@ export default function VendorDetailPage() {
 
     const poIds = new Set(vendPurchases.map((p) => String(p.id)));
     const vendPayments = allPayments.filter((p) => String(p.vendor_id) === vid)
-      .sort((a, b) => new Date(b.date_added || 0) - new Date(a.date_added || 0));
+      .sort((a, b) => new Date(b.date_created || b.date_added || 0) - new Date(a.date_created || a.date_added || 0));
     const vendReturns = allReturns.filter((r) => poIds.has(String(r.purchase_id)))
       .sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
 
     const vendorProducts = allProducts.filter((p) => String(p.vendor_id) === vid);
 
-    const totalPurchased = vendPurchases.filter((p) => p.status !== 'Cancelled').reduce((s, p) => s + Number(p.total || 0), 0);
+    const totalPurchased = vendPurchases.filter((p) => p.status !== 'Cancelled').reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
     const totalPaid = vendPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
     const totalReturned = vendReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
     const balance = Math.max(0, totalPurchased - totalPaid - totalReturned);
@@ -103,7 +103,7 @@ export default function VendorDetailPage() {
       const linkedReturns = vendReturns.filter((r) => String(r.purchase_id) === String(po.id));
       const amountPaid = linkedPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
       const amountReturned = linkedReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
-      const remaining = Math.max(0, Number(po.total || 0) - amountPaid - amountReturned);
+      const remaining = Math.max(0, Number(po.grand_total || po.total || 0) - amountPaid - amountReturned);
       return { ...po, items, linkedPayments, linkedReturns, amountPaid, amountReturned, remaining };
     });
 
@@ -111,8 +111,8 @@ export default function VendorDetailPage() {
     const totalStock = vendorProducts.reduce((s, p) => s + stockBaseQty(p), 0);
 
     const activity = [
-      ...vendPurchases.map((p) => ({ type: 'PURCHASE', date: p.date_created, notes: `Purchase Order — ${fmtPKR(p.total)}`, amount: Number(p.total || 0), id: p.id })),
-      ...vendPayments.map((p) => ({ type: 'PAYMENT_ADDED', date: p.date_added, notes: `Payment made — ${fmtPKR(p.amount)}`, amount: Number(p.amount || 0), id: p.id })),
+      ...vendPurchases.map((p) => ({ type: 'PURCHASE', date: p.date_created, notes: `Purchase Order — ${fmtPKR(p.grand_total || p.total)}`, amount: Number(p.grand_total || p.total || 0), id: p.id })),
+      ...vendPayments.map((p) => ({ type: 'PAYMENT_ADDED', date: p.date_created || p.date_added, notes: `Payment made — ${fmtPKR(p.amount)}`, amount: Number(p.amount || 0), id: p.id })),
       ...vendReturns.map((r) => ({ type: 'RETURN', date: r.date_created, notes: `Return — ${fmtPKR(r.total_returned)}`, amount: Number(r.total_returned || 0), id: r.id })),
     ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
@@ -133,7 +133,7 @@ export default function VendorDetailPage() {
     const pagedPOs = filteredPOs.slice(0, posPage * POS_PER_PAGE);
     return [
       ...pagedPOs.map((p) => ({ ...p, _type: 'purchase', _sortDate: new Date(p.date_created || 0).getTime() })),
-      ...data.payments.map((p) => ({ ...p, _type: 'payment', _sortDate: new Date(p.date_added || 0).getTime() })),
+      ...data.payments.map((p) => ({ ...p, _type: 'payment', _sortDate: new Date(p.date_created || p.date_added || 0).getTime() })),
     ].sort((a, b) => b._sortDate - a._sortDate);
   }, [data, poFilter, posPage]);
 
@@ -146,7 +146,7 @@ export default function VendorDetailPage() {
         amount: amt,
         notes: payNotesByPO[purchaseId] || '',
         purchase_id: purchaseId,
-        date_added: new Date().toISOString(),
+        date_created: new Date().toISOString(),
       });
       showToast('Payment recorded');
       setPayAmounts((prev) => { const n = { ...prev }; delete n[purchaseId]; return n; });
@@ -156,8 +156,22 @@ export default function VendorDetailPage() {
 
   const cancelPO = async (po) => {
     if (!window.confirm(`Cancel ${poNumber(po)}? This cannot be undone.`)) return;
+    const now = new Date().toISOString();
     try {
-      await pushEntity('purchase', 'update', { ...po, status: 'Cancelled', updated_at: new Date().toISOString() });
+      const events = [{ entityType: 'purchase', operation: 'update', payload: { ...po, status: 'Cancelled', updated_at: now } }];
+      // Reverse stock only for received orders (pending orders never added to stock)
+      if (po.status === 'received') {
+        for (const item of (po.items || [])) {
+          if (item.product_id == null) continue;
+          const product = allProducts.find((p) => String(p.id) === String(item.product_id));
+          if (!product) continue;
+          events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: Number(product.stock || 0) - Number(item.quantity || 0), updated_at: now } });
+        }
+      }
+      for (const payment of (po.linkedPayments || [])) {
+        events.push({ entityType: 'vendor_payment', operation: 'delete', payload: { id: payment.id } });
+      }
+      await pushBatch(events);
       showToast('Purchase order cancelled');
     } catch { showToast('Failed to cancel order', 'error'); }
   };
