@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { motion } from 'framer-motion';
 import {
-  DollarSign, TrendingUp, Activity, Zap, Boxes, Wallet, AlertTriangle, PiggyBank,
+  DollarSign, TrendingUp, TrendingDown, Activity, Zap, Boxes, Wallet, AlertTriangle, PiggyBank,
   ShoppingCart, Package, Truck, Users, CreditCard, BarChart3, ClipboardList,
   ArrowUpRight, Banknote, RefreshCw,
 } from 'lucide-react';
@@ -481,21 +481,26 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
-      {/* ── KPI grid (with sparklines) ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={1} className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard icon={DollarSign}    label="Period Revenue"    value={fmtPKR(pnl.totals.revenue)}              sublabel={periodLabel}                                    color="text-blue-600 bg-blue-500/10"         sparkData={revSparkline}  sparkKey="value" sparkColor="#3b82f6" />
-        <KpiCard icon={TrendingUp}    label="Gross Profit"      value={fmtPKR(pnl.totals.gross)}                sublabel={periodLabel}                                    color="text-emerald-600 bg-emerald-500/10"   sparkData={netSparkline}  sparkKey="value" sparkColor="#10b981" />
-        <KpiCard icon={Activity}      label="Transactions"      value={localAnalytics.totals.sales}             sublabel={periodLabel}                                    color="text-purple-600 bg-purple-500/10" />
-        <KpiCard icon={Zap}           label="Today's Revenue"   value={fmtPKR(todayRevenue)}                    sublabel="vs this month"                                  color="text-amber-600 bg-amber-500/10" />
-        <KpiCard icon={Boxes}         label="Stock Value"       value={fmtPKR(stockStats.stockValue)}           sublabel="Total inventory at cost"                        color="text-blue-600 bg-blue-500/10" />
-        <KpiCard icon={PiggyBank}     label="Retail Stock"      value={fmtPKR(stockStats.retailStockValue)}     sublabel={`Profit: ${fmtPKR(stockStats.retailProfit)}`}   color="text-emerald-600 bg-emerald-500/10" />
-        <KpiCard icon={Wallet}        label="Customer Credit"   value={fmtPKR(customerAR.totalAR)}              sublabel={`${customerAR.debtors.length} debtors`}         color="text-purple-600 bg-purple-500/10" />
-        <KpiCard icon={AlertTriangle} label="Low Stock"         value={stockStats.lowStockCount}                sublabel="Below threshold"                                color={stockStats.lowStockCount > 0 ? 'text-rose-600 bg-rose-500/10' : 'text-muted-foreground bg-muted/40'} />
+      {/* ── Period KPIs (Revenue / Gross Profit / Net Profit / Transactions / Today) ── */}
+      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={1} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+        <KpiCard icon={DollarSign}    label="Period Revenue"  value={fmtPKR(pnl.totals.revenue)}    sublabel={periodLabel}   color="text-blue-600 bg-blue-500/10"     sparkData={revSparkline} sparkKey="value" sparkColor="#3b82f6" />
+        <KpiCard icon={TrendingUp}    label="Gross Profit"    value={fmtPKR(pnl.totals.gross)}      sublabel={`COGS: ${fmtPKR(pnl.totals.cogs)}`}   color="text-emerald-600 bg-emerald-500/10" sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: Math.max(0, d.gross) }))} sparkKey="value" sparkColor="#10b981" />
+        <KpiCard icon={TrendingDown}  label="Net Profit"      value={fmtPKR(pnl.totals.net)}        sublabel={`Exp: ${fmtPKR(pnl.totals.expenses)}`} color={pnl.totals.net >= 0 ? 'text-violet-600 bg-violet-500/10' : 'text-rose-600 bg-rose-500/10'} sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: d.net }))} sparkKey="value" sparkColor="#8b5cf6" />
+        <KpiCard icon={Activity}      label="Transactions"    value={localAnalytics.totals.sales}   sublabel={periodLabel}   color="text-purple-600 bg-purple-500/10" />
+        <KpiCard icon={Zap}           label="Today's Revenue" value={fmtPKR(todayRevenue)}           sublabel="vs this month" color="text-amber-600 bg-amber-500/10" />
+      </motion.div>
+
+      {/* ── Store KPIs (Stock / AR / Low Stock) ── */}
+      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard icon={Boxes}         label="Stock Value"     value={fmtPKR(stockStats.stockValue)}       sublabel="Total inventory at cost"              color="text-blue-600 bg-blue-500/10" />
+        <KpiCard icon={PiggyBank}     label="Retail Stock"    value={fmtPKR(stockStats.retailStockValue)} sublabel={`Profit: ${fmtPKR(stockStats.retailProfit)}`} color="text-emerald-600 bg-emerald-500/10" />
+        <KpiCard icon={Wallet}        label="Customer Credit" value={fmtPKR(customerAR.totalAR)}          sublabel={`${customerAR.debtors.length} debtors`}       color="text-purple-600 bg-purple-500/10" />
+        <KpiCard icon={AlertTriangle} label="Low Stock"       value={stockStats.lowStockCount}            sublabel="Below threshold"                              color={stockStats.lowStockCount > 0 ? 'text-rose-600 bg-rose-500/10' : 'text-muted-foreground bg-muted/40'} />
       </motion.div>
 
       {/* ── Accounts summary ── */}
       {accounts.length > 0 && (
-        <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2}>
+        <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={3}>
           <div className="rounded-2xl bg-card relative overflow-hidden"
             style={{ border: '1px solid rgba(16,185,129,0.2)', boxShadow: '0 4px 24px -4px rgba(16,185,129,0.10), 0 1px 4px rgba(0,0,0,0.05)' }}>
             {/* Top accent bar */}
