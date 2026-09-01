@@ -67,7 +67,8 @@ const IMPORTABLE_FIELDS = [
   { key: 'barcode', label: 'Barcode / SKU' },
   { key: 'unit', label: 'Unit (pcs, kg…)' },
   { key: 'box_qty', label: 'Pieces Per Box / Carton' },
-  { key: 'wholesale_price', label: 'Wholesale Price Per Piece' },
+  { key: 'wholesale_price', label: 'Wholesale Price (Per Piece or Per Box)' },
+  { key: 'wholesale_price_mode', label: 'Wholesale Price Mode (per_piece / per_box)' },
 ];
 
 const FIELD_ALIASES = {
@@ -80,6 +81,7 @@ const FIELD_ALIASES = {
   unit: ['unit', 'uom', 'unit of measure', 'measure', 'pack'],
   box_qty: ['box qty', 'pieces per box', 'pcs per box', 'box quantity', 'carton qty', 'carton size', 'pieces in box', 'box size', 'box_qty', 'carton', 'per box', 'per carton'],
   wholesale_price: ['wholesale price', 'ws price', 'wholesale', 'bulk price', 'wholesale_price', 'trader price', 'dealer price'],
+  wholesale_price_mode: ['wholesale price mode', 'price mode', 'ws mode', 'ws price mode', 'wholesale mode', 'price type', 'per piece or per box'],
 };
 
 function autoDetectMapping(headers) {
@@ -160,6 +162,7 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
         country_of_origin: current.country_of_origin || null,
         dry_fruit_category: current.dry_fruit_category || null,
         wholesale_price: current.wholesale_price != null && current.wholesale_price !== '' ? Number(current.wholesale_price) : null,
+        wholesale_price_mode: current.wholesale_price_mode || 'per_piece',
         box_qty: current.box_qty != null && current.box_qty !== '' ? Number(current.box_qty) : 0,
         brand: current.brand || null,
         wastage_percent: current.wastage_percent != null && current.wastage_percent !== '' ? Number(current.wastage_percent) : 0,
@@ -595,22 +598,49 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                     <p className="text-[10px] text-muted-foreground">How many individual pieces fit in 1 box/carton</p>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Wholesale Price / Piece (PKR)</label>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        {(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'Wholesale Price / Box (PKR)' : 'Wholesale Price / Piece (PKR)'}
+                      </label>
+                      <div className="flex rounded-md border border-sky-400/40 overflow-hidden text-[10px] font-semibold">
+                        <button type="button" disabled={isSaving}
+                          onClick={() => setCurrent((p) => ({ ...p, wholesale_price_mode: 'per_piece' }))}
+                          className={`px-2 py-0.5 transition-colors ${(current.wholesale_price_mode || 'per_piece') === 'per_piece' ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
+                        >Per Piece</button>
+                        <button type="button" disabled={isSaving}
+                          onClick={() => setCurrent((p) => ({ ...p, wholesale_price_mode: 'per_box' }))}
+                          className={`px-2 py-0.5 transition-colors ${(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
+                        >Per Box</button>
+                      </div>
+                    </div>
                     <input
                       type="number" min="0" step="1"
                       value={current.wholesale_price ?? ''}
                       onChange={(e) => setCurrent((p) => ({ ...p, wholesale_price: e.target.value }))}
-                      placeholder="Leave blank = retail price" disabled={isSaving}
+                      placeholder={(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'e.g. 500 per box' : 'Leave blank = retail price'}
+                      disabled={isSaving}
                       className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30"
                     />
-                    <p className="text-[10px] text-muted-foreground">Per-piece price when selling by box (optional)</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'Total price for one full box/carton' : 'Per-piece price when selling by box (optional)'}
+                    </p>
                   </div>
-                  {Number(current.box_qty) > 0 && (
-                    <div className="col-span-2 rounded-lg bg-sky-100 dark:bg-sky-900/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-300 font-medium">
-                      1 box = {current.box_qty} {current.unit || 'pcs'} ·
-                      Box price ≈ PKR {Math.round((Number(current.wholesale_price) || Number(current.price) || 0) * Number(current.box_qty)).toLocaleString()}
-                    </div>
-                  )}
+                  {Number(current.box_qty) > 0 && (() => {
+                    const bq = Number(current.box_qty);
+                    const ws = Number(current.wholesale_price) || 0;
+                    const mode = current.wholesale_price_mode || 'per_piece';
+                    const boxPrice = mode === 'per_box' ? ws : ws * bq || Number(current.price || 0) * bq;
+                    const pcPrice  = mode === 'per_box' ? (bq > 0 ? ws / bq : 0) : ws || Number(current.price || 0);
+                    return (
+                      <div className="col-span-2 rounded-lg bg-sky-100 dark:bg-sky-900/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-300 font-medium">
+                        1 box = {bq} {current.unit || 'pcs'} ·{' '}
+                        {mode === 'per_box'
+                          ? <>Box price = PKR {Math.round(boxPrice).toLocaleString()} · Per piece ≈ PKR {(pcPrice).toFixed(1)}</>
+                          : <>Box price ≈ PKR {Math.round(boxPrice).toLocaleString()}</>
+                        }
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -1045,7 +1075,8 @@ export default function ProductsPage() {
       };
       if (wholesaleOn) {
         row['Pieces Per Box'] = p.box_qty || '';
-        row['Wholesale Price Per Piece (PKR)'] = p.wholesale_price || '';
+        row['Wholesale Price (PKR)'] = p.wholesale_price || '';
+        row['Wholesale Price Mode'] = p.wholesale_price_mode || 'per_piece';
       }
       return row;
     });
@@ -1068,7 +1099,7 @@ export default function ProductsPage() {
   const downloadTemplate = () => {
     const wholesaleOn = getModuleSettings().wholesale_module_enabled;
     const sample = { name: 'Sample Product', purchase_price: 100, price: 150, stock: 50, category: 'General', barcode: '1234567890', unit: 'pcs' };
-    if (wholesaleOn) { sample['Pieces Per Box'] = 24; sample['Wholesale Price Per Piece (PKR)'] = 130; }
+    if (wholesaleOn) { sample['Pieces Per Box'] = 24; sample['Wholesale Price (PKR)'] = 130; sample['Wholesale Price Mode'] = 'per_piece'; }
     const template = [sample];
     const ws = XLSX.utils.json_to_sheet(template);
     const wb = XLSX.utils.book_new();
@@ -1125,12 +1156,14 @@ export default function ProductsPage() {
       const unit = String(mapped.unit ?? '').trim();
       const box_qty = parseInt(String(mapped.box_qty ?? '0')) || 0;
       const wholesale_price = parseFloat(String(mapped.wholesale_price ?? '0')) || 0;
+      const rawMode = String(mapped.wholesale_price_mode ?? '').trim().toLowerCase().replace(/[\s-]/g, '_');
+      const wholesale_price_mode = rawMode === 'per_box' ? 'per_box' : 'per_piece';
       if (!name) errors.push('Name required');
       if (price <= 0) errors.push('Price must be > 0');
       const existingByBarcode = barcode ? products.find((p) => p.barcode === barcode) : null;
       const existingByName = products.find((p) => p.name?.toLowerCase() === name.toLowerCase());
       const existing = existingByBarcode || existingByName;
-      return { name, price, purchase_price, stock, category, barcode, unit, box_qty, wholesale_price, _valid: errors.length === 0, _errors: errors, _isUpdate: !!existing, _existingId: existing?.id };
+      return { name, price, purchase_price, stock, category, barcode, unit, box_qty, wholesale_price, wholesale_price_mode, _valid: errors.length === 0, _errors: errors, _isUpdate: !!existing, _existingId: existing?.id };
     }).filter((r) => r.name !== '');
     setImportRows(parsed);
     setImportPhase('preview');
@@ -1156,6 +1189,7 @@ export default function ProductsPage() {
             ...(row.barcode && { barcode: row.barcode }),
             ...(row.box_qty > 0 && { box_qty: row.box_qty }),
             ...(row.wholesale_price > 0 && { wholesale_price: row.wholesale_price }),
+            ...(row.wholesale_price > 0 && { wholesale_price_mode: row.wholesale_price_mode }),
             updated_at: now,
           });
         } else {
@@ -1164,6 +1198,7 @@ export default function ProductsPage() {
             stock: row.stock, category: row.category, barcode: row.barcode,
             unit: row.unit, box_qty: row.box_qty || 0,
             wholesale_price: row.wholesale_price || null,
+            wholesale_price_mode: row.wholesale_price_mode || 'per_piece',
             metadata: {}, created_at: now, updated_at: now,
           });
         }

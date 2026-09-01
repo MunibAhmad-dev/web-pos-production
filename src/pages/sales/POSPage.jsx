@@ -82,10 +82,14 @@ export default function POSPage() {
     // negative stock is allowed, only a warning toast is shown.
     const stock = Number(product.stock || 0);
     const boxQty = wholesaleOn ? (Number(product.box_qty) || 0) : 0;
-    // Wholesale price per piece (falls back to retail price if not set)
-    const wsPrice = wholesaleOn && Number(product.wholesale_price) > 0
-      ? Number(product.wholesale_price)
-      : Number(product.price || 0);
+    // Resolve per-piece wholesale price — supports both per_piece and per_box modes
+    let wsPrice = Number(product.price || 0);
+    if (wholesaleOn && Number(product.wholesale_price) > 0) {
+      const rawWs = Number(product.wholesale_price);
+      wsPrice = (product.wholesale_price_mode === 'per_box')
+        ? rawWs / Math.max(1, Number(product.box_qty) || 1)
+        : rawWs;
+    }
 
     setCart((prev) => {
       const existing = prev.find((i) => i.key === String(product.id));

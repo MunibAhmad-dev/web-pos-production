@@ -17,6 +17,7 @@ const emptyForm = {
   stock: '',
   box_qty: '',
   wholesale_price: '',
+  wholesale_price_mode: 'per_piece',
 };
 
 export default function ProductFormModal({ open, onClose, onSubmit, product, categoryOptions = [] }) {
@@ -37,6 +38,7 @@ export default function ProductFormModal({ open, onClose, onSubmit, product, cat
         stock: product.stock ?? '',
         box_qty: product.box_qty ?? '',
         wholesale_price: product.wholesale_price ?? '',
+        wholesale_price_mode: product.wholesale_price_mode || 'per_piece',
       });
     } else {
       setForm(emptyForm);
@@ -58,6 +60,7 @@ export default function ProductFormModal({ open, onClose, onSubmit, product, cat
         stock: Number(form.stock) || 0,
         box_qty: wholesaleOn ? (Number(form.box_qty) || 0) : (product?.box_qty || 0),
         wholesale_price: wholesaleOn ? (Number(form.wholesale_price) || 0) : (product?.wholesale_price || 0),
+        wholesale_price_mode: wholesaleOn ? (form.wholesale_price_mode || 'per_piece') : (product?.wholesale_price_mode || 'per_piece'),
       };
       await onSubmit(payload);
       onClose();
@@ -125,21 +128,47 @@ export default function ProductFormModal({ open, onClose, onSubmit, product, cat
               value={form.box_qty}
               onChange={update('box_qty')}
             />
-            <Input
-              label="Wholesale price per piece (optional)"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Leave blank to use retail price"
-              value={form.wholesale_price}
-              onChange={update('wholesale_price')}
-            />
-            {form.box_qty > 0 && (
-              <p className="sm:col-span-2 text-xs text-sky-600 bg-sky-50 dark:bg-sky-900/20 rounded-lg px-3 py-2">
-                1 box = {form.box_qty} {form.unit || 'pcs'} ·{' '}
-                Box price ≈ PKR {Math.round((Number(form.wholesale_price) || Number(form.price) || 0) * Number(form.box_qty)).toLocaleString()}
-              </p>
-            )}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {(form.wholesale_price_mode || 'per_piece') === 'per_box' ? 'Wholesale price per box' : 'Wholesale price per piece'}
+                </span>
+                <div className="flex rounded border border-sky-400/40 overflow-hidden text-[10px] font-semibold">
+                  <button type="button"
+                    onClick={() => setForm({ ...form, wholesale_price_mode: 'per_piece' })}
+                    className={`px-2 py-0.5 transition-colors ${(form.wholesale_price_mode || 'per_piece') === 'per_piece' ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
+                  >Per Piece</button>
+                  <button type="button"
+                    onClick={() => setForm({ ...form, wholesale_price_mode: 'per_box' })}
+                    className={`px-2 py-0.5 transition-colors ${form.wholesale_price_mode === 'per_box' ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
+                  >Per Box</button>
+                </div>
+              </div>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder={(form.wholesale_price_mode || 'per_piece') === 'per_box' ? 'e.g. 500 per box' : 'Leave blank to use retail price'}
+                value={form.wholesale_price}
+                onChange={update('wholesale_price')}
+              />
+            </div>
+            {Number(form.box_qty) > 0 && (() => {
+              const bq = Number(form.box_qty);
+              const ws = Number(form.wholesale_price) || 0;
+              const mode = form.wholesale_price_mode || 'per_piece';
+              const boxPrice = mode === 'per_box' ? ws : (ws || Number(form.price) || 0) * bq;
+              const pcPrice  = mode === 'per_box' ? (bq > 0 ? ws / bq : 0) : (ws || Number(form.price) || 0);
+              return (
+                <p className="sm:col-span-2 text-xs text-sky-600 bg-sky-50 dark:bg-sky-900/20 rounded-lg px-3 py-2">
+                  1 box = {bq} {form.unit || 'pcs'} ·{' '}
+                  {mode === 'per_box'
+                    ? <>Box price = PKR {Math.round(boxPrice).toLocaleString()} · Per piece ≈ PKR {pcPrice.toFixed(1)}</>
+                    : <>Box price ≈ PKR {Math.round(boxPrice).toLocaleString()}</>
+                  }
+                </p>
+              );
+            })()}
           </>
         )}
 
