@@ -15,6 +15,7 @@ import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/format';
 import { useModuleSettings, getModuleSettings } from '../../hooks/useModuleSettings';
+import { Switch } from '@/components/ui/switch';
 
 // ─── Format helper ────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(n ?? 0).toLocaleString('en-PK');
@@ -699,29 +700,40 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                     </div>
 
                     {/* Box level toggle */}
-                    <div className="col-span-2 flex items-center gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input type="checkbox" disabled={isSaving}
-                          checked={Number(current.box_qty) > 0}
-                          onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.checked ? (Number(p.box_qty) > 0 ? p.box_qty : '') : 0 }))}
-                          className="h-4 w-4 rounded border-border accent-sky-600"
-                        />
-                        <span className="text-xs font-medium text-muted-foreground">Enable box level <span className="text-sky-600">(optional)</span> — carton contains boxes, boxes contain {pn}s</span>
-                      </label>
-                    </div>
+                    {(() => {
+                      const boxOn = current.box_qty !== 0 && current.box_qty !== '0' && current.box_qty !== '' && current.box_qty !== undefined;
+                      return (
+                        <>
+                          <div className="col-span-2 flex items-center gap-3">
+                            <Switch
+                              size="sm"
+                              disabled={isSaving}
+                              checked={boxOn}
+                              onCheckedChange={(v) => setCurrent((p) => ({
+                                ...p,
+                                box_qty: v ? (Number(p.box_qty) > 0 ? p.box_qty : null) : 0,
+                              }))}
+                            />
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Enable box level <span className="text-sky-600">(optional)</span> — carton → boxes → {pn}s
+                            </span>
+                          </div>
 
-                    {/* Pieces per box (only when box level ON — box_qty !== 0) */}
-                    {current.box_qty !== 0 && current.box_qty !== '0' && current.box_qty !== '' && current.box_qty != null && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">{pn.charAt(0).toUpperCase()+pn.slice(1)}s per box</label>
-                        <input type="number" min="1" step="1"
-                          value={current.box_qty ?? ''}
-                          onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.value }))}
-                          placeholder="e.g. 24" disabled={isSaving} className={inp}
-                        />
-                        <p className="text-[10px] text-muted-foreground">How many {pn}s in 1 box</p>
-                      </div>
-                    )}
+                          {/* Pieces per box (only when box level ON) */}
+                          {boxOn && (
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium text-muted-foreground">{pn.charAt(0).toUpperCase()+pn.slice(1)}s per box</label>
+                              <input type="number" min="1" step="1"
+                                value={current.box_qty == null ? '' : current.box_qty}
+                                onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.value }))}
+                                placeholder="e.g. 24" disabled={isSaving} className={inp}
+                              />
+                              <p className="text-[10px] text-muted-foreground">How many {pn}s in 1 box</p>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     {/* Live preview */}
                     {cq > 0 && cp > 0 && (

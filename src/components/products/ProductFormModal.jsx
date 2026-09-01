@@ -3,6 +3,7 @@ import Modal from '../ui/Modal';
 import Button from '@/components/ui/action-button';
 import { Input } from '@/components/form/fields';
 import { getModuleSettings } from '@/hooks/useModuleSettings';
+import { Switch } from '@/components/ui/switch';
 
 const emptyForm = {
   name: '',
@@ -13,7 +14,7 @@ const emptyForm = {
   price: '',
   stock: '',
   carton_qty: '',
-  box_qty: '',
+  box_qty: 0,
   piece_name: 'piece',
   wholesale_price: '',
 };
@@ -167,7 +168,7 @@ export default function ProductFormModal({ open, onClose, onSubmit, product, cat
           const pcsPerCarton = bq > 0 ? cq * bq : cq;
           const boxPrice = bq > 0 && cq > 0 ? cp / cq : null;
           const pcPrice  = pcsPerCarton > 0 ? cp / pcsPerCarton : null;
-          const boxOn = form.box_qty !== '' && form.box_qty !== '0' && form.box_qty !== 0 && form.box_qty != null;
+          const boxOn = form.box_qty !== 0 && form.box_qty !== '0' && form.box_qty !== '' && form.box_qty !== undefined;
           return (
             <>
               <div className="sm:col-span-2 flex items-center gap-2 pt-1">
@@ -207,15 +208,18 @@ export default function ProductFormModal({ open, onClose, onSubmit, product, cat
               />
 
               {/* Box level toggle */}
-              <div className="sm:col-span-2 flex items-center gap-2">
-                <input type="checkbox" id="smodal-box-toggle"
+              <div className="sm:col-span-2 flex items-center gap-3">
+                <Switch
+                  size="sm"
                   checked={boxOn}
-                  onChange={(e) => setForm((f) => ({ ...f, box_qty: e.target.checked ? (Number(f.box_qty) > 0 ? f.box_qty : '') : 0 }))}
-                  className="rounded"
+                  onCheckedChange={(v) => setForm((f) => ({
+                    ...f,
+                    box_qty: v ? (Number(f.box_qty) > 0 ? f.box_qty : null) : 0,
+                  }))}
                 />
-                <label htmlFor="smodal-box-toggle" className="text-xs text-muted-foreground cursor-pointer">
-                  Has box level (carton → boxes → {pn}s)
-                </label>
+                <span className="text-xs text-muted-foreground">
+                  Enable box level (carton → boxes → {pn}s)
+                </span>
               </div>
 
               {/* Box qty */}
@@ -223,7 +227,7 @@ export default function ProductFormModal({ open, onClose, onSubmit, product, cat
                 <Input
                   label={`${pn.charAt(0).toUpperCase()}${pn.slice(1)}s per box`}
                   type="number" min="1" step="1" placeholder="e.g. 24"
-                  value={form.box_qty === 0 || form.box_qty === '0' ? '' : form.box_qty}
+                  value={form.box_qty == null ? '' : form.box_qty}
                   onChange={update('box_qty')}
                 />
               )}
