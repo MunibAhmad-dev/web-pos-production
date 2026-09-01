@@ -66,9 +66,10 @@ const IMPORTABLE_FIELDS = [
   { key: 'category', label: 'Category' },
   { key: 'barcode', label: 'Barcode / SKU' },
   { key: 'unit', label: 'Unit (pcs, kg…)' },
-  { key: 'box_qty', label: 'Pieces Per Box / Carton' },
-  { key: 'wholesale_price', label: 'Wholesale Price (Per Piece or Per Box)' },
-  { key: 'wholesale_price_mode', label: 'Wholesale Price Mode (per_piece / per_box)' },
+  { key: 'carton_qty', label: 'Boxes per Carton (or pieces per carton if no box level)' },
+  { key: 'box_qty', label: 'Pieces per Box (0 = no box level)' },
+  { key: 'piece_name', label: 'Individual Unit Name (piece, jar, pouch, bar…)' },
+  { key: 'wholesale_price', label: 'Carton Price (PKR)' },
 ];
 
 const FIELD_ALIASES = {
@@ -79,9 +80,10 @@ const FIELD_ALIASES = {
   category: ['category', 'cat', 'type', 'group', 'department', 'section'],
   barcode: ['barcode', 'sku', 'code', 'product code', 'item code', 'upc', 'ean'],
   unit: ['unit', 'uom', 'unit of measure', 'measure', 'pack'],
-  box_qty: ['box qty', 'pieces per box', 'pcs per box', 'box quantity', 'carton qty', 'carton size', 'pieces in box', 'box size', 'box_qty', 'carton', 'per box', 'per carton'],
-  wholesale_price: ['wholesale price', 'ws price', 'wholesale', 'bulk price', 'wholesale_price', 'trader price', 'dealer price'],
-  wholesale_price_mode: ['wholesale price mode', 'price mode', 'ws mode', 'ws price mode', 'wholesale mode', 'price type', 'per piece or per box'],
+  carton_qty: ['carton qty', 'boxes per carton', 'carton size', 'carton quantity', 'pcs per carton', 'pieces per carton', 'units per carton', 'carton_qty'],
+  box_qty: ['box qty', 'pieces per box', 'pcs per box', 'box quantity', 'box size', 'box_qty', 'per box', 'units per box'],
+  piece_name: ['piece name', 'unit name', 'individual unit', 'piece type', 'item name', 'smallest unit'],
+  wholesale_price: ['wholesale price', 'carton price', 'ws price', 'wholesale', 'bulk price', 'wholesale_price', 'trader price', 'dealer price', 'case price'],
 };
 
 function autoDetectMapping(headers) {
@@ -113,6 +115,7 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
   const [isSaving, setIsSaving] = useState(false);
   const [marginInput, setMarginInput] = useState('');
   const [stockStr, setStockStr] = useState('');
+  const [stockMode, setStockMode] = useState('pcs'); // 'pcs' | 'boxes' | 'cartons'
   const [showBarcode2, setShowBarcode2] = useState(false);
   const nameRef = useRef(null);
 
@@ -122,6 +125,7 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
       setShowBarcode2(!!(initialProduct.barcode2));
       setIsSaving(false);
       setMarginInput('');
+      setStockMode('pcs');
       setStockStr(isEditing && (initialProduct.stock ?? 0) !== 0 ? String(initialProduct.stock) : '');
       setTimeout(() => nameRef.current?.focus(), 100);
     }
@@ -139,7 +143,16 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
         name: current.name.trim(),
         price,
         purchase_price: Number(current.purchase_price) || 0,
-        stock: isEditing ? current.stock : (Number(current.stock) || 0),
+        stock: (() => {
+          const raw = isEditing ? (Number(current.stock) || 0) : (Number(stockStr) || 0);
+          if (isEditing || !modules.wholesale_module_enabled) return raw;
+          const cq = Number(current.carton_qty) || 0;
+          const bq = Number(current.box_qty) || 0;
+          const pcsPerCarton = bq > 0 ? cq * bq : cq;
+          if (stockMode === 'cartons') return raw * pcsPerCarton;
+          if (stockMode === 'boxes' && bq > 0) return raw * bq;
+          return raw;
+        })(),
         category: (current.category || '').trim(),
         barcode: (current.barcode || '').trim(),
         barcode2: (current.barcode2 || '').trim(),
@@ -161,9 +174,11 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
         quality_grade: current.quality_grade || null,
         country_of_origin: current.country_of_origin || null,
         dry_fruit_category: current.dry_fruit_category || null,
+        // Wholesale / carton module fields
+        carton_qty:    Number(current.carton_qty)    || 0,
+        box_qty:       Number(current.box_qty)       || 0,
+        piece_name:    (current.piece_name || 'piece').trim() || 'piece',
         wholesale_price: current.wholesale_price != null && current.wholesale_price !== '' ? Number(current.wholesale_price) : null,
-        wholesale_price_mode: current.wholesale_price_mode || 'per_piece',
-        box_qty: current.box_qty != null && current.box_qty !== '' ? Number(current.box_qty) : 0,
         brand: current.brand || null,
         wastage_percent: current.wastage_percent != null && current.wastage_percent !== '' ? Number(current.wastage_percent) : 0,
         // Pharmacy fields
@@ -314,17 +329,63 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
             {/* Stock + Unit */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold">{isEditing ? 'Stock' : 'Opening Stock'}</label>
-                <input
-                  type="number" min="0" step="1"
-                  value={isEditing ? (current.stock ?? '') : stockStr}
-                  onChange={(e) => {
-                    if (isEditing) setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 }));
-                    else { setStockStr(e.target.value); setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 })); }
-                  }}
-                  placeholder="0" disabled={isSaving}
-                  className="w-full h-10 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
+                {(() => {
+                  const wholesaleOn = modules.wholesale_module_enabled;
+                  const cq = Number(current.carton_qty) || 0;
+                  const bq = Number(current.box_qty) || 0;
+                  const pn = (current.piece_name || 'piece').toLowerCase();
+                  const pcsPerCarton = bq > 0 ? cq * bq : cq;
+                  const showToggle = !isEditing && wholesaleOn && cq > 0;
+                  const rawVal = isEditing ? (current.stock ?? '') : stockStr;
+                  // Preview lines when not editing
+                  let previewLine = null;
+                  if (showToggle && (Number(stockStr) || 0) > 0) {
+                    const n = Number(stockStr);
+                    if (stockMode === 'cartons' && pcsPerCarton > 0) previewLine = `${n} carton${n!==1?'s':''} = ${(n*pcsPerCarton).toLocaleString()} ${pn}s total`;
+                    if (stockMode === 'boxes' && bq > 0) previewLine = `${n} box${n!==1?'es':''} = ${(n*bq).toLocaleString()} ${pn}s total`;
+                  }
+                  // Hint for editing
+                  let editHint = null;
+                  if (isEditing && wholesaleOn && pcsPerCarton > 0 && (current.stock || 0) > 0) {
+                    const ctns = Math.floor((current.stock || 0) / pcsPerCarton);
+                    editHint = bq > 0
+                      ? `≈ ${ctns} carton${ctns!==1?'s':''} (${Math.floor((current.stock||0)/bq)} boxes)`
+                      : `≈ ${ctns} carton${ctns!==1?'s':''}`;
+                  }
+                  const modes = [
+                    { key: 'pcs', label: `${pn.charAt(0).toUpperCase()+pn.slice(1)}s` },
+                    ...(wholesaleOn && cq > 0 ? [{ key: 'cartons', label: 'Cartons' }] : []),
+                    ...(wholesaleOn && bq > 0 ? [{ key: 'boxes', label: 'Boxes' }] : []),
+                  ];
+                  return (<>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-semibold">{isEditing ? 'Stock' : 'Opening Stock'}</label>
+                      {showToggle && modes.length > 1 && (
+                        <div className="flex rounded border border-sky-400/40 overflow-hidden text-[10px] font-semibold">
+                          {modes.map(m => (
+                            <button key={m.key} type="button" disabled={isSaving}
+                              onClick={() => setStockMode(m.key)}
+                              className={`px-2 py-0.5 transition-colors ${stockMode === m.key ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
+                            >{m.label}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="number" min="0" step="1"
+                      value={rawVal}
+                      onChange={(e) => {
+                        if (isEditing) setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 }));
+                        else { setStockStr(e.target.value); setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 })); }
+                      }}
+                      placeholder={stockMode === 'cartons' ? 'e.g. 10 cartons' : stockMode === 'boxes' ? 'e.g. 5 boxes' : '0'}
+                      disabled={isSaving}
+                      className="w-full h-10 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    {previewLine && <p className="text-[10px] text-sky-600">{previewLine}</p>}
+                    {editHint   && <p className="text-[10px] text-muted-foreground">{editHint}</p>}
+                  </>);
+                })()}
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold">Unit of Measure</label>
@@ -579,71 +640,103 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
             )}
 
             {/* ── Wholesale Module ── */}
-            {modules.wholesale_module_enabled && (
-              <div className="space-y-3 pt-2 border-t border-border/40">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">📦</span>
-                  <span className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider">Wholesale / Carton Fields</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Pieces Per Box / Carton</label>
-                    <input
-                      type="number" min="0" step="1"
-                      value={current.box_qty ?? ''}
-                      onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.value }))}
-                      placeholder="e.g. 24" disabled={isSaving}
-                      className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30"
-                    />
-                    <p className="text-[10px] text-muted-foreground">How many individual pieces fit in 1 box/carton</p>
+            {modules.wholesale_module_enabled && (() => {
+              const cq  = Number(current.carton_qty) || 0;
+              const bq  = Number(current.box_qty)    || 0;
+              const pn  = (current.piece_name || 'piece').toLowerCase();
+              const cp  = Number(current.wholesale_price) || 0;
+              const pcsPerCarton = bq > 0 ? cq * bq : cq;
+              const boxPrice  = bq > 0 && cq > 0 ? cp / cq : null;
+              const pcPrice   = pcsPerCarton > 0   ? cp / pcsPerCarton : null;
+              const inp = 'w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30';
+              return (
+                <div className="space-y-3 pt-2 border-t border-border/40">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">📦</span>
+                    <span className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider">Wholesale / Carton Sales</span>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        {(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'Wholesale Price / Box (PKR)' : 'Wholesale Price / Piece (PKR)'}
-                      </label>
-                      <div className="flex rounded-md border border-sky-400/40 overflow-hidden text-[10px] font-semibold">
-                        <button type="button" disabled={isSaving}
-                          onClick={() => setCurrent((p) => ({ ...p, wholesale_price_mode: 'per_piece' }))}
-                          className={`px-2 py-0.5 transition-colors ${(current.wholesale_price_mode || 'per_piece') === 'per_piece' ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
-                        >Per Piece</button>
-                        <button type="button" disabled={isSaving}
-                          onClick={() => setCurrent((p) => ({ ...p, wholesale_price_mode: 'per_box' }))}
-                          className={`px-2 py-0.5 transition-colors ${(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
-                        >Per Box</button>
+                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
+
+                    {/* Piece name (what the individual unit is called) */}
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Individual unit name <span className="text-sky-600">(mandatory)</span></label>
+                      <div className="flex items-center gap-2">
+                        <input list="ws-piece-names"
+                          value={current.piece_name || ''}
+                          onChange={(e) => setCurrent((p) => ({ ...p, piece_name: e.target.value }))}
+                          placeholder="piece, jar, pouch, bar…" disabled={isSaving}
+                          className="w-44 h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                        />
+                        <datalist id="ws-piece-names">
+                          {['piece', 'bar', 'jar', 'pouch', 'sachet', 'can', 'bottle', 'packet', 'bag', 'stick', 'roll'].map(n => <option key={n} value={n} />)}
+                        </datalist>
+                        <span className="text-[10px] text-muted-foreground">What do you call 1 individual item?</span>
                       </div>
                     </div>
-                    <input
-                      type="number" min="0" step="1"
-                      value={current.wholesale_price ?? ''}
-                      onChange={(e) => setCurrent((p) => ({ ...p, wholesale_price: e.target.value }))}
-                      placeholder={(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'e.g. 500 per box' : 'Leave blank = retail price'}
-                      disabled={isSaving}
-                      className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30"
-                    />
-                    <p className="text-[10px] text-muted-foreground">
-                      {(current.wholesale_price_mode || 'per_piece') === 'per_box' ? 'Total price for one full box/carton' : 'Per-piece price when selling by box (optional)'}
-                    </p>
-                  </div>
-                  {Number(current.box_qty) > 0 && (() => {
-                    const bq = Number(current.box_qty);
-                    const ws = Number(current.wholesale_price) || 0;
-                    const mode = current.wholesale_price_mode || 'per_piece';
-                    const boxPrice = mode === 'per_box' ? ws : ws * bq || Number(current.price || 0) * bq;
-                    const pcPrice  = mode === 'per_box' ? (bq > 0 ? ws / bq : 0) : ws || Number(current.price || 0);
-                    return (
-                      <div className="col-span-2 rounded-lg bg-sky-100 dark:bg-sky-900/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-300 font-medium">
-                        1 box = {bq} {current.unit || 'pcs'} ·{' '}
-                        {mode === 'per_box'
-                          ? <>Box price = PKR {Math.round(boxPrice).toLocaleString()} · Per piece ≈ PKR {(pcPrice).toFixed(1)}</>
-                          : <>Box price ≈ PKR {Math.round(boxPrice).toLocaleString()}</>
-                        }
+
+                    {/* Carton qty + Carton price */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        {bq > 0 ? 'Boxes per carton' : `${pn.charAt(0).toUpperCase()+pn.slice(1)}s per carton`}
+                        <span className="ml-1 text-sky-600">(mandatory)</span>
+                      </label>
+                      <input type="number" min="0" step="1"
+                        value={current.carton_qty ?? ''}
+                        onChange={(e) => setCurrent((p) => ({ ...p, carton_qty: e.target.value }))}
+                        placeholder={bq > 0 ? 'e.g. 10 boxes' : 'e.g. 12'}
+                        disabled={isSaving} className={inp}
+                      />
+                      <p className="text-[10px] text-muted-foreground">How many {bq > 0 ? 'boxes' : pn+'s'} fit in 1 carton</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Carton price (PKR) <span className="text-sky-600">(mandatory)</span></label>
+                      <input type="number" min="0" step="1"
+                        value={current.wholesale_price ?? ''}
+                        onChange={(e) => setCurrent((p) => ({ ...p, wholesale_price: e.target.value }))}
+                        placeholder="e.g. 3000" disabled={isSaving} className={inp}
+                      />
+                      <p className="text-[10px] text-muted-foreground">Price for one full carton</p>
+                    </div>
+
+                    {/* Box level toggle */}
+                    <div className="col-span-2 flex items-center gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" disabled={isSaving}
+                          checked={Number(current.box_qty) > 0}
+                          onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.checked ? (Number(p.box_qty) > 0 ? p.box_qty : '') : 0 }))}
+                          className="h-4 w-4 rounded border-border accent-sky-600"
+                        />
+                        <span className="text-xs font-medium text-muted-foreground">Enable box level <span className="text-sky-600">(optional)</span> — carton contains boxes, boxes contain {pn}s</span>
+                      </label>
+                    </div>
+
+                    {/* Pieces per box (only when box level ON — box_qty !== 0) */}
+                    {current.box_qty !== 0 && current.box_qty !== '0' && current.box_qty !== '' && current.box_qty != null && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground">{pn.charAt(0).toUpperCase()+pn.slice(1)}s per box</label>
+                        <input type="number" min="1" step="1"
+                          value={current.box_qty ?? ''}
+                          onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.value }))}
+                          placeholder="e.g. 24" disabled={isSaving} className={inp}
+                        />
+                        <p className="text-[10px] text-muted-foreground">How many {pn}s in 1 box</p>
                       </div>
-                    );
-                  })()}
+                    )}
+
+                    {/* Live preview */}
+                    {cq > 0 && cp > 0 && (
+                      <div className="col-span-2 rounded-lg bg-sky-100 dark:bg-sky-900/30 px-3 py-2.5 text-xs text-sky-700 dark:text-sky-300 space-y-1">
+                        <div className="font-bold">
+                          1 carton{bq > 0 ? ` = ${cq} boxes` : ''} = {pcsPerCarton} {pn}s
+                        </div>
+                        {boxPrice != null && <div>Box price ≈ PKR {boxPrice.toFixed(2)}</div>}
+                        {pcPrice  != null && <div>Per {pn} ≈ PKR {pcPrice.toFixed(2)}</div>}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Custom Fields */}
             <div className="space-y-3 pt-2 border-t border-border/40">
@@ -832,6 +925,18 @@ function ProductDetailModal({ product, onClose }) {
                 {product.stock ?? 0}
                 <span className="text-sm font-normal text-muted-foreground ml-1">{product.unit || 'pcs'}</span>
               </p>
+              {Number(product.carton_qty) > 0 && (product.stock || 0) > 0 && (() => {
+                const cq = Number(product.carton_qty);
+                const bq = Number(product.box_qty) || 0;
+                const pcsPerCtn = bq > 0 ? cq * bq : cq;
+                const ctns = pcsPerCtn > 0 ? Math.floor((product.stock || 0) / pcsPerCtn) : 0;
+                return (
+                  <p className="text-[10px] text-sky-600 mt-0.5">
+                    ≈ {ctns} carton{ctns !== 1 ? 's' : ''}
+                    {bq > 0 ? ` (${Math.floor((product.stock || 0) / bq)} boxes)` : ''}
+                  </p>
+                );
+              })()}
             </div>
             {margin !== null && (
               <div className="rounded-xl bg-blue-600 p-3.5 shadow-sm">
@@ -1074,9 +1179,10 @@ export default function ProductsPage() {
         'Margin (%)': p.purchase_price > 0 ? Number((((p.price - p.purchase_price) / p.price) * 100).toFixed(1)) : '',
       };
       if (wholesaleOn) {
+        row['Boxes Per Carton'] = p.carton_qty || '';
         row['Pieces Per Box'] = p.box_qty || '';
-        row['Wholesale Price (PKR)'] = p.wholesale_price || '';
-        row['Wholesale Price Mode'] = p.wholesale_price_mode || 'per_piece';
+        row['Individual Unit Name'] = p.piece_name || 'piece';
+        row['Carton Price (PKR)'] = p.wholesale_price || '';
       }
       return row;
     });
@@ -1099,7 +1205,7 @@ export default function ProductsPage() {
   const downloadTemplate = () => {
     const wholesaleOn = getModuleSettings().wholesale_module_enabled;
     const sample = { name: 'Sample Product', purchase_price: 100, price: 150, stock: 50, category: 'General', barcode: '1234567890', unit: 'pcs' };
-    if (wholesaleOn) { sample['Pieces Per Box'] = 24; sample['Wholesale Price (PKR)'] = 130; sample['Wholesale Price Mode'] = 'per_piece'; }
+    if (wholesaleOn) { sample['Boxes Per Carton'] = 10; sample['Pieces Per Box'] = 24; sample['Individual Unit Name'] = 'piece'; sample['Carton Price (PKR)'] = 3000; }
     const template = [sample];
     const ws = XLSX.utils.json_to_sheet(template);
     const wb = XLSX.utils.book_new();
@@ -1154,16 +1260,16 @@ export default function ProductsPage() {
       const category = String(mapped.category ?? '').trim();
       const barcode = String(mapped.barcode ?? '').trim();
       const unit = String(mapped.unit ?? '').trim();
+      const carton_qty = parseInt(String(mapped.carton_qty ?? '0')) || 0;
       const box_qty = parseInt(String(mapped.box_qty ?? '0')) || 0;
+      const piece_name = String(mapped.piece_name ?? '').trim().toLowerCase() || 'piece';
       const wholesale_price = parseFloat(String(mapped.wholesale_price ?? '0')) || 0;
-      const rawMode = String(mapped.wholesale_price_mode ?? '').trim().toLowerCase().replace(/[\s-]/g, '_');
-      const wholesale_price_mode = rawMode === 'per_box' ? 'per_box' : 'per_piece';
       if (!name) errors.push('Name required');
       if (price <= 0) errors.push('Price must be > 0');
       const existingByBarcode = barcode ? products.find((p) => p.barcode === barcode) : null;
       const existingByName = products.find((p) => p.name?.toLowerCase() === name.toLowerCase());
       const existing = existingByBarcode || existingByName;
-      return { name, price, purchase_price, stock, category, barcode, unit, box_qty, wholesale_price, wholesale_price_mode, _valid: errors.length === 0, _errors: errors, _isUpdate: !!existing, _existingId: existing?.id };
+      return { name, price, purchase_price, stock, category, barcode, unit, carton_qty, box_qty, piece_name, wholesale_price, _valid: errors.length === 0, _errors: errors, _isUpdate: !!existing, _existingId: existing?.id };
     }).filter((r) => r.name !== '');
     setImportRows(parsed);
     setImportPhase('preview');
@@ -1187,18 +1293,21 @@ export default function ProductsPage() {
             ...(row.purchase_price > 0 && { purchase_price: row.purchase_price }),
             ...(row.price > 0 && { price: row.price }),
             ...(row.barcode && { barcode: row.barcode }),
+            ...(row.carton_qty > 0 && { carton_qty: row.carton_qty }),
             ...(row.box_qty > 0 && { box_qty: row.box_qty }),
+            ...(row.piece_name && { piece_name: row.piece_name }),
             ...(row.wholesale_price > 0 && { wholesale_price: row.wholesale_price }),
-            ...(row.wholesale_price > 0 && { wholesale_price_mode: row.wholesale_price_mode }),
             updated_at: now,
           });
         } else {
           await pushEntity('product', 'create', {
             name: row.name, price: row.price, purchase_price: row.purchase_price,
             stock: row.stock, category: row.category, barcode: row.barcode,
-            unit: row.unit, box_qty: row.box_qty || 0,
+            unit: row.unit,
+            carton_qty: row.carton_qty || 0,
+            box_qty: row.box_qty || 0,
+            piece_name: row.piece_name || 'piece',
             wholesale_price: row.wholesale_price || null,
-            wholesale_price_mode: row.wholesale_price_mode || 'per_piece',
             metadata: {}, created_at: now, updated_at: now,
           });
         }
