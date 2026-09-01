@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Minus, Trash2, ShoppingCart, Sparkles, History, ChevronLeft, ChevronRight, UserCheck, X as XIcon } from 'lucide-react';
+import { Plus, Minus, Trash2, ShoppingCart, Sparkles, History, ChevronLeft, ChevronRight, UserCheck, X as XIcon, Package } from 'lucide-react';
 import { usePagination } from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { useDataStore } from '../../store/dataStore';
@@ -15,6 +15,7 @@ import ReceiptModal from '../../components/sales/ReceiptModal';
 import CustomerFormModal from '../../components/customers/CustomerFormModal';
 import { formatCurrency } from '../../utils/format';
 import { useLowStockThreshold } from '../../hooks/useLowStockThreshold';
+import { getModuleSettings } from '../../hooks/useModuleSettings';
 import { cn } from '@/lib/utils';
 
 const BARCODE_MODE_KEY = 'osatech_barcode_mode';
@@ -80,30 +81,40 @@ export default function POSPage() {
     // Matches the desktop app: stock is never a hard limit — selling into
     // negative stock is allowed, only a warning toast is shown.
     const stock = Number(product.stock || 0);
+    const boxQty = wholesaleOn ? (Number(product.box_qty) || 0) : 0;
+    // Wholesale price per piece (falls back to retail price if not set)
+    const wsPrice = wholesaleOn && Number(product.wholesale_price) > 0
+      ? Number(product.wholesale_price)
+      : Number(product.price || 0);
+
     setCart((prev) => {
       const existing = prev.find((i) => i.key === String(product.id));
       if (existing) {
-        const nextQty = existing.qty + 1;
-        if (nextQty > stock) {
-          showToast(`Only ${stock} in stock — selling into negative`, 'warning');
+        if (boxQty > 0) {
+          // Wholesale product already in cart — increment pieces
+          const newPcs = (existing.pcs || 0) + 1;
+          const qty = (existing.boxes || 0) * boxQty + newPcs;
+          if (qty > stock) showToast(`Only ${stock} in stock — selling into negative`, 'warning');
+          return prev.map((i) => i.key === String(product.id) ? { ...i, pcs: newPcs, qty } : i);
         }
+        const nextQty = existing.qty + 1;
+        if (nextQty > stock) showToast(`Only ${stock} in stock — selling into negative`, 'warning');
         return prev.map((i) => (i.key === String(product.id) ? { ...i, qty: nextQty } : i));
       }
       if (stock <= 0) {
         showToast(`${product.name} has no stock recorded — selling into negative`, 'warning');
       }
-      return [
-        ...prev,
-        {
-          key: String(product.id),
-          product: product.id,
-          name: product.name,
-          unitPrice: Number(product.price || 0),
-          unitCost: Number(product.purchase_price || 0),
-          qty: 1,
-          stockQty: stock,
-        },
-      ];
+      const base = {
+        key: String(product.id),
+        product: product.id,
+        name: product.name,
+        unitCost: Number(product.purchase_price || 0),
+        stockQty: stock,
+      };
+      if (boxQty > 0) {
+        return [...prev, { ...base, unitPrice: wsPrice, boxQty, boxes: 0, pcs: 1, qty: 1 }];
+      }
+      return [...prev, { ...base, unitPrice: Number(product.price || 0), qty: 1 }];
     });
   };
 
@@ -144,6 +155,31 @@ export default function POSPage() {
 
   const removeFromCart = (key) => setCart((prev) => prev.filter((i) => i.key !== key));
 
+  const updateBoxes = (key, delta) => {
+    setCart((prev) =>
+      prev.map((i) => {
+        if (i.key !== key || !i.boxQty) return i;
+        const newBoxes = Math.max(0, (i.boxes || 0) + delta);
+        const pcs = i.pcs || 0;
+        const qty = newBoxes * i.boxQty + pcs;
+        if (qty > i.stockQty && i.stockQty >= 0) showToast(`Only ${i.stockQty} in stock`, 'warning');
+        return { ...i, boxes: newBoxes, qty };
+      }).filter((i) => i.qty > 0)
+    );
+  };
+
+  const updatePcs = (key, delta) => {
+    setCart((prev) =>
+      prev.map((i) => {
+        if (i.key !== key || !i.boxQty) return i;
+        const newPcs = Math.max(0, (i.pcs || 0) + delta);
+        const qty = (i.boxes || 0) * i.boxQty + newPcs;
+        if (qty > i.stockQty && i.stockQty >= 0) showToast(`Only ${i.stockQty} in stock`, 'warning');
+        return { ...i, pcs: newPcs, qty };
+      }).filter((i) => i.qty > 0)
+    );
+  };
+
   const subtotal = useMemo(() => cart.reduce((sum, i) => sum + i.unitPrice * i.qty, 0), [cart]);
   const discountAmount = Math.min(Number(discount) || 0, subtotal);
   const total = Math.max(subtotal - discountAmount, 0);
@@ -174,6 +210,10 @@ export default function POSPage() {
       purchase_price: item.unitCost,
       is_custom: Boolean(item.isCustom),
       created_at: now,
+      // Wholesale fields (0 when wholesale module off or non-box product)
+      box_qty: item.boxQty || 0,
+      boxes: item.boxes || 0,
+      pcs: item.boxQty ? (item.pcs || 0) : item.qty,
     }));
 
     const salePayload = {
@@ -246,7 +286,11 @@ export default function POSPage() {
       saleId,
       invoiceNo: `INV-${String(saleId).slice(-6)}`,
       createdAt: now,
-      items: saleItemsPayloads.map((p) => ({ product: p.product_id, name: p.product_name, qty: p.quantity, price: p.price, lineTotal: p.price * p.quantity })),
+      items: saleItemsPayloads.map((p) => ({
+        product: p.product_id, name: p.product_name,
+        qty: p.quantity, price: p.price, lineTotal: p.price * p.quantity,
+        boxQty: p.box_qty || 0, boxes: p.boxes || 0, pcs: p.pcs || 0,
+      })),
       subtotal,
       discount: discountAmount,
       tax: 0,
@@ -274,6 +318,8 @@ export default function POSPage() {
     showToast('Customer added');
     return created;
   };
+
+  const wholesaleOn = getModuleSettings().wholesale_module_enabled;
 
   const cartCount = cart.reduce((sum, i) => sum + i.qty, 0);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
@@ -397,6 +443,12 @@ export default function POSPage() {
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {p.barcode || 'No barcode'} · {p.unit || 'pcs'}
+                        {wholesaleOn && Number(p.box_qty) > 0 && (
+                          <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 px-1.5 py-px text-[9px] font-bold">
+                            <Package size={8} />
+                            {p.box_qty}/box
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -512,28 +564,42 @@ export default function POSPage() {
                 <p className="text-xs text-muted-foreground">Tap a product to add it</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 {cart.map((item) => (
-                  <div key={item.key} className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {item.name}
-                        {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom item</span>}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)} each</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1 hover:bg-muted">
-                        <Minus size={12} />
-                      </button>
-                      <span className="w-5 text-center text-sm">{item.qty}</span>
-                      <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1 hover:bg-muted">
-                        <Plus size={12} />
-                      </button>
-                      <button onClick={() => removeFromCart(item.key)} className="ml-1 rounded-md p-1 text-destructive hover:bg-destructive/10">
-                        <Trash2 size={13} />
+                  <div key={item.key} className={cn('rounded-lg border p-2.5', item.boxQty ? 'border-sky-200 bg-sky-50/50 dark:border-sky-900/40 dark:bg-sky-950/20' : 'border-transparent')}>
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {item.boxQty ? <Package size={11} className="inline mr-1 text-sky-500" /> : null}
+                          {item.name}
+                          {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom</span>}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)}/pc · {formatCurrency(item.unitPrice * item.qty, currency)} total</p>
+                      </div>
+                      <button onClick={() => removeFromCart(item.key)} className="rounded-md p-1 text-destructive hover:bg-destructive/10 shrink-0">
+                        <Trash2 size={12} />
                       </button>
                     </div>
+                    {item.boxQty ? (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-sky-600 font-semibold w-6">Box</span>
+                        <button onClick={() => updateBoxes(item.key, -1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
+                        <span className="w-4 text-center font-bold">{item.boxes}</span>
+                        <button onClick={() => updateBoxes(item.key, 1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
+                        <span className="text-muted-foreground ml-1 mr-2">×{item.boxQty}</span>
+                        <span className="text-muted-foreground font-medium w-6">Pcs</span>
+                        <button onClick={() => updatePcs(item.key, -1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
+                        <span className="w-4 text-center font-bold">{item.pcs}</span>
+                        <button onClick={() => updatePcs(item.key, 1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
+                        <span className="ml-auto text-xs text-sky-600 font-bold">{item.qty} pcs</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1 hover:bg-muted"><Minus size={12} /></button>
+                        <span className="w-6 text-center text-sm font-bold">{item.qty}</span>
+                        <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1 hover:bg-muted"><Plus size={12} /></button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -622,28 +688,42 @@ export default function POSPage() {
                   <p className="text-xs text-muted-foreground">Tap a product to add it</p>
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
                   {cart.map((item) => (
-                    <div key={item.key} className="flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {item.name}
-                          {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom item</span>}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)} each</p>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1 hover:bg-muted">
-                          <Minus size={12} />
-                        </button>
-                        <span className="w-5 text-center text-sm">{item.qty}</span>
-                        <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1 hover:bg-muted">
-                          <Plus size={12} />
-                        </button>
-                        <button onClick={() => removeFromCart(item.key)} className="ml-1 rounded-md p-1 text-destructive hover:bg-destructive/10">
-                          <Trash2 size={13} />
+                    <div key={item.key} className={cn('rounded-lg border p-2.5', item.boxQty ? 'border-sky-200 bg-sky-50/50 dark:border-sky-900/40 dark:bg-sky-950/20' : 'border-border')}>
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {item.boxQty ? <Package size={11} className="inline mr-1 text-sky-500" /> : null}
+                            {item.name}
+                            {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom</span>}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)}/pc · {formatCurrency(item.unitPrice * item.qty, currency)}</p>
+                        </div>
+                        <button onClick={() => removeFromCart(item.key)} className="rounded-md p-1 text-destructive hover:bg-destructive/10 shrink-0">
+                          <Trash2 size={12} />
                         </button>
                       </div>
+                      {item.boxQty ? (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-sky-600 font-semibold w-6">Box</span>
+                          <button onClick={() => updateBoxes(item.key, -1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
+                          <span className="w-5 text-center font-bold">{item.boxes}</span>
+                          <button onClick={() => updateBoxes(item.key, 1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
+                          <span className="text-muted-foreground mr-2">×{item.boxQty}</span>
+                          <span className="text-muted-foreground font-medium w-6">Pcs</span>
+                          <button onClick={() => updatePcs(item.key, -1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
+                          <span className="w-5 text-center font-bold">{item.pcs}</span>
+                          <button onClick={() => updatePcs(item.key, 1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
+                          <span className="ml-auto font-bold text-sky-600">{item.qty} pcs</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1.5 hover:bg-muted"><Minus size={13} /></button>
+                          <span className="w-7 text-center font-bold">{item.qty}</span>
+                          <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1.5 hover:bg-muted"><Plus size={13} /></button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

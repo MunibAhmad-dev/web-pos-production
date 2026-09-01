@@ -14,6 +14,7 @@ const DEFAULTS = {
   grocery_module_enabled: false,
   paint_module_enabled: false,
   accounting_module_enabled: false,
+  wholesale_module_enabled: false,
 };
 
 function load() {

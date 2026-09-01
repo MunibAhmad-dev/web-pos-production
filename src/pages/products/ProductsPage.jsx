@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/format';
-import { useModuleSettings } from '../../hooks/useModuleSettings';
+import { useModuleSettings, getModuleSettings } from '../../hooks/useModuleSettings';
 
 // ─── Format helper ────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(n ?? 0).toLocaleString('en-PK');
@@ -66,6 +66,8 @@ const IMPORTABLE_FIELDS = [
   { key: 'category', label: 'Category' },
   { key: 'barcode', label: 'Barcode / SKU' },
   { key: 'unit', label: 'Unit (pcs, kg…)' },
+  { key: 'box_qty', label: 'Pieces Per Box / Carton' },
+  { key: 'wholesale_price', label: 'Wholesale Price Per Piece' },
 ];
 
 const FIELD_ALIASES = {
@@ -76,6 +78,8 @@ const FIELD_ALIASES = {
   category: ['category', 'cat', 'type', 'group', 'department', 'section'],
   barcode: ['barcode', 'sku', 'code', 'product code', 'item code', 'upc', 'ean'],
   unit: ['unit', 'uom', 'unit of measure', 'measure', 'pack'],
+  box_qty: ['box qty', 'pieces per box', 'pcs per box', 'box quantity', 'carton qty', 'carton size', 'pieces in box', 'box size', 'box_qty', 'carton', 'per box', 'per carton'],
+  wholesale_price: ['wholesale price', 'ws price', 'wholesale', 'bulk price', 'wholesale_price', 'trader price', 'dealer price'],
 };
 
 function autoDetectMapping(headers) {
@@ -156,6 +160,7 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
         country_of_origin: current.country_of_origin || null,
         dry_fruit_category: current.dry_fruit_category || null,
         wholesale_price: current.wholesale_price != null && current.wholesale_price !== '' ? Number(current.wholesale_price) : null,
+        box_qty: current.box_qty != null && current.box_qty !== '' ? Number(current.box_qty) : 0,
         brand: current.brand || null,
         wastage_percent: current.wastage_percent != null && current.wastage_percent !== '' ? Number(current.wastage_percent) : 0,
         // Pharmacy fields
@@ -567,6 +572,46 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── Wholesale Module ── */}
+            {modules.wholesale_module_enabled && (
+              <div className="space-y-3 pt-2 border-t border-border/40">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📦</span>
+                  <span className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider">Wholesale / Carton Fields</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Pieces Per Box / Carton</label>
+                    <input
+                      type="number" min="0" step="1"
+                      value={current.box_qty ?? ''}
+                      onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.value }))}
+                      placeholder="e.g. 24" disabled={isSaving}
+                      className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                    />
+                    <p className="text-[10px] text-muted-foreground">How many individual pieces fit in 1 box/carton</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Wholesale Price / Piece (PKR)</label>
+                    <input
+                      type="number" min="0" step="1"
+                      value={current.wholesale_price ?? ''}
+                      onChange={(e) => setCurrent((p) => ({ ...p, wholesale_price: e.target.value }))}
+                      placeholder="Leave blank = retail price" disabled={isSaving}
+                      className="w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Per-piece price when selling by box (optional)</p>
+                  </div>
+                  {Number(current.box_qty) > 0 && (
+                    <div className="col-span-2 rounded-lg bg-sky-100 dark:bg-sky-900/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-300 font-medium">
+                      1 box = {current.box_qty} {current.unit || 'pcs'} ·
+                      Box price ≈ PKR {Math.round((Number(current.wholesale_price) || Number(current.price) || 0) * Number(current.box_qty)).toLocaleString()}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -986,18 +1031,28 @@ export default function ProductsPage() {
   // ── Excel Export ──────────────────────────────────────────────────────────
   const exportToExcel = () => {
     if (products.length === 0) { showToast('No products to export', 'error'); return; }
-    const data = products.map((p) => ({
-      Name: p.name,
-      Category: p.category || '',
-      'Barcode/SKU': p.barcode || '',
-      Unit: p.unit || '',
-      'Cost Price (PKR)': p.purchase_price || 0,
-      'Selling Price (PKR)': p.price,
-      Stock: p.stock ?? 0,
-      'Margin (%)': p.purchase_price > 0 ? Number((((p.price - p.purchase_price) / p.price) * 100).toFixed(1)) : '',
-    }));
+    const wholesaleOn = getModuleSettings().wholesale_module_enabled;
+    const data = products.map((p) => {
+      const row = {
+        Name: p.name,
+        Category: p.category || '',
+        'Barcode/SKU': p.barcode || '',
+        Unit: p.unit || '',
+        'Cost Price (PKR)': p.purchase_price || 0,
+        'Selling Price (PKR)': p.price,
+        Stock: p.stock ?? 0,
+        'Margin (%)': p.purchase_price > 0 ? Number((((p.price - p.purchase_price) / p.price) * 100).toFixed(1)) : '',
+      };
+      if (wholesaleOn) {
+        row['Pieces Per Box'] = p.box_qty || '';
+        row['Wholesale Price Per Piece (PKR)'] = p.wholesale_price || '';
+      }
+      return row;
+    });
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 12 }];
+    ws['!cols'] = wholesaleOn
+      ? [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 24 }]
+      : [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
     const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
@@ -1011,7 +1066,10 @@ export default function ProductsPage() {
   };
 
   const downloadTemplate = () => {
-    const template = [{ name: 'Sample Product', purchase_price: 100, price: 150, stock: 50, category: 'General', barcode: '1234567890', unit: 'pcs' }];
+    const wholesaleOn = getModuleSettings().wholesale_module_enabled;
+    const sample = { name: 'Sample Product', purchase_price: 100, price: 150, stock: 50, category: 'General', barcode: '1234567890', unit: 'pcs' };
+    if (wholesaleOn) { sample['Pieces Per Box'] = 24; sample['Wholesale Price Per Piece (PKR)'] = 130; }
+    const template = [sample];
     const ws = XLSX.utils.json_to_sheet(template);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Import Template');
@@ -1065,12 +1123,14 @@ export default function ProductsPage() {
       const category = String(mapped.category ?? '').trim();
       const barcode = String(mapped.barcode ?? '').trim();
       const unit = String(mapped.unit ?? '').trim();
+      const box_qty = parseInt(String(mapped.box_qty ?? '0')) || 0;
+      const wholesale_price = parseFloat(String(mapped.wholesale_price ?? '0')) || 0;
       if (!name) errors.push('Name required');
       if (price <= 0) errors.push('Price must be > 0');
       const existingByBarcode = barcode ? products.find((p) => p.barcode === barcode) : null;
       const existingByName = products.find((p) => p.name?.toLowerCase() === name.toLowerCase());
       const existing = existingByBarcode || existingByName;
-      return { name, price, purchase_price, stock, category, barcode, unit, _valid: errors.length === 0, _errors: errors, _isUpdate: !!existing, _existingId: existing?.id };
+      return { name, price, purchase_price, stock, category, barcode, unit, box_qty, wholesale_price, _valid: errors.length === 0, _errors: errors, _isUpdate: !!existing, _existingId: existing?.id };
     }).filter((r) => r.name !== '');
     setImportRows(parsed);
     setImportPhase('preview');
@@ -1088,9 +1148,24 @@ export default function ProductsPage() {
       try {
         if (row._isUpdate && row._existingId) {
           const existing = products.find((p) => String(p.id) === String(row._existingId));
-          await pushEntity('product', 'update', { ...existing, stock: (existing?.stock ?? 0) + row.stock, ...(row.purchase_price > 0 && { purchase_price: row.purchase_price }), ...(row.price > 0 && { price: row.price }), ...(row.barcode && { barcode: row.barcode }), updated_at: now });
+          await pushEntity('product', 'update', {
+            ...existing,
+            stock: (existing?.stock ?? 0) + row.stock,
+            ...(row.purchase_price > 0 && { purchase_price: row.purchase_price }),
+            ...(row.price > 0 && { price: row.price }),
+            ...(row.barcode && { barcode: row.barcode }),
+            ...(row.box_qty > 0 && { box_qty: row.box_qty }),
+            ...(row.wholesale_price > 0 && { wholesale_price: row.wholesale_price }),
+            updated_at: now,
+          });
         } else {
-          await pushEntity('product', 'create', { name: row.name, price: row.price, purchase_price: row.purchase_price, stock: row.stock, category: row.category, barcode: row.barcode, unit: row.unit, metadata: {}, created_at: now, updated_at: now });
+          await pushEntity('product', 'create', {
+            name: row.name, price: row.price, purchase_price: row.purchase_price,
+            stock: row.stock, category: row.category, barcode: row.barcode,
+            unit: row.unit, box_qty: row.box_qty || 0,
+            wholesale_price: row.wholesale_price || null,
+            metadata: {}, created_at: now, updated_at: now,
+          });
         }
         done++;
         setImportProgress({ done, total: validRows.length, errors: [...errors] });

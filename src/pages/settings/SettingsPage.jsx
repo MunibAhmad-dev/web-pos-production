@@ -118,6 +118,12 @@ const MODULES = [
     features: ['Chart of Accounts', 'Journal Entries', 'Profit & Loss', 'Balance Sheet'],
     on: 'bg-emerald-600', badge: 'bg-emerald-600/10 border-emerald-600/20 text-emerald-700 dark:text-emerald-400',
   },
+  {
+    key: 'wholesale_module_enabled', emoji: '📦', title: 'Wholesale / Carton Sales',
+    desc: 'Set pieces-per-box on products and sell by boxes + pieces in the POS',
+    features: ['Pieces Per Box / Carton', 'Sell by Box + Piece', 'Wholesale Price Per Piece', 'Box Breakdown on Receipts'],
+    on: 'bg-sky-600', badge: 'bg-sky-600/10 border-sky-600/20 text-sky-700 dark:text-sky-400',
+  },
 ];
 
 const INVOICE_STYLES = [

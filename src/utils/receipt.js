@@ -46,14 +46,29 @@ export function formatInvoiceId(id, dateString) {
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// Formats qty for a sale item — shows "2 box + 3 pcs" when wholesale data present
+function fmtQtyLabel(item) {
+  const boxes = Number(item.boxes) || 0;
+  const pcs   = Number(item.pcs)   || 0;
+  const boxQty = Number(item.boxQty) || 0;
+  if (boxQty > 0 && boxes > 0 && pcs > 0) return `${boxes} box + ${pcs} pcs`;
+  if (boxQty > 0 && boxes > 0)             return `${boxes} box`;
+  if (boxQty > 0 && pcs > 0)               return `${pcs} pcs`;
+  return String(item.qty ?? 0);
+}
+
 // ─── Thermal receipt (inner content) ─────────────────────────────────────────
 function buildReceiptHtml(data) {
   const itemsHtml = data.items.map((item) => {
     const lineTotal = item.price * item.qty;
     const amtNum = Math.round(lineTotal).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const qtyLabel = fmtQtyLabel(item);
+    const boxNote = (Number(item.boxQty) > 0 && Number(item.boxes) > 0)
+      ? `<div class="r-rate">${item.boxes}×${item.boxQty} = ${item.qty} pcs</div>`
+      : '';
     return `<tr>
-       <td class="r-qty">${item.qty}</td>
-       <td class="r-name">${esc(item.name)}<div class="r-rate">@ ${fmtPKR(item.price)}</div></td>
+       <td class="r-qty">${qtyLabel}</td>
+       <td class="r-name">${esc(item.name)}${boxNote}<div class="r-rate">@ ${fmtPKR(item.price)}/pc</div></td>
        <td class="r-amt">${amtNum}</td>
      </tr>`;
   }).join('');
@@ -153,15 +168,20 @@ function buildFormalInvoiceHtml(data) {
   else if (balAmt < 0) balanceRow = `<tr><td class="label">CHANGE DUE</td><td class="value">PKR ${pkrNum(Math.abs(balAmt))}</td></tr>`;
   else                 balanceRow = `<tr><td class="label">BALANCE</td><td class="value">PKR 0</td></tr>`;
 
-  const rowsHtml = data.items.map((item, idx) => `
-    <tr class="item-row">
+  const rowsHtml = data.items.map((item, idx) => {
+    const qtyLabel = fmtQtyLabel(item);
+    const boxNote  = (Number(item.boxQty) > 0 && Number(item.boxes) > 0)
+      ? `<div style="font-size:7pt;color:#888;margin-top:2px">${item.boxes}×${item.boxQty} = ${item.qty} pcs total</div>`
+      : '';
+    return `<tr class="item-row">
       <td class="center">${idx + 1}</td>
-      <td>${esc(item.name)}</td>
+      <td>${esc(item.name)}${boxNote}</td>
       <td class="center warranty-cell">—</td>
-      <td class="center">${item.qty}</td>
+      <td class="center">${qtyLabel}</td>
       <td class="right">PKR ${pkrNum(item.price)}</td>
       <td class="right amount-col">PKR ${pkrNum(item.price * item.qty)}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   const emptyCount    = Math.max(0, 7 - data.items.length);
   const emptyRowsHtml = Array(emptyCount).fill('<tr class="item-row empty-row"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>').join('');

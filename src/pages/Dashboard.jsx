@@ -62,7 +62,7 @@ function gramCorrectedCost(qty, purchasePrice, unitType, itemPrice) {
     : Number(qty) * pp;
 }
 
-function buildPnl(analyticsData, saleItems, sales, productById = {}) {
+function buildPnl(analyticsData, saleItems, sales, productById = {}, saleReturnItems = [], saleReturns = []) {
   const dayOf = {};
   // Cancelled sales are excluded from COGS too — matches the Electron dashboard,
   // whose COGS join filters status IN ('completed','paid','partial').
@@ -70,6 +70,8 @@ function buildPnl(analyticsData, saleItems, sales, productById = {}) {
     if (s.date_created && s.status !== 'Cancelled') dayOf[String(s.id)] = String(s.date_created).slice(0, 10);
   }
   const cogsByDay = {};
+  // Map saleId:productId → purchase cost info (first line wins for the rare duplicate-product case)
+  const saleItemInfo = {};
   for (const item of saleItems) {
     const day = dayOf[String(item.sale_id)];
     if (!day) continue;
@@ -80,6 +82,24 @@ function buildPnl(analyticsData, saleItems, sales, productById = {}) {
     // Pass item.price as the cap denominator — matches desktop's si.price column
     const cogs = gramCorrectedCost(item.quantity ?? 0, pp, product?.unit_type, item.price);
     cogsByDay[day] = (cogsByDay[day] || 0) + cogs;
+    const k = `${item.sale_id}:${item.product_id}`;
+    if (!saleItemInfo[k]) saleItemInfo[k] = { pp, unitType: product?.unit_type, itemPrice: item.price };
+  }
+  // Subtract COGS of returned items on the return date (mirrors how revenue is
+  // reduced on the return date). Join: sale_return_item → sale_return → sale_id
+  // → sale_item to get the original purchase_price.
+  const returnSaleId = {};
+  for (const r of saleReturns) returnSaleId[String(r.id)] = String(r.sale_id);
+  for (const ri of saleReturnItems) {
+    if (!ri.date_created) continue;
+    const day = String(ri.date_created).slice(0, 10);
+    if (!day) continue;
+    const saleId = returnSaleId[String(ri.return_id)];
+    if (!saleId) continue;
+    const info = saleItemInfo[`${saleId}:${ri.product_id}`];
+    if (!info) continue;
+    const returnedCogs = gramCorrectedCost(Number(ri.quantity) || 0, info.pp, info.unitType, info.itemPrice);
+    cogsByDay[day] = (cogsByDay[day] || 0) - returnedCogs;
   }
   const revenueByDay = {};
   for (const d of analyticsData?.salesByDay || []) revenueByDay[d.day] = d.revenue;
@@ -324,6 +344,7 @@ export default function Dashboard() {
   // matching the Electron dashboard exactly.
   const expensesList = list('expense');
   const saleReturnsAll = list('sale_return');
+  const saleReturnItemsAll = list('sale_return_item');
   const localAnalytics = useMemo(() => {
     const range = rangeForPeriod(period, from, to);
     const start = new Date(range.date_from);
@@ -369,7 +390,7 @@ export default function Dashboard() {
     };
   }, [sales, saleReturnsAll, expensesList, period, from, to]);
 
-  const pnl = useMemo(() => buildPnl(localAnalytics, saleItems, sales, productById), [localAnalytics, saleItems, sales, productById]);
+  const pnl = useMemo(() => buildPnl(localAnalytics, saleItems, sales, productById, saleReturnItemsAll, saleReturnsAll), [localAnalytics, saleItems, sales, productById, saleReturnItemsAll, saleReturnsAll]);
 
   // Payment method breakdown from local sales filtered by period
   const paymentBreakdown = useMemo(() => {
