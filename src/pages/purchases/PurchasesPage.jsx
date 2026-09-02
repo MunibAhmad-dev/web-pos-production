@@ -3,11 +3,12 @@ import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Search, Package, Truck, Receipt, X, CheckCircle,
+  Plus, Minus, Search, Package, Truck, Receipt, X, CheckCircle,
   ShoppingCart, Tag, History, ChevronRight, Briefcase,
   Building2, Wallet, Trash2, Eye, Ban, PackageCheck,
   HandCoins, AlertCircle, CreditCard, RotateCcw,
 } from 'lucide-react';
+import { getModuleSettings } from '../../hooks/useModuleSettings';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -338,13 +339,58 @@ export default function PurchasesPage() {
     return products.filter((p) => !q || p.name?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q));
   }, [products, searchTerm]);
 
+  const wholesaleOn = getModuleSettings().wholesale_module_enabled;
+
   // Cart actions
   const addToCart = (product) => {
+    const cartonQty = wholesaleOn ? (Number(product.carton_qty) || 0) : 0;
     setCart((prev) => {
       const existing = prev.find((i) => String(i.productId) === String(product.id));
+      if (cartonQty > 0) {
+        if (existing) {
+          const newCtns = (existing.ws_cartons ?? 0) + 1;
+          const totalBoxes = newCtns * cartonQty + (existing.ws_boxes ?? 0);
+          return prev.map((i) => String(i.productId) === String(product.id) ? { ...i, ws_cartons: newCtns, qty: totalBoxes } : i);
+        }
+        return [...prev, {
+          productId: product.id, name: product.name,
+          purchasePrice: Number(product.purchase_price) || 0,
+          sellingPrice: Number(product.price) || 0,
+          unit: product.unit || '',
+          ws_carton_qty: cartonQty, ws_cartons: 1, ws_boxes: 0,
+          qty: cartonQty,
+        }];
+      }
       if (existing) return prev.map((i) => String(i.productId) === String(product.id) ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { productId: product.id, name: product.name, purchasePrice: product.purchase_price || 0, sellingPrice: product.price || 0, qty: 1, unit: product.unit || '' }];
+      return [...prev, { productId: product.id, name: product.name, purchasePrice: Number(product.purchase_price) || 0, sellingPrice: Number(product.price) || 0, qty: 1, unit: product.unit || '' }];
     });
+  };
+
+  const updateWsCartonsPO = (productId, delta) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (String(item.productId) !== String(productId) || !item.ws_carton_qty) return item;
+        const cqty = item.ws_carton_qty;
+        const newCtns = Math.max(0, (item.ws_cartons ?? 0) + delta);
+        const curBoxes = item.ws_boxes ?? 0;
+        if (newCtns === 0 && curBoxes === 0) return null;
+        return { ...item, ws_cartons: newCtns, qty: newCtns * cqty + curBoxes };
+      }).filter(Boolean)
+    );
+  };
+
+  const updateWsBoxesPO = (productId, delta) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (String(item.productId) !== String(productId) || !item.ws_carton_qty) return item;
+        const cqty = item.ws_carton_qty;
+        let newBoxes = Math.max(0, (item.ws_boxes ?? 0) + delta);
+        let newCtns = item.ws_cartons ?? 0;
+        if (newBoxes >= cqty) { newCtns += Math.trunc(newBoxes / cqty); newBoxes = newBoxes % cqty; }
+        if (newCtns === 0 && newBoxes === 0) return null;
+        return { ...item, ws_cartons: newCtns, ws_boxes: newBoxes, qty: newCtns * cqty + newBoxes };
+      }).filter(Boolean)
+    );
   };
 
   const updateCartQty = (productId, qty) => {
@@ -613,25 +659,58 @@ export default function PurchasesPage() {
               <>
                 <div className="flex-1 overflow-y-auto divide-y divide-border/20 p-3 space-y-2">
                   {cart.map((item) => (
-                    <div key={item.productId} className="rounded-xl border border-border/40 bg-muted/10 p-3 space-y-2.5">
+                    <div key={item.productId} className="rounded-xl border border-border/40 bg-muted/10 p-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold text-sm truncate mr-2">{item.name}</p>
+                        <p className="font-semibold text-sm truncate mr-2">
+                          {item.ws_carton_qty ? <Package size={11} className="inline mr-1 text-muted-foreground" /> : null}
+                          {item.name}
+                        </p>
                         <button onClick={() => removeFromCart(item.productId)} className="text-muted-foreground hover:text-destructive shrink-0"><Trash2 size={13} /></button>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground uppercase">Qty</label>
-                          <input type="number" min="1" value={item.qty} onChange={(e) => updateCartQty(item.productId, e.target.value)}
-                            className="w-full h-8 px-2 text-sm rounded-md border border-border bg-background focus:outline-none mt-1 font-mono text-center" />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground uppercase">Cost Price</label>
-                          <div className="relative mt-1"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-muted-foreground">PKR</span>
-                            <input type="number" min="0" value={item.purchasePrice} onChange={(e) => updateCartPrice(item.productId, e.target.value)}
-                              className="w-full h-8 pl-7 pr-2 text-sm rounded-md border border-border bg-background focus:outline-none font-mono text-right" />
+                      {item.ws_carton_qty ? (
+                        <div className="rounded-lg border border-border/60 bg-muted/40 divide-y divide-border/40 overflow-hidden">
+                          <div className="flex items-center justify-between px-2.5 py-1.5">
+                            <span className="text-xs font-medium text-muted-foreground w-8">CTN</span>
+                            <div className="flex items-center bg-background rounded border border-border/60">
+                              <button onClick={() => updateWsCartonsPO(item.productId, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                              <span className="w-7 text-center text-sm font-black">{item.ws_cartons ?? 0}</span>
+                              <button onClick={() => updateWsCartonsPO(item.productId, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground ml-1">× {item.ws_carton_qty} = {(item.ws_cartons??0)*item.ws_carton_qty} box</span>
+                          </div>
+                          <div className="flex items-center justify-between px-2.5 py-1.5">
+                            <span className="text-xs font-medium text-muted-foreground w-8">BOX</span>
+                            <div className="flex items-center bg-background rounded border border-border/60">
+                              <button onClick={() => updateWsBoxesPO(item.productId, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                              <span className="w-7 text-center text-sm font-black">{item.ws_boxes ?? 0}</span>
+                              <button onClick={() => updateWsBoxesPO(item.productId, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground ml-1">{item.qty} boxes total</span>
+                          </div>
+                          <div className="flex items-center justify-between px-2.5 py-1.5 bg-muted/30">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Cost/Carton</label>
+                            <div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-muted-foreground">PKR</span>
+                              <input type="number" min="0" value={item.purchasePrice} onChange={(e) => updateCartPrice(item.productId, e.target.value)}
+                                className="w-28 h-7 pl-7 pr-2 text-xs rounded border border-border bg-background focus:outline-none font-mono text-right" />
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Qty</label>
+                            <input type="number" min="1" value={item.qty} onChange={(e) => updateCartQty(item.productId, e.target.value)}
+                              className="w-full h-8 px-2 text-sm rounded-md border border-border bg-background focus:outline-none mt-1 font-mono text-center" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Cost Price</label>
+                            <div className="relative mt-1"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-muted-foreground">PKR</span>
+                              <input type="number" min="0" value={item.purchasePrice} onChange={(e) => updateCartPrice(item.productId, e.target.value)}
+                                className="w-full h-8 pl-7 pr-2 text-sm rounded-md border border-border bg-background focus:outline-none font-mono text-right" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex justify-between text-xs font-bold text-muted-foreground">
                         <span>Subtotal</span><span className="font-mono">{fmtPKR(item.qty * item.purchasePrice)}</span>
                       </div>
@@ -696,25 +775,58 @@ export default function PurchasesPage() {
                   <>
                     <div className="flex-1 overflow-y-auto divide-y divide-border/20 p-3 space-y-2">
                       {cart.map((item) => (
-                        <div key={item.productId} className="rounded-xl border border-border/40 bg-muted/10 p-3 space-y-2.5">
+                        <div key={item.productId} className="rounded-xl border border-border/40 bg-muted/10 p-3 space-y-2">
                           <div className="flex items-center justify-between">
-                            <p className="font-semibold text-sm truncate mr-2">{item.name}</p>
+                            <p className="font-semibold text-sm truncate mr-2">
+                              {item.ws_carton_qty ? <Package size={11} className="inline mr-1 text-muted-foreground" /> : null}
+                              {item.name}
+                            </p>
                             <button onClick={() => removeFromCart(item.productId)} className="text-muted-foreground hover:text-destructive shrink-0"><Trash2 size={13} /></button>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Qty</label>
-                              <input type="number" min="1" value={item.qty} onChange={(e) => updateCartQty(item.productId, e.target.value)}
-                                className="w-full h-8 px-2 text-sm rounded-md border border-border bg-background focus:outline-none mt-1 font-mono text-center" />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Cost Price</label>
-                              <div className="relative mt-1"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-muted-foreground">PKR</span>
-                                <input type="number" min="0" value={item.purchasePrice} onChange={(e) => updateCartPrice(item.productId, e.target.value)}
-                                  className="w-full h-8 pl-7 pr-2 text-sm rounded-md border border-border bg-background focus:outline-none font-mono text-right" />
+                          {item.ws_carton_qty ? (
+                            <div className="rounded-lg border border-border/60 bg-muted/40 divide-y divide-border/40 overflow-hidden">
+                              <div className="flex items-center justify-between px-2.5 py-1.5">
+                                <span className="text-xs font-medium text-muted-foreground w-8">CTN</span>
+                                <div className="flex items-center bg-background rounded border border-border/60">
+                                  <button onClick={() => updateWsCartonsPO(item.productId, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                                  <span className="w-7 text-center text-sm font-black">{item.ws_cartons ?? 0}</span>
+                                  <button onClick={() => updateWsCartonsPO(item.productId, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground ml-1">× {item.ws_carton_qty} = {(item.ws_cartons??0)*item.ws_carton_qty} box</span>
+                              </div>
+                              <div className="flex items-center justify-between px-2.5 py-1.5">
+                                <span className="text-xs font-medium text-muted-foreground w-8">BOX</span>
+                                <div className="flex items-center bg-background rounded border border-border/60">
+                                  <button onClick={() => updateWsBoxesPO(item.productId, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                                  <span className="w-7 text-center text-sm font-black">{item.ws_boxes ?? 0}</span>
+                                  <button onClick={() => updateWsBoxesPO(item.productId, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground ml-1">{item.qty} boxes total</span>
+                              </div>
+                              <div className="flex items-center justify-between px-2.5 py-1.5 bg-muted/30">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Cost/Carton</label>
+                                <div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-muted-foreground">PKR</span>
+                                  <input type="number" min="0" value={item.purchasePrice} onChange={(e) => updateCartPrice(item.productId, e.target.value)}
+                                    className="w-28 h-7 pl-7 pr-2 text-xs rounded border border-border bg-background focus:outline-none font-mono text-right" />
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Qty</label>
+                                <input type="number" min="1" value={item.qty} onChange={(e) => updateCartQty(item.productId, e.target.value)}
+                                  className="w-full h-8 px-2 text-sm rounded-md border border-border bg-background focus:outline-none mt-1 font-mono text-center" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Cost Price</label>
+                                <div className="relative mt-1"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-muted-foreground">PKR</span>
+                                  <input type="number" min="0" value={item.purchasePrice} onChange={(e) => updateCartPrice(item.productId, e.target.value)}
+                                    className="w-full h-8 pl-7 pr-2 text-sm rounded-md border border-border bg-background focus:outline-none font-mono text-right" />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                           <div className="flex justify-between text-xs font-bold text-muted-foreground">
                             <span>Subtotal</span><span className="font-mono">{fmtPKR(item.qty * item.purchasePrice)}</span>
                           </div>

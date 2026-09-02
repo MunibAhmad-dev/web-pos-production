@@ -78,49 +78,34 @@ export default function POSPage() {
   }, [products, categoryFilter, search]);
 
   const addToCart = (product) => {
-    // Matches the desktop app: stock is never a hard limit — selling into
-    // negative stock is allowed, only a warning toast is shown.
     const stock = Number(product.stock || 0);
     const cartonQty = wholesaleOn ? (Number(product.carton_qty) || 0) : 0;
-    const boxQty = wholesaleOn ? (Number(product.box_qty) || 0) : 0;
-    const pieceName = wholesaleOn ? ((product.piece_name || 'piece').trim() || 'piece') : 'piece';
-    const pcsPerCarton = boxQty > 0 ? cartonQty * boxQty : cartonQty;
-    const cartonPrice = wholesaleOn && Number(product.wholesale_price) > 0 ? Number(product.wholesale_price) : 0;
-    // Per-piece price derived from carton price
-    const wsPrice = cartonQty > 0 && cartonPrice > 0 && pcsPerCarton > 0
-      ? cartonPrice / pcsPerCarton
-      : Number(product.price || 0);
-
+    const isWs = cartonQty > 0;
+    if (!isWs && stock <= 0) showToast(`${product.name} has no stock — selling into negative`, 'warning');
     setCart((prev) => {
       const existing = prev.find((i) => i.key === String(product.id));
-      if (existing) {
-        if (cartonQty > 0) {
-          // Wholesale product already in cart — increment pieces
-          const newPcs = (existing.pcs || 0) + 1;
-          const ctns = existing.cartons || 0;
-          const boxes = existing.boxes || 0;
-          const qty = ctns * (existing.pcsPerCarton || pcsPerCarton) + boxes * (existing.boxQty || boxQty) + newPcs;
-          if (qty > stock) showToast(`Only ${stock} in stock — selling into negative`, 'warning');
-          return prev.map((i) => i.key === String(product.id) ? { ...i, pcs: newPcs, qty } : i);
+      if (isWs) {
+        const boxPx = Number(product.price || 0) / cartonQty;
+        const pieceName = (product.piece_name || 'piece').trim() || 'piece';
+        const pcsPerBox = Number(product.box_qty) || 0;
+        if (existing) {
+          const newCtns = (existing.ws_cartons ?? 0) + 1;
+          const totalBoxes = newCtns * cartonQty + (existing.ws_boxes ?? 0);
+          return prev.map((i) => i.key === String(product.id) ? { ...i, ws_cartons: newCtns, qty: totalBoxes } : i);
         }
-        const nextQty = existing.qty + 1;
-        if (nextQty > stock) showToast(`Only ${stock} in stock — selling into negative`, 'warning');
-        return prev.map((i) => (i.key === String(product.id) ? { ...i, qty: nextQty } : i));
+        return [...prev, {
+          key: String(product.id), product: product.id, name: product.name,
+          unitPrice: boxPx, unitCost: Number(product.purchase_price || 0), stockQty: stock,
+          ws_carton_qty: cartonQty, ws_piece_name: pieceName, ws_pcs_per_box: pcsPerBox,
+          ws_cartons: 1, ws_boxes: 0, qty: cartonQty,
+        }];
       }
-      if (stock <= 0) {
-        showToast(`${product.name} has no stock recorded — selling into negative`, 'warning');
-      }
-      const base = {
-        key: String(product.id),
-        product: product.id,
-        name: product.name,
-        unitCost: Number(product.purchase_price || 0),
-        stockQty: stock,
-      };
-      if (cartonQty > 0) {
-        return [...prev, { ...base, unitPrice: wsPrice, cartonQty, boxQty, pieceName, pcsPerCarton, cartonPrice, cartons: 0, boxes: 0, pcs: 1, qty: 1 }];
-      }
-      return [...prev, { ...base, unitPrice: Number(product.price || 0), qty: 1 }];
+      if (existing) return prev.map((i) => i.key === String(product.id) ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, {
+        key: String(product.id), product: product.id, name: product.name,
+        unitPrice: Number(product.price || 0), unitCost: Number(product.purchase_price || 0),
+        stockQty: stock, qty: 1,
+      }];
     });
   };
 
@@ -146,57 +131,43 @@ export default function POSPage() {
 
   const updateQty = (key, delta) => {
     setCart((prev) =>
-      prev
-        .map((i) => {
-          if (i.key !== key) return i;
-          const nextQty = i.qty + delta;
-          if (nextQty > i.stockQty && i.stockQty >= 0) {
-            showToast(`Only ${i.stockQty} in stock`, 'warning');
-          }
-          return { ...i, qty: nextQty };
-        })
-        .filter((i) => i.qty > 0)
+      prev.map((i) => i.key !== key ? i : { ...i, qty: i.qty + delta }).filter((i) => i.qty > 0)
     );
+  };
+
+  const updateItemPrice = (key, price) => {
+    setCart((prev) => prev.map((i) => i.key === key ? { ...i, unitPrice: parseFloat(price) || 0 } : i));
   };
 
   const removeFromCart = (key) => setCart((prev) => prev.filter((i) => i.key !== key));
 
-  const calcQty = (i, cartons, boxes, pcs) =>
-    cartons * (i.pcsPerCarton || 0) + boxes * (i.boxQty || 0) + pcs;
-
-  const updateCartons = (key, delta) => {
+  const updateWsCartons = (key, delta) => {
     setCart((prev) =>
-      prev.map((i) => {
-        if (i.key !== key || !i.cartonQty) return i;
-        const newCtns = Math.max(0, (i.cartons || 0) + delta);
-        const qty = calcQty(i, newCtns, i.boxes || 0, i.pcs || 0);
-        if (qty > i.stockQty && i.stockQty >= 0) showToast(`Only ${i.stockQty} in stock`, 'warning');
-        return { ...i, cartons: newCtns, qty };
-      }).filter((i) => i.qty > 0)
+      prev.map((item) => {
+        if (item.key !== key || !item.ws_carton_qty) return item;
+        const cqty = item.ws_carton_qty;
+        const newCtns = (item.ws_cartons ?? 0) + delta;
+        const curBoxes = item.ws_boxes ?? 0;
+        if (newCtns === 0 && curBoxes === 0) return null;
+        const totalBoxes = newCtns * cqty + curBoxes;
+        return { ...item, ws_cartons: newCtns, qty: Math.abs(totalBoxes) || 1 };
+      }).filter(Boolean)
     );
   };
 
-  const updateBoxes = (key, delta) => {
+  const updateWsBoxes = (key, delta) => {
     setCart((prev) =>
-      prev.map((i) => {
-        if (i.key !== key || !i.cartonQty) return i;
-        const newBoxes = Math.max(0, (i.boxes || 0) + delta);
-        const qty = calcQty(i, i.cartons || 0, newBoxes, i.pcs || 0);
-        if (qty > i.stockQty && i.stockQty >= 0) showToast(`Only ${i.stockQty} in stock`, 'warning');
-        return { ...i, boxes: newBoxes, qty };
-      }).filter((i) => i.qty > 0)
-    );
-  };
-
-  const updatePcs = (key, delta) => {
-    setCart((prev) =>
-      prev.map((i) => {
-        if (i.key !== key || !i.cartonQty) return i;
-        const newPcs = Math.max(0, (i.pcs || 0) + delta);
-        const qty = calcQty(i, i.cartons || 0, i.boxes || 0, newPcs);
-        if (qty > i.stockQty && i.stockQty >= 0) showToast(`Only ${i.stockQty} in stock`, 'warning');
-        return { ...i, pcs: newPcs, qty };
-      }).filter((i) => i.qty > 0)
+      prev.map((item) => {
+        if (item.key !== key || !item.ws_carton_qty) return item;
+        const cqty = item.ws_carton_qty;
+        let newBoxes = (item.ws_boxes ?? 0) + delta;
+        let newCtns = item.ws_cartons ?? 0;
+        if (newBoxes >= cqty) { newCtns += Math.trunc(newBoxes / cqty); newBoxes = newBoxes % cqty; }
+        if (newBoxes < 0) { newCtns -= 1; newBoxes = cqty + newBoxes; }
+        if (newCtns === 0 && newBoxes === 0) return null;
+        const totalBoxes = newCtns * cqty + newBoxes;
+        return { ...item, ws_cartons: newCtns, ws_boxes: newBoxes, qty: Math.abs(totalBoxes) || 1 };
+      }).filter(Boolean)
     );
   };
 
@@ -230,13 +201,11 @@ export default function POSPage() {
       purchase_price: item.unitCost,
       is_custom: Boolean(item.isCustom),
       created_at: now,
-      // Wholesale fields (0/null when wholesale module off or non-carton product)
-      carton_qty: item.cartonQty || 0,
-      box_qty: item.boxQty || 0,
-      piece_name: item.pieceName || null,
-      cartons: item.cartons || 0,
-      boxes: item.boxes || 0,
-      pcs: item.cartonQty ? (item.pcs || 0) : item.qty,
+      carton_qty: item.ws_carton_qty || 0,
+      piece_name: item.ws_piece_name || null,
+      ws_pcs_per_box: item.ws_pcs_per_box || 0,
+      ws_cartons: item.ws_cartons || 0,
+      ws_boxes: item.ws_boxes || 0,
     }));
 
     const salePayload = {
@@ -312,7 +281,8 @@ export default function POSPage() {
       items: saleItemsPayloads.map((p) => ({
         product: p.product_id, name: p.product_name,
         qty: p.quantity, price: p.price, lineTotal: p.price * p.quantity,
-        cartonQty: p.carton_qty || 0, boxQty: p.box_qty || 0, pieceName: p.piece_name || 'piece', cartons: p.cartons || 0, boxes: p.boxes || 0, pcs: p.pcs || 0,
+        cartonQty: p.carton_qty || 0, pieceName: p.piece_name || 'piece',
+        ws_cartons: p.ws_cartons || 0, ws_boxes: p.ws_boxes || 0,
       })),
       subtotal,
       discount: discountAmount,
@@ -431,16 +401,21 @@ export default function POSPage() {
             {pagedProducts.map((p) => {
               const stock = Number(p.stock || 0);
               const alreadyInCart = cart.find((i) => i.key === String(p.id));
+              const isWsProd = wholesaleOn && (Number(p.carton_qty) || 0) > 0;
+              const wsCqty = isWsProd ? Math.max(1, Number(p.carton_qty)) : 1;
+              const absStock = Math.abs(stock);
+              const dispCtns = isWsProd ? Math.trunc(absStock / wsCqty) : absStock;
+              const dispBxs  = isWsProd ? absStock % wsCqty : 0;
+              const isNeg = stock < 0;
+              const isZero = stock === 0;
+              const isLow = !isZero && !isNeg && (isWsProd ? dispCtns < 3 : stock < LOW_STOCK_THRESHOLD);
               let stockTone = 'bg-brand-green/10 text-brand-green';
-              let stockLabel = String(stock);
-              if (stock < 0) {
-                stockTone = 'bg-brand-red/15 text-brand-red';
-              } else if (stock === 0) {
-                stockTone = 'bg-muted text-muted-foreground';
-                stockLabel = 'OUT';
-              } else if (stock <= LOW_STOCK_THRESHOLD) {
-                stockTone = 'bg-brand-orange/10 text-brand-orange';
-              }
+              let stockLabel = isWsProd
+                ? (dispBxs === 0 ? `${isNeg ? '-' : ''}${dispCtns}c` : `${isNeg ? '-' : ''}${dispCtns}c${dispBxs}b`)
+                : String(stock);
+              if (isNeg)       stockTone = 'bg-brand-red/15 text-brand-red';
+              else if (isZero) { stockTone = 'bg-muted text-muted-foreground'; stockLabel = 'OUT'; }
+              else if (isLow)  stockTone = 'bg-brand-orange/10 text-brand-orange';
               return (
                 <div
                   key={p.id}
@@ -589,40 +564,76 @@ export default function POSPage() {
             ) : (
               <div className="flex flex-col gap-2">
                 {cart.map((item) => (
-                  <div key={item.key} className={cn('rounded-lg border p-2.5', item.cartonQty ? 'border-sky-200 bg-sky-50/50 dark:border-sky-900/40 dark:bg-sky-950/20' : 'border-transparent')}>
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <div key={item.key} className="rounded-lg border border-border/60 bg-card p-2.5">
+                    <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
-                          {item.cartonQty ? <Package size={11} className="inline mr-1 text-sky-500" /> : null}
+                          {item.ws_carton_qty ? <Package size={11} className="inline mr-1 text-muted-foreground" /> : null}
                           {item.name}
                           {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom</span>}
                         </p>
-                        <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)}/{item.pieceName || 'pc'} · {formatCurrency(item.unitPrice * item.qty, currency)} total</p>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className="text-[10px] text-muted-foreground">PKR</span>
+                          <input
+                            type="number" min="0"
+                            value={item.unitPrice}
+                            onChange={(e) => updateItemPrice(item.key, e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            className="w-20 h-5 px-1 text-xs font-mono bg-transparent border-b border-border/50 focus:outline-none focus:border-primary text-foreground"
+                          />
+                          <span className="text-[10px] text-muted-foreground">/{item.ws_carton_qty ? 'box' : (item.unit || 'pc')}</span>
+                        </div>
                       </div>
                       <button onClick={() => removeFromCart(item.key)} className="rounded-md p-1 text-destructive hover:bg-destructive/10 shrink-0">
                         <Trash2 size={12} />
                       </button>
                     </div>
-                    {item.cartonQty ? (
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                        <span className="text-sky-600 font-semibold w-6">Ctn</span>
-                        <button onClick={() => updateCartons(item.key, -1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
-                        <span className="w-4 text-center font-bold">{item.cartons || 0}</span>
-                        <button onClick={() => updateCartons(item.key, 1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
-                        {item.boxQty > 0 && <>
-                          <span className="text-sky-600 font-semibold w-6 ml-1">Box</span>
-                          <button onClick={() => updateBoxes(item.key, -1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
-                          <span className="w-4 text-center font-bold">{item.boxes || 0}</span>
-                          <button onClick={() => updateBoxes(item.key, 1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
-                        </>}
-                        <span className="text-sky-600 font-semibold capitalize ml-1" style={{minWidth:'1.5rem'}}>{item.pieceName || 'Pc'}</span>
-                        <button onClick={() => updatePcs(item.key, -1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
-                        <span className="w-4 text-center font-bold">{item.pcs || 0}</span>
-                        <button onClick={() => updatePcs(item.key, 1)} className="rounded border border-border w-5 h-5 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
-                        <span className="ml-auto text-xs text-sky-600 font-bold">{item.qty} {item.pieceName || 'pcs'}</span>
+                    {item.ws_carton_qty ? (
+                      <div className="rounded-lg border border-border/60 bg-muted/40 divide-y divide-border/40 overflow-hidden mt-1.5">
+                        <div className="flex items-center justify-between px-2.5 py-1.5">
+                          <span className="text-xs font-medium text-muted-foreground w-8">CTN</span>
+                          <div className="flex items-center bg-background rounded border border-border/60">
+                            <button onClick={() => updateWsCartons(item.key, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                            <span className="w-7 text-center text-sm font-black text-foreground">{item.ws_cartons ?? 0}</span>
+                            <button onClick={() => updateWsCartons(item.key, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground ml-1">× {item.ws_carton_qty} = {(item.ws_cartons??0)*item.ws_carton_qty} box</span>
+                        </div>
+                        <div className="flex items-center justify-between px-2.5 py-1.5">
+                          <span className="text-xs font-medium text-muted-foreground w-8">BOX</span>
+                          <div className="flex items-center bg-background rounded border border-border/60">
+                            <button onClick={() => updateWsBoxes(item.key, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                            <span className="w-7 text-center text-sm font-black text-foreground">{item.ws_boxes ?? 0}</span>
+                            <button onClick={() => updateWsBoxes(item.key, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                          </div>
+                          {item.ws_pcs_per_box > 0
+                            ? <span className="text-[10px] text-muted-foreground ml-1">× {item.ws_pcs_per_box} {item.ws_piece_name || 'pc'}/box</span>
+                            : <span className="ml-1 w-20" />}
+                        </div>
+                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-muted/30">
+                          <div>
+                            <div className="text-[10px] font-bold text-foreground">{item.qty} box total</div>
+                            {(() => {
+                              const remBoxes = item.stockQty - item.qty;
+                              const remNeg = remBoxes < 0;
+                              const absRem = Math.abs(remBoxes);
+                              const remCtns = Math.trunc(absRem / item.ws_carton_qty);
+                              const remBxs = absRem % item.ws_carton_qty;
+                              return (
+                                <div className={cn('text-[10px] font-bold', remNeg ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400')}>
+                                  {remNeg ? '⚠ ' : ''}{remCtns ? `${remNeg?'-':''}${remCtns} ctn ${remBxs} box` : `${remBoxes} box`} {remNeg ? 'negative' : 'remaining'}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs font-black text-foreground">{formatCurrency(item.unitPrice * item.qty, currency)}</div>
+                            <div className="text-[10px] text-muted-foreground">@ {formatCurrency(item.unitPrice, currency)}/box</div>
+                          </div>
+                        </div>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5 justify-end">
+                      <div className="flex items-center gap-1.5 justify-end mt-1.5">
                         <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1 hover:bg-muted"><Minus size={12} /></button>
                         <span className="w-6 text-center text-sm font-bold">{item.qty}</span>
                         <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1 hover:bg-muted"><Plus size={12} /></button>
@@ -718,40 +729,76 @@ export default function POSPage() {
               ) : (
                 <div className="flex flex-col gap-2">
                   {cart.map((item) => (
-                    <div key={item.key} className={cn('rounded-lg border p-2.5', item.cartonQty ? 'border-sky-200 bg-sky-50/50 dark:border-sky-900/40 dark:bg-sky-950/20' : 'border-border')}>
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div key={item.key} className="rounded-lg border border-border/60 bg-card p-2.5">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-foreground">
-                            {item.cartonQty ? <Package size={11} className="inline mr-1 text-sky-500" /> : null}
+                            {item.ws_carton_qty ? <Package size={11} className="inline mr-1 text-muted-foreground" /> : null}
                             {item.name}
                             {item.isCustom && <span className="ml-1.5 text-[10px] text-brand-purple">Custom</span>}
                           </p>
-                          <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice, currency)}/{item.pieceName || 'pc'} · {formatCurrency(item.unitPrice * item.qty, currency)}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-[10px] text-muted-foreground">PKR</span>
+                            <input
+                              type="number" min="0"
+                              value={item.unitPrice}
+                              onChange={(e) => updateItemPrice(item.key, e.target.value)}
+                              onFocus={(e) => e.target.select()}
+                              className="w-20 h-5 px-1 text-xs font-mono bg-transparent border-b border-border/50 focus:outline-none focus:border-primary text-foreground"
+                            />
+                            <span className="text-[10px] text-muted-foreground">/{item.ws_carton_qty ? 'box' : (item.unit || 'pc')}</span>
+                          </div>
                         </div>
                         <button onClick={() => removeFromCart(item.key)} className="rounded-md p-1 text-destructive hover:bg-destructive/10 shrink-0">
                           <Trash2 size={12} />
                         </button>
                       </div>
-                      {item.cartonQty ? (
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                          <span className="text-sky-600 font-semibold w-6">Ctn</span>
-                          <button onClick={() => updateCartons(item.key, -1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
-                          <span className="w-5 text-center font-bold">{item.cartons || 0}</span>
-                          <button onClick={() => updateCartons(item.key, 1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
-                          {item.boxQty > 0 && <>
-                            <span className="text-sky-600 font-semibold w-6 ml-1">Box</span>
-                            <button onClick={() => updateBoxes(item.key, -1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
-                            <span className="w-5 text-center font-bold">{item.boxes || 0}</span>
-                            <button onClick={() => updateBoxes(item.key, 1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
-                          </>}
-                          <span className="text-sky-600 font-semibold capitalize ml-1" style={{minWidth:'1.5rem'}}>{item.pieceName || 'Pc'}</span>
-                          <button onClick={() => updatePcs(item.key, -1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Minus size={10} /></button>
-                          <span className="w-5 text-center font-bold">{item.pcs || 0}</span>
-                          <button onClick={() => updatePcs(item.key, 1)} className="rounded border border-border w-6 h-6 flex items-center justify-center hover:bg-muted"><Plus size={10} /></button>
-                          <span className="ml-auto font-bold text-sky-600">{item.qty} {item.pieceName || 'pcs'}</span>
+                      {item.ws_carton_qty ? (
+                        <div className="rounded-lg border border-border/60 bg-muted/40 divide-y divide-border/40 overflow-hidden mt-1.5">
+                          <div className="flex items-center justify-between px-2.5 py-1.5">
+                            <span className="text-xs font-medium text-muted-foreground w-8">CTN</span>
+                            <div className="flex items-center bg-background rounded border border-border/60">
+                              <button onClick={() => updateWsCartons(item.key, -1)} className="w-7 h-7 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                              <span className="w-8 text-center text-sm font-black text-foreground">{item.ws_cartons ?? 0}</span>
+                              <button onClick={() => updateWsCartons(item.key, 1)} className="w-7 h-7 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground ml-1">× {item.ws_carton_qty} = {(item.ws_cartons??0)*item.ws_carton_qty} box</span>
+                          </div>
+                          <div className="flex items-center justify-between px-2.5 py-1.5">
+                            <span className="text-xs font-medium text-muted-foreground w-8">BOX</span>
+                            <div className="flex items-center bg-background rounded border border-border/60">
+                              <button onClick={() => updateWsBoxes(item.key, -1)} className="w-7 h-7 flex items-center justify-center hover:bg-muted"><Minus size={9} className="text-muted-foreground" /></button>
+                              <span className="w-8 text-center text-sm font-black text-foreground">{item.ws_boxes ?? 0}</span>
+                              <button onClick={() => updateWsBoxes(item.key, 1)} className="w-7 h-7 flex items-center justify-center hover:bg-muted"><Plus size={9} className="text-muted-foreground" /></button>
+                            </div>
+                            {item.ws_pcs_per_box > 0
+                              ? <span className="text-[10px] text-muted-foreground ml-1">× {item.ws_pcs_per_box} {item.ws_piece_name || 'pc'}/box</span>
+                              : <span className="ml-1 w-20" />}
+                          </div>
+                          <div className="flex items-center justify-between px-2.5 py-1.5 bg-muted/30">
+                            <div>
+                              <div className="text-[10px] font-bold text-foreground">{item.qty} box total</div>
+                              {(() => {
+                                const remBoxes = item.stockQty - item.qty;
+                                const remNeg = remBoxes < 0;
+                                const absRem = Math.abs(remBoxes);
+                                const remCtns = Math.trunc(absRem / item.ws_carton_qty);
+                                const remBxs = absRem % item.ws_carton_qty;
+                                return (
+                                  <div className={cn('text-[10px] font-bold', remNeg ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400')}>
+                                    {remNeg ? '⚠ ' : ''}{remCtns ? `${remNeg?'-':''}${remCtns} ctn ${remBxs} box` : `${remBoxes} box`} {remNeg ? 'negative' : 'remaining'}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs font-black text-foreground">{formatCurrency(item.unitPrice * item.qty, currency)}</div>
+                              <div className="text-[10px] text-muted-foreground">@ {formatCurrency(item.unitPrice, currency)}/box</div>
+                            </div>
+                          </div>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1.5 justify-end">
+                        <div className="flex items-center gap-1.5 justify-end mt-1.5">
                           <button onClick={() => updateQty(item.key, -1)} className="rounded-md border border-border p-1.5 hover:bg-muted"><Minus size={13} /></button>
                           <span className="w-7 text-center font-bold">{item.qty}</span>
                           <button onClick={() => updateQty(item.key, 1)} className="rounded-md border border-border p-1.5 hover:bg-muted"><Plus size={13} /></button>

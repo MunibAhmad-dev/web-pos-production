@@ -149,8 +149,7 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
           if (isEditing || !modules.wholesale_module_enabled) return raw;
           const cq = Number(current.carton_qty) || 0;
           const bq = Number(current.box_qty) || 0;
-          const pcsPerCarton = bq > 0 ? cq * bq : cq;
-          if (stockMode === 'cartons') return raw * pcsPerCarton;
+          if (stockMode === 'cartons' && cq > 0) return raw * cq;  // boxes = cartons × ctn_qty
           if (stockMode === 'boxes' && bq > 0) return raw * bq;
           return raw;
         })(),
@@ -258,9 +257,14 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
             </div>
 
             {/* Prices */}
+            {(() => {
+              const isWsPx = modules.wholesale_module_enabled && (Number(current.carton_qty) || 0) > 0;
+              return null; // label computed inline below
+              void isWsPx;
+            })()}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold">Cost / Purchase Price</label>
+                <label className="text-sm font-semibold">{modules.wholesale_module_enabled && (Number(current.carton_qty)||0) > 0 ? 'Purchase Price (per Carton)' : 'Cost / Purchase Price'}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-semibold">PKR</span>
                   <input
@@ -273,7 +277,7 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold">Selling Price <span className="text-destructive">*</span></label>
+                <label className="text-sm font-semibold">{modules.wholesale_module_enabled && (Number(current.carton_qty)||0) > 0 ? 'Selling Price (per Carton)' : 'Selling Price'} <span className="text-destructive">*</span></label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-semibold">PKR</span>
                   <input
@@ -342,15 +346,16 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                   let previewLine = null;
                   if (showToggle && (Number(stockStr) || 0) > 0) {
                     const n = Number(stockStr);
-                    if (stockMode === 'cartons' && pcsPerCarton > 0) previewLine = `${n} carton${n!==1?'s':''} = ${(n*pcsPerCarton).toLocaleString()} ${pn}s total`;
-                    if (stockMode === 'boxes' && bq > 0) previewLine = `${n} box${n!==1?'es':''} = ${(n*bq).toLocaleString()} ${pn}s total`;
+                    if (stockMode === 'cartons' && cq > 0) previewLine = `${n} carton${n!==1?'s':''} = ${(n*cq).toLocaleString()} boxes`;
+                    if (stockMode === 'boxes') previewLine = `${n} box${n!==1?'es':''}`;
                   }
                   // Hint for editing
                   let editHint = null;
-                  if (isEditing && wholesaleOn && pcsPerCarton > 0 && (current.stock || 0) > 0) {
-                    const ctns = Math.floor((current.stock || 0) / pcsPerCarton);
-                    editHint = bq > 0
-                      ? `≈ ${ctns} carton${ctns!==1?'s':''} (${Math.floor((current.stock||0)/bq)} boxes)`
+                  if (isEditing && wholesaleOn && cq > 0 && (current.stock || 0) > 0) {
+                    const ctns = Math.floor((current.stock || 0) / cq);
+                    const remBoxes = (current.stock || 0) % cq;
+                    editHint = remBoxes > 0
+                      ? `≈ ${ctns} carton${ctns!==1?'s':''} + ${remBoxes} box${remBoxes!==1?'es':''}`
                       : `≈ ${ctns} carton${ctns!==1?'s':''}`;
                   }
                   const modes = [
@@ -645,58 +650,45 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
               const cq  = Number(current.carton_qty) || 0;
               const bq  = Number(current.box_qty)    || 0;
               const pn  = (current.piece_name || 'piece').toLowerCase();
-              const cp  = Number(current.wholesale_price) || 0;
-              const pcsPerCarton = bq > 0 ? cq * bq : cq;
-              const boxPrice  = bq > 0 && cq > 0 ? cp / cq : null;
-              const pcPrice   = pcsPerCarton > 0   ? cp / pcsPerCarton : null;
-              const inp = 'w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30';
+              const cp  = Number(current.price) || 0;  // price IS carton selling price for wholesale
+              const boxPrice = cq > 0 && cp > 0 ? cp / cq : null;
+              const pcPrice  = bq > 0 && boxPrice ? boxPrice / bq : null;
+              const inp = 'w-full h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30';
               return (
                 <div className="space-y-3 pt-2 border-t border-border/40">
                   <div className="flex items-center gap-2">
                     <span className="text-base">📦</span>
-                    <span className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider">Wholesale / Carton Sales</span>
+                    <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">Wholesale / Carton</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
+                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/60 bg-muted/30 p-3">
 
-                    {/* Piece name (what the individual unit is called) */}
+                    {/* Piece name — select */}
                     <div className="col-span-2 space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">Individual unit name <span className="text-sky-600">(mandatory)</span></label>
-                      <div className="flex items-center gap-2">
-                        <input list="ws-piece-names"
-                          value={current.piece_name || ''}
-                          onChange={(e) => setCurrent((p) => ({ ...p, piece_name: e.target.value }))}
-                          placeholder="piece, jar, pouch, bar…" disabled={isSaving}
-                          className="w-44 h-9 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-sky-500/30"
-                        />
-                        <datalist id="ws-piece-names">
-                          {['piece', 'bar', 'jar', 'pouch', 'sachet', 'can', 'bottle', 'packet', 'bag', 'stick', 'roll'].map(n => <option key={n} value={n} />)}
-                        </datalist>
-                        <span className="text-[10px] text-muted-foreground">What do you call 1 individual item?</span>
-                      </div>
+                      <label className="text-xs font-medium text-muted-foreground">Individual unit name</label>
+                      <select
+                        value={current.piece_name || 'piece'}
+                        onChange={(e) => setCurrent((p) => ({ ...p, piece_name: e.target.value || 'piece' }))}
+                        disabled={isSaving}
+                        className={inp}
+                      >
+                        {['piece', 'pcs', 'jar', 'stick', 'pouch', 'sachet', 'bottle', 'bag', 'unit', 'pack', 'can', 'box', 'bar', 'roll', 'packet'].map(n => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
                     </div>
 
-                    {/* Carton qty + Carton price */}
-                    <div className="space-y-1">
+                    {/* Carton qty */}
+                    <div className="col-span-2 space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">
-                        {bq > 0 ? 'Boxes per carton' : `${pn.charAt(0).toUpperCase()+pn.slice(1)}s per carton`}
-                        <span className="ml-1 text-sky-600">(mandatory)</span>
+                        Boxes per carton <span className="text-foreground/50">(mandatory)</span>
                       </label>
                       <input type="number" min="0" step="1"
                         value={current.carton_qty ?? ''}
                         onChange={(e) => setCurrent((p) => ({ ...p, carton_qty: e.target.value }))}
-                        placeholder={bq > 0 ? 'e.g. 10 boxes' : 'e.g. 12'}
+                        placeholder="e.g. 24"
                         disabled={isSaving} className={inp}
                       />
-                      <p className="text-[10px] text-muted-foreground">How many {bq > 0 ? 'boxes' : pn+'s'} fit in 1 carton</p>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">Carton price (PKR) <span className="text-sky-600">(mandatory)</span></label>
-                      <input type="number" min="0" step="1"
-                        value={current.wholesale_price ?? ''}
-                        onChange={(e) => setCurrent((p) => ({ ...p, wholesale_price: e.target.value }))}
-                        placeholder="e.g. 3000" disabled={isSaving} className={inp}
-                      />
-                      <p className="text-[10px] text-muted-foreground">Price for one full carton</p>
+                      <p className="text-[10px] text-muted-foreground">Selling price (above) is per carton · stock tracked in boxes</p>
                     </div>
 
                     {/* Box level toggle */}
@@ -715,34 +707,45 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                               }))}
                             />
                             <span className="text-xs font-medium text-muted-foreground">
-                              Enable box level <span className="text-sky-600">(optional)</span> — carton → boxes → {pn}s
+                              Box level — {pn}s per box (optional info)
                             </span>
                           </div>
-
-                          {/* Pieces per box (only when box level ON) */}
                           {boxOn && (
-                            <div className="space-y-1">
+                            <div className="col-span-2 space-y-1">
                               <label className="text-xs font-medium text-muted-foreground">{pn.charAt(0).toUpperCase()+pn.slice(1)}s per box</label>
                               <input type="number" min="1" step="1"
                                 value={current.box_qty == null ? '' : current.box_qty}
                                 onChange={(e) => setCurrent((p) => ({ ...p, box_qty: e.target.value }))}
                                 placeholder="e.g. 24" disabled={isSaving} className={inp}
                               />
-                              <p className="text-[10px] text-muted-foreground">How many {pn}s in 1 box</p>
                             </div>
                           )}
                         </>
                       );
                     })()}
 
-                    {/* Live preview */}
+                    {/* Live breakdown — neutral card */}
                     {cq > 0 && cp > 0 && (
-                      <div className="col-span-2 rounded-lg bg-sky-100 dark:bg-sky-900/30 px-3 py-2.5 text-xs text-sky-700 dark:text-sky-300 space-y-1">
-                        <div className="font-bold">
-                          1 carton{bq > 0 ? ` = ${cq} boxes` : ''} = {pcsPerCarton} {pn}s
+                      <div className="col-span-2 rounded-lg border border-border/60 bg-background divide-y divide-border/40 overflow-hidden text-sm">
+                        <div className="flex items-center justify-between px-3 py-2">
+                          <span className="text-muted-foreground font-medium">1 Carton</span>
+                          <span className="font-bold text-foreground">{cq} boxes{bq > 0 ? ` × ${bq} ${pn}s` : ''}</span>
                         </div>
-                        {boxPrice != null && <div>Box price ≈ PKR {boxPrice.toFixed(2)}</div>}
-                        {pcPrice  != null && <div>Per {pn} ≈ PKR {pcPrice.toFixed(2)}</div>}
+                        {boxPrice != null && (
+                          <div className="flex items-center justify-between px-3 py-2">
+                            <span className="text-muted-foreground font-medium">Price per Box</span>
+                            <span className="font-bold text-foreground">PKR {boxPrice.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {pcPrice != null && (
+                          <div className="flex items-center justify-between px-3 py-2">
+                            <span className="text-muted-foreground font-medium">Price per {pn}</span>
+                            <span className="font-bold text-foreground">PKR {pcPrice.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        <div className="px-3 py-1.5 bg-muted/30">
+                          <p className="text-[10px] text-muted-foreground">Selling &amp; purchase prices above are per carton · stock tracked in boxes</p>
+                        </div>
                       </div>
                     )}
                   </div>
