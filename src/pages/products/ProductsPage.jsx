@@ -116,7 +116,7 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
   const [isSaving, setIsSaving] = useState(false);
   const [marginInput, setMarginInput] = useState('');
   const [stockStr, setStockStr] = useState('');
-  const [stockMode, setStockMode] = useState('pcs'); // 'pcs' | 'boxes' | 'cartons'
+
   const [showBarcode2, setShowBarcode2] = useState(false);
   const nameRef = useRef(null);
 
@@ -144,15 +144,8 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
         name: current.name.trim(),
         price,
         purchase_price: Number(current.purchase_price) || 0,
-        stock: (() => {
-          const raw = isEditing ? (Number(current.stock) || 0) : (Number(stockStr) || 0);
-          if (isEditing || !modules.wholesale_module_enabled) return raw;
-          const cq = Number(current.carton_qty) || 0;
-          const bq = Number(current.box_qty) || 0;
-          if (stockMode === 'cartons' && cq > 0) return raw * cq;  // boxes = cartons × ctn_qty
-          if (stockMode === 'boxes' && bq > 0) return raw * bq;
-          return raw;
-        })(),
+        // onChange already converts cartons → boxes for wholesale, so current.stock is always in boxes
+        stock: Number(current.stock) || 0,
         category: (current.category || '').trim(),
         barcode: (current.barcode || '').trim(),
         barcode2: (current.barcode2 || '').trim(),
@@ -337,60 +330,58 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
                 {(() => {
                   const wholesaleOn = modules.wholesale_module_enabled;
                   const cq = Number(current.carton_qty) || 0;
-                  const bq = Number(current.box_qty) || 0;
-                  const pn = (current.piece_name || 'piece').toLowerCase();
-                  const pcsPerCarton = bq > 0 ? cq * bq : cq;
-                  const showToggle = !isEditing && wholesaleOn && cq > 0;
+                  const isWs = wholesaleOn && cq > 0;
+
+                  if (isWs) {
+                    // Wholesale: always enter in cartons, store boxes (cartons × cq)
+                    const boxes = Number(current.stock) || 0;
+                    const ctns = Math.trunc(boxes / cq);
+                    const remBoxes = boxes % cq;
+                    // In edit mode show cartons; in add mode show what was typed
+                    const inputVal = isEditing ? (boxes > 0 ? ctns : '') : stockStr;
+                    const hint = isEditing
+                      ? (boxes > 0 ? (remBoxes > 0 ? `${boxes} boxes (${ctns} ctn + ${remBoxes} box)` : `${boxes} boxes total`) : null)
+                      : ((Number(stockStr) || 0) > 0 ? `= ${(Number(stockStr) || 0) * cq} boxes total` : null);
+                    return (
+                      <>
+                        <label className="text-sm font-semibold">{isEditing ? 'Stock' : 'Opening Stock'}</label>
+                        <p className="text-[10px] text-amber-600 font-medium -mt-0.5">Enter cartons — stored as boxes</p>
+                        <input
+                          type="number" min="0" step="1"
+                          value={inputVal}
+                          onChange={(e) => {
+                            const ctnsEntered = parseInt(e.target.value) || 0;
+                            const boxesVal = ctnsEntered * cq;
+                            if (isEditing) setCurrent((p) => ({ ...p, stock: boxesVal }));
+                            else { setStockStr(e.target.value); setCurrent((p) => ({ ...p, stock: boxesVal })); }
+                          }}
+                          placeholder="e.g. 10 cartons"
+                          disabled={isSaving}
+                          className="w-full h-10 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                        {hint && <p className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">{hint}</p>}
+                      </>
+                    );
+                  }
+
+                  // Non-wholesale: direct box/piece count
                   const rawVal = isEditing ? (current.stock ?? '') : stockStr;
-                  // Preview lines when not editing
-                  let previewLine = null;
-                  if (showToggle && (Number(stockStr) || 0) > 0) {
-                    const n = Number(stockStr);
-                    if (stockMode === 'cartons' && cq > 0) previewLine = `${n} carton${n!==1?'s':''} = ${(n*cq).toLocaleString()} boxes`;
-                    if (stockMode === 'boxes') previewLine = `${n} box${n!==1?'es':''}`;
-                  }
-                  // Hint for editing
-                  let editHint = null;
-                  if (isEditing && wholesaleOn && cq > 0 && (current.stock || 0) > 0) {
-                    const ctns = Math.floor((current.stock || 0) / cq);
-                    const remBoxes = (current.stock || 0) % cq;
-                    editHint = remBoxes > 0
-                      ? `≈ ${ctns} carton${ctns!==1?'s':''} + ${remBoxes} box${remBoxes!==1?'es':''}`
-                      : `≈ ${ctns} carton${ctns!==1?'s':''}`;
-                  }
-                  const modes = [
-                    { key: 'pcs', label: `${pn.charAt(0).toUpperCase()+pn.slice(1)}s` },
-                    ...(wholesaleOn && cq > 0 ? [{ key: 'cartons', label: 'Cartons' }] : []),
-                    ...(wholesaleOn && bq > 0 ? [{ key: 'boxes', label: 'Boxes' }] : []),
-                  ];
-                  return (<>
-                    <div className="flex items-center justify-between">
+                  return (
+                    <>
                       <label className="text-sm font-semibold">{isEditing ? 'Stock' : 'Opening Stock'}</label>
-                      {showToggle && modes.length > 1 && (
-                        <div className="flex rounded border border-sky-400/40 overflow-hidden text-[10px] font-semibold">
-                          {modes.map(m => (
-                            <button key={m.key} type="button" disabled={isSaving}
-                              onClick={() => setStockMode(m.key)}
-                              className={`px-2 py-0.5 transition-colors ${stockMode === m.key ? 'bg-sky-600 text-white' : 'bg-transparent text-sky-600 hover:bg-sky-500/10'}`}
-                            >{m.label}</button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <input
-                      type="number" min="0" step="1"
-                      value={rawVal}
-                      onChange={(e) => {
-                        if (isEditing) setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 }));
-                        else { setStockStr(e.target.value); setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 })); }
-                      }}
-                      placeholder={stockMode === 'cartons' ? 'e.g. 10 cartons' : stockMode === 'boxes' ? 'e.g. 5 boxes' : '0'}
-                      disabled={isSaving}
-                      className="w-full h-10 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                    {previewLine && <p className="text-[10px] text-sky-600">{previewLine}</p>}
-                    {editHint   && <p className="text-[10px] text-muted-foreground">{editHint}</p>}
-                  </>);
+                      <input
+                        type="number" min="0" step="1"
+                        value={rawVal}
+                        onChange={(e) => {
+                          if (isEditing) setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 }));
+                          else { setStockStr(e.target.value); setCurrent((p) => ({ ...p, stock: parseInt(e.target.value) || 0 })); }
+                        }}
+                        placeholder="0"
+                        disabled={isSaving}
+                        className="w-full h-10 px-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </>
+                  );
                 })()}
               </div>
               <div className="space-y-1.5">

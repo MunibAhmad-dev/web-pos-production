@@ -119,11 +119,7 @@ export function buildFormalHtml(data = {}) {
   } = data;
 
   const balance = Math.max(0, total - paid);
-  const MIN_ROWS = 8;
-  const paddedItems = [...items];
-  while (paddedItems.length < MIN_ROWS) paddedItems.push(null);
-
-  const rows = paddedItems.map((it, i) => it
+  const rows = items.map((it, i) => it
     ? `<tr>
         <td>${i + 1}</td>
         <td>${it.name || ''}</td>
@@ -139,7 +135,7 @@ export function buildFormalHtml(data = {}) {
 <style>
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin:0; padding:0; }
-  body { font-family: Arial, sans-serif; font-size: 11pt; color:#111; background:#fff; width:210mm; min-height:297mm; padding:10mm 12mm 8mm; }
+  body { font-family: Arial, sans-serif; font-size: 11pt; color:#111; background:#fff; width:210mm; padding:10mm 12mm 8mm; }
   .hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6mm; padding-bottom:4mm; border-bottom:2px solid #cc0000; }
   .hdr-left h1 { font-size:18pt; color:#cc0000; font-weight:900; margin-bottom:2px; }
   .hdr-left p  { font-size:9pt; color:#555; line-height:1.5; }
