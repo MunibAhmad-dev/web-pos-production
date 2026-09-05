@@ -85,9 +85,7 @@ export default function POSPage() {
     setCart((prev) => {
       const existing = prev.find((i) => i.key === String(product.id));
       if (isWs) {
-        // wholesale_price = carton price (web-created products)
-        // product.price   = carton price (desktop-synced products store carton price in price field)
-        const cartonPx = Number(product.wholesale_price || product.price || 0);
+        const cartonPx = Number(product.price || product.wholesale_price || 0);
         const boxPx = cartonQty > 0 ? cartonPx / cartonQty : cartonPx;
         const pieceName = (product.piece_name || 'piece').trim() || 'piece';
         const pcsPerBox = Number(product.box_qty) || 0;
@@ -455,7 +453,10 @@ export default function POSPage() {
                   </div>
                   <span className="w-20 truncate text-right text-xs text-muted-foreground">{p.category || 'none'}</span>
                   <span className={cn('w-16 rounded-full px-2 py-0.5 text-right text-xs font-semibold', stockTone)}>{stockLabel}</span>
-                  <span className="w-24 text-right text-sm font-semibold text-foreground">{formatCurrency(p.price, currency)}</span>
+                  <span className="w-24 text-right text-sm font-semibold text-foreground">
+                    {formatCurrency(p.price, currency)}
+                    {wholesaleOn && Number(p.carton_qty) > 0 && <span className="block text-[9px] font-normal text-muted-foreground">/ctn</span>}
+                  </span>
                   <div className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
                     <Plus size={15} />
                   </div>

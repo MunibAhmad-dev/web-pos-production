@@ -62,7 +62,7 @@ export default function ProductFormModal({ open, onClose, onSubmit, product, cat
       const payload = {
         ...form,
         purchase_price: Number(form.purchase_price) || 0,
-        price: Number(form.price) || 0,
+        price: wholesaleOn ? (Number(form.wholesale_price) || Number(form.price) || 0) : (Number(form.price) || 0),
         stock: (() => {
           const raw = Number(form.stock) || 0;
           if (product || !wholesaleOn) return raw;
