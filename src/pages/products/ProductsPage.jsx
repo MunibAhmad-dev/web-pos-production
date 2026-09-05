@@ -126,7 +126,6 @@ function ProductFormModal({ isOpen, isEditing, initialProduct, vendors, categori
       setShowBarcode2(!!(initialProduct.barcode2));
       setIsSaving(false);
       setMarginInput('');
-      setStockMode('pcs');
       setStockStr(isEditing && (initialProduct.stock ?? 0) !== 0 ? String(initialProduct.stock) : '');
       setTimeout(() => nameRef.current?.focus(), 100);
     }

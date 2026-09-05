@@ -100,6 +100,20 @@ export async function fetchInstanceStatus() {
 export function logoutShop() {
   localStorage.removeItem(API_KEY);
   localStorage.removeItem(SESSION_KEY);
+
+  // Shop-specific settings — must be wiped so the next login starts clean
+  const shopKeys = [
+    'pos_module_settings',      // which modules are enabled
+    'osatech_receipt_settings', // store name, header, tax number on receipts
+    'pos_fbr_settings',         // FBR NTN / STRN
+    'pos_pin',                  // POS lock PIN
+    'pos_wa_template',          // WhatsApp message template
+    'mfg_user',                 // manufacturing sub-auth
+    'mfg_gd_token',             // Google Drive OAuth token (security)
+    'mfg_gd_meta',              // Google Drive folder binding
+    'mfg_printer_settings',     // printer config
+  ];
+  for (const key of shopKeys) localStorage.removeItem(key);
 }
 
 export function hasApiKey() {

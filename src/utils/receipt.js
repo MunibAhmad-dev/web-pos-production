@@ -46,20 +46,17 @@ export function formatInvoiceId(id, dateString) {
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-// Formats qty for a sale item — shows "2 ctn + 3 box + 4 jars" when wholesale data present
+// Formats qty for a sale item — shows "2 ctn + 3 box" when wholesale data present
 function fmtQtyLabel(item) {
-  const cartonQty = Number(item.cartonQty) || 0;
-  const boxQty    = Number(item.boxQty)    || 0;
-  const cartons   = Number(item.cartons)   || 0;
-  const boxes     = Number(item.boxes)     || 0;
-  const pcs       = Number(item.pcs)       || 0;
-  const pn        = (item.pieceName || 'pc').toLowerCase();
-  if (cartonQty > 0) {
+  const cqty    = Number(item.cartonQty || item.carton_qty) || 0;
+  const cartons = Number(item.ws_cartons ?? item.cartons)   || 0;
+  const boxes   = Number(item.ws_boxes  ?? item.boxes)      || 0;
+  const pn      = (item.pieceName || item.piece_name || 'pc').toLowerCase();
+  if (cqty > 0) {
     const parts = [];
     if (cartons > 0) parts.push(`${cartons} ctn`);
-    if (boxQty > 0 && boxes > 0) parts.push(`${boxes} box`);
-    if (pcs > 0) parts.push(`${pcs} ${pn}`);
-    return parts.length > 0 ? parts.join(' + ') : `${item.qty ?? 0} ${pn}`;
+    if (boxes   > 0) parts.push(`${boxes} box`);
+    return parts.length > 0 ? parts.join(' + ') : `${item.qty ?? 0} box`;
   }
   return String(item.qty ?? 0);
 }
@@ -70,25 +67,21 @@ function buildReceiptHtml(data) {
     const lineTotal = item.price * item.qty;
     const amtNum = Math.round(lineTotal).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     const qtyLabel = fmtQtyLabel(item);
-    const pn = (item.pieceName || 'pc').toLowerCase();
-    const cq = Number(item.cartonQty) || 0;
-    const bq = Number(item.boxQty) || 0;
-    const ctns = Number(item.cartons) || 0;
-    const boxNote = cq > 0 && (ctns > 0 || Number(item.boxes) > 0)
+    const cq   = Number(item.cartonQty || item.carton_qty) || 0;
+    const ctns = Number(item.ws_cartons ?? item.cartons)   || 0;
+    const bxs  = Number(item.ws_boxes  ?? item.boxes)      || 0;
+    const boxNote = cq > 0 && (ctns > 0 || bxs > 0)
       ? (() => {
-          const pcsPerCtn = bq > 0 ? cq * bq : cq;
-          if (bq > 0 && ctns > 0 && Number(item.boxes) > 0)
-            return `<div class="r-rate">${ctns}ctn×${cq}×${bq} + ${item.boxes}box×${bq} = ${item.qty} ${pn}</div>`;
-          if (bq > 0 && ctns > 0)
-            return `<div class="r-rate">${ctns}×${pcsPerCtn} = ${item.qty} ${pn}</div>`;
+          if (ctns > 0 && bxs > 0)
+            return `<div class="r-rate">${ctns}ctn×${cq} + ${bxs}box = ${item.qty}box</div>`;
           if (ctns > 0)
-            return `<div class="r-rate">${ctns}×${cq} = ${item.qty} ${pn}</div>`;
-          return '';
+            return `<div class="r-rate">${ctns}ctn × ${cq} = ${item.qty}box</div>`;
+          return `<div class="r-rate">${bxs} box</div>`;
         })()
       : '';
     return `<tr>
        <td class="r-qty">${qtyLabel}</td>
-       <td class="r-name">${esc(item.name)}${boxNote}<div class="r-rate">@ ${fmtPKR(item.price)}/pc</div></td>
+       <td class="r-name">${esc(item.name)}${boxNote}<div class="r-rate">@ ${fmtPKR(item.price)}/${cq > 0 ? 'box' : 'pc'}</div></td>
        <td class="r-amt">${amtNum}</td>
      </tr>`;
   }).join('');
@@ -190,20 +183,16 @@ function buildFormalInvoiceHtml(data) {
 
   const rowsHtml = data.items.map((item, idx) => {
     const qtyLabel = fmtQtyLabel(item);
-    const pn2 = (item.pieceName || 'pc').toLowerCase();
-    const cq2 = Number(item.cartonQty) || 0;
-    const bq2 = Number(item.boxQty) || 0;
-    const ctns2 = Number(item.cartons) || 0;
-    const boxNote  = cq2 > 0 && (ctns2 > 0 || Number(item.boxes) > 0)
+    const cq2   = Number(item.cartonQty || item.carton_qty) || 0;
+    const ctns2 = Number(item.ws_cartons ?? item.cartons)   || 0;
+    const bxs2  = Number(item.ws_boxes  ?? item.boxes)      || 0;
+    const boxNote = cq2 > 0 && (ctns2 > 0 || bxs2 > 0)
       ? (() => {
-          const pcsPerCtn2 = bq2 > 0 ? cq2 * bq2 : cq2;
-          if (bq2 > 0 && ctns2 > 0 && Number(item.boxes) > 0)
-            return `<div style="font-size:7pt;color:#888;margin-top:2px">${ctns2}ctn×${cq2}×${bq2} + ${item.boxes}box×${bq2} = ${item.qty} ${pn2}</div>`;
-          if (bq2 > 0 && ctns2 > 0)
-            return `<div style="font-size:7pt;color:#888;margin-top:2px">${ctns2}×${pcsPerCtn2} = ${item.qty} ${pn2}</div>`;
+          if (ctns2 > 0 && bxs2 > 0)
+            return `<div style="font-size:7pt;color:#888;margin-top:2px">${ctns2}ctn×${cq2} + ${bxs2}box = ${item.qty}box</div>`;
           if (ctns2 > 0)
-            return `<div style="font-size:7pt;color:#888;margin-top:2px">${ctns2}×${cq2} = ${item.qty} ${pn2}</div>`;
-          return '';
+            return `<div style="font-size:7pt;color:#888;margin-top:2px">${ctns2}ctn × ${cq2} = ${item.qty}box</div>`;
+          return `<div style="font-size:7pt;color:#888;margin-top:2px">${bxs2} box</div>`;
         })()
       : '';
     return `<tr class="item-row">
