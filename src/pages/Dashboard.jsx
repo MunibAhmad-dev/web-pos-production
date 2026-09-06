@@ -133,14 +133,14 @@ const fadeUp = {
 const PERIOD_OPTS = [['today', 'Today'], ['week', '7 Days'], ['month', 'Month'], ['year', 'Year'], ['custom', 'Custom']];
 
 const QUICK = [
-  { to: '/sales',          label: 'New Sale',   icon: ShoppingCart,  color: 'bg-emerald-500/10 text-emerald-600' },
-  { to: '/products',       label: 'Products',   icon: Package,       color: 'bg-blue-500/10 text-blue-600' },
-  { to: '/purchases',      label: 'Purchases',  icon: ClipboardList, color: 'bg-purple-500/10 text-purple-600' },
-  { to: '/inventory',      label: 'Inventory',  icon: Boxes,         color: 'bg-amber-500/10 text-amber-600' },
-  { to: '/customers',      label: 'Customers',  icon: Users,         color: 'bg-pink-500/10 text-pink-600' },
-  { to: '/vendors',        label: 'Vendors',    icon: Truck,         color: 'bg-indigo-500/10 text-indigo-600' },
-  { to: '/payment-ledger', label: 'Ledger',     icon: CreditCard,    color: 'bg-orange-500/10 text-orange-600' },
-  { to: '/reports',        label: 'Reports',    icon: BarChart3,     color: 'bg-cyan-500/10 text-cyan-600' },
+  { to: '/sales',          label: 'New Sale',   icon: ShoppingCart  },
+  { to: '/products',       label: 'Products',   icon: Package       },
+  { to: '/purchases',      label: 'Purchases',  icon: ClipboardList },
+  { to: '/inventory',      label: 'Inventory',  icon: Boxes         },
+  { to: '/customers',      label: 'Customers',  icon: Users         },
+  { to: '/vendors',        label: 'Vendors',    icon: Truck         },
+  { to: '/payment-ledger', label: 'Ledger',     icon: CreditCard    },
+  { to: '/reports',        label: 'Reports',    icon: BarChart3     },
 ];
 
 // ─── Sparkline (mini area chart) ──────────────────────────────────────────────
@@ -165,14 +165,14 @@ function Sparkline({ data = [], dataKey = 'value', color = '#3b82f6' }) {
 }
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ icon: Icon, label, value, sublabel, color, sparkData, sparkKey, sparkColor }) {
+function KpiCard({ icon: Icon, label, value, sublabel, accent, valueClass, sparkData, sparkKey, sparkColor }) {
   return (
-    <div className="rounded-2xl border border-border/50 bg-card shadow-sm p-5 flex flex-col">
-      <div className="flex items-start justify-between">
-        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', color)}><Icon size={18} /></div>
+    <div className={cn('rounded-2xl border bg-card p-5 flex flex-col', accent ? 'border-border/50 border-l-4' : 'border-border/50')} style={accent ? { borderLeftColor: accent } : {}}>
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-muted/60 text-muted-foreground">
+        <Icon size={16} />
       </div>
-      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mt-3">{label}</p>
-      <p className="text-2xl font-black font-mono mt-0.5">{value}</p>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-3">{label}</p>
+      <p className={cn('text-2xl font-black font-mono mt-0.5 tabular-nums', valueClass)}>{value}</p>
       {sublabel && <p className="text-xs text-muted-foreground mt-0.5">{sublabel}</p>}
       {sparkData?.length > 1 && <Sparkline data={sparkData} dataKey={sparkKey || 'value'} color={sparkColor || '#3b82f6'} />}
     </div>
@@ -504,19 +504,21 @@ export default function Dashboard() {
 
       {/* ── Period KPIs (Revenue / Gross Profit / Net Profit / Transactions / Today) ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={1} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
-        <KpiCard icon={DollarSign}    label="Period Revenue"  value={fmtPKR(pnl.totals.revenue)}    sublabel={periodLabel}   color="text-blue-600 bg-blue-500/10"     sparkData={revSparkline} sparkKey="value" sparkColor="#3b82f6" />
-        <KpiCard icon={TrendingUp}    label="Gross Profit"    value={fmtPKR(pnl.totals.gross)}      sublabel={`COGS: ${fmtPKR(pnl.totals.cogs)}`}   color="text-emerald-600 bg-emerald-500/10" sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: Math.max(0, d.gross) }))} sparkKey="value" sparkColor="#10b981" />
-        <KpiCard icon={TrendingDown}  label="Net Profit"      value={fmtPKR(pnl.totals.net)}        sublabel={`Exp: ${fmtPKR(pnl.totals.expenses)}`} color={pnl.totals.net >= 0 ? 'text-violet-600 bg-violet-500/10' : 'text-rose-600 bg-rose-500/10'} sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: d.net }))} sparkKey="value" sparkColor="#8b5cf6" />
-        <KpiCard icon={Activity}      label="Transactions"    value={localAnalytics.totals.sales}   sublabel={periodLabel}   color="text-purple-600 bg-purple-500/10" />
-        <KpiCard icon={Zap}           label="Today's Revenue" value={fmtPKR(todayRevenue)}           sublabel="vs this month" color="text-amber-600 bg-amber-500/10" />
+        <KpiCard icon={DollarSign}   label="Period Revenue"  value={fmtPKR(pnl.totals.revenue)}  sublabel={periodLabel}                            accent="var(--color-primary)"  valueClass="text-primary"                                                         sparkData={revSparkline} sparkKey="value" sparkColor="#3b82f6" />
+        <KpiCard icon={TrendingUp}   label="Gross Profit"    value={fmtPKR(pnl.totals.gross)}    sublabel={`COGS: ${fmtPKR(pnl.totals.cogs)}`}                                   valueClass="text-emerald-600 dark:text-emerald-400"                               sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: Math.max(0, d.gross) }))} sparkKey="value" sparkColor="#10b981" />
+        <KpiCard icon={TrendingDown} label="Net Profit"      value={fmtPKR(pnl.totals.net)}      sublabel={`Exp: ${fmtPKR(pnl.totals.expenses)}`}                                 valueClass={pnl.totals.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'} sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: d.net }))} sparkKey="value" sparkColor="#8b5cf6" />
+        <KpiCard icon={Activity}     label="Transactions"    value={localAnalytics.totals.sales} sublabel={periodLabel} />
+        <KpiCard icon={Zap}          label="Today's Revenue" value={fmtPKR(todayRevenue)}         sublabel="local midnight" />
       </motion.div>
 
       {/* ── Store KPIs (Stock / AR / Low Stock) ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2} className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard icon={Boxes}         label="Stock Value"     value={fmtPKR(stockStats.stockValue)}       sublabel="Total inventory at cost"              color="text-blue-600 bg-blue-500/10" />
-        <KpiCard icon={PiggyBank}     label="Retail Stock"    value={fmtPKR(stockStats.retailStockValue)} sublabel={`Profit: ${fmtPKR(stockStats.retailProfit)}`} color="text-emerald-600 bg-emerald-500/10" />
-        <KpiCard icon={Wallet}        label="Customer Credit" value={fmtPKR(customerAR.totalAR)}          sublabel={`${customerAR.debtors.length} debtors`}       color="text-purple-600 bg-purple-500/10" />
-        <KpiCard icon={AlertTriangle} label="Low Stock"       value={stockStats.lowStockCount}            sublabel="Below threshold"                              color={stockStats.lowStockCount > 0 ? 'text-rose-600 bg-rose-500/10' : 'text-muted-foreground bg-muted/40'} />
+        <KpiCard icon={Boxes}         label="Stock Value"     value={fmtPKR(stockStats.stockValue)}       sublabel="Inventory at cost" />
+        <KpiCard icon={PiggyBank}     label="Retail Stock"    value={fmtPKR(stockStats.retailStockValue)} sublabel={`Uplift: ${fmtPKR(stockStats.retailProfit)}`} />
+        <KpiCard icon={Wallet}        label="Customer Credit" value={fmtPKR(customerAR.totalAR)}          sublabel={`${customerAR.debtors.length} debtors`} />
+        <KpiCard icon={AlertTriangle} label="Low Stock"       value={stockStats.lowStockCount}            sublabel="Below threshold"
+          valueClass={stockStats.lowStockCount > 0 ? 'text-amber-600 dark:text-amber-400' : undefined}
+          accent={stockStats.lowStockCount > 0 ? '#f59e0b' : undefined} />
       </motion.div>
 
       {/* ── Accounts summary ── */}
@@ -586,7 +588,7 @@ export default function Dashboard() {
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={3} className="grid md:grid-cols-3 gap-6">
 
         {/* Revenue area chart */}
-        <div className="md:col-span-2 rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+        <div className="md:col-span-2 rounded-2xl border border-border/50 bg-card overflow-hidden">
           <div className="px-5 pt-5 pb-4 border-b bg-muted/5">
             <h2 className="text-sm font-bold">Revenue Trend</h2>
             <p className="text-xs text-muted-foreground">Daily sales — {periodLabel}</p>
@@ -615,7 +617,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stock donut */}
-        <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
           <div className="px-5 pt-5 pb-4 border-b bg-muted/5 flex items-center justify-between">
             <h2 className="text-sm font-bold">Stock Summary</h2>
             <Link to="/inventory" className="text-xs font-semibold text-primary hover:underline">View</Link>
@@ -674,7 +676,7 @@ export default function Dashboard() {
       {/* ── P&L ComposedChart (5 series) ── */}
       {pnl.series.length > 0 && (
         <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={4}>
-          <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+          <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
             <div className="px-5 pt-5 pb-4 border-b bg-muted/5 flex items-start justify-between">
               <div>
                 <h2 className="text-sm font-bold">Profit & Loss</h2>
@@ -736,7 +738,7 @@ export default function Dashboard() {
       {/* ── Payment method breakdown ── */}
       {paymentBreakdown.length > 0 && (
         <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={5}>
-          <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+          <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
             <div className="px-5 py-4 border-b bg-muted/10">
               <h2 className="text-base font-bold">Payment Methods</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Breakdown by payment type — {periodLabel}</p>
@@ -794,13 +796,13 @@ export default function Dashboard() {
 
       {/* ── Quick actions ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={6}>
-        <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
           <div className="px-5 py-4 border-b bg-muted/10"><h2 className="text-base font-bold">Quick Actions</h2></div>
           <div className="grid grid-cols-4 sm:grid-cols-8 gap-3 p-5">
-            {QUICK.map(({ to, label, icon: Icon, color }) => (
+            {QUICK.map(({ to, label, icon: Icon }) => (
               <Link key={to} to={to}
-                className="flex flex-col items-center gap-2 rounded-2xl border border-border/40 p-3 text-center hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-0.5 transition-all duration-200">
-                <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center', color)}><Icon size={16} /></div>
+                className="flex flex-col items-center gap-2 rounded-xl border border-border/50 p-3 text-center hover:border-primary/40 hover:bg-primary/5 hover:-translate-y-0.5 transition-all duration-150">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-muted/70 text-muted-foreground"><Icon size={16} /></div>
                 <span className="text-[10px] font-semibold text-muted-foreground">{label}</span>
               </Link>
             ))}
@@ -837,7 +839,7 @@ export default function Dashboard() {
       {/* ── AR / AP ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={8} className="grid md:grid-cols-2 gap-6">
         {/* Receivables */}
-        <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/10">
             <div className="flex items-center gap-2.5"><Users size={14} className="text-muted-foreground" /><h2 className="text-sm font-bold">Receivable (AR)</h2></div>
             <Link to="/payment-ledger" className="text-xs font-semibold text-primary hover:underline">View All</Link>
@@ -854,7 +856,7 @@ export default function Dashboard() {
         </div>
 
         {/* Payables */}
-        <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/10">
             <div className="flex items-center gap-2.5"><Truck size={14} className="text-muted-foreground" /><h2 className="text-sm font-bold">Payable (AP)</h2></div>
             <Link to="/payment-ledger" className="text-xs font-semibold text-primary hover:underline">View All</Link>
@@ -874,7 +876,7 @@ export default function Dashboard() {
       {/* ── Top products + Recent sales ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={9} className="grid md:grid-cols-2 gap-6">
         {topProducts.length > 0 && (
-          <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+          <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
             <div className="px-5 py-4 border-b bg-muted/10 flex items-center justify-between">
               <h2 className="text-sm font-bold">Top Products</h2>
               <span className="text-xs text-muted-foreground">{periodLabel}</span>
@@ -894,7 +896,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/10">
             <h2 className="text-sm font-bold">Recent Sales</h2>
             <Link to="/sales/history" className="text-xs font-semibold text-primary hover:underline">View All</Link>

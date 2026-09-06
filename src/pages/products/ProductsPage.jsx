@@ -42,12 +42,12 @@ function Sparkline({ color }) {
 // ─── KPI Stat Card ────────────────────────────────────────────────────────────
 function StatCard({ icon: Icon, label, value, sub, tint }) {
   return (
-    <div className="rounded-2xl border border-border/50 bg-card shadow-sm p-5">
+    <div className="rounded-2xl border border-border/50 bg-card p-5">
       <div className="flex items-center gap-3 mb-3">
-        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', tint.bg)}>
-          <Icon size={18} className={tint.icon} />
+        <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', tint.bg)}>
+          <Icon size={16} className={tint.icon} />
         </div>
-        <p className="text-sm font-semibold text-muted-foreground">{label}</p>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
       </div>
       <p className="text-2xl font-bold text-foreground tracking-tight">{value}</p>
       <div className="flex items-center justify-between mt-2">
@@ -1152,8 +1152,10 @@ export default function ProductsPage() {
   const openEdit = (p) => { setInitialProduct({ ...p }); setIsEditing(true); setShowDialog(true); };
 
   const margin = (p) => {
-    if (!p.purchase_price || p.purchase_price <= 0) return null;
-    return (((p.price - p.purchase_price) / p.price) * 100).toFixed(0);
+    if (!p.purchase_price || p.purchase_price <= 0 || !p.price || p.price <= 0) return null;
+    const pct = ((p.price - p.purchase_price) / p.price) * 100;
+    if (Math.abs(pct) > 500) return null;
+    return pct.toFixed(0);
   };
 
   const handleDelete = async (id) => {
@@ -1366,8 +1368,8 @@ export default function ProductsPage() {
       {/* ── Stats Cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { icon: Package, label: 'Total Products', value: products.length.toLocaleString(), sub: 'All time', tint: { icon: 'text-blue-500', bg: 'bg-blue-500/10', spark: '#3b82f6' }, delay: 1 },
-          { icon: Layers, label: 'Categories', value: stats.categories, sub: 'All time', tint: { icon: 'text-violet-500', bg: 'bg-violet-500/10', spark: '#8b5cf6' }, delay: 2 },
+          { icon: Package, label: 'Total Products', value: products.length.toLocaleString(), sub: 'All time', tint: { icon: 'text-muted-foreground', bg: 'bg-muted/60', spark: '#94a3b8' }, delay: 1 },
+          { icon: Layers, label: 'Categories', value: stats.categories, sub: 'All time', tint: { icon: 'text-muted-foreground', bg: 'bg-muted/60', spark: '#94a3b8' }, delay: 2 },
           { icon: Archive, label: 'In Stock', value: stats.totalStock.toLocaleString(), sub: 'Total units', tint: { icon: 'text-emerald-500', bg: 'bg-emerald-500/10', spark: '#10b981' }, delay: 3 },
           stats.negativeStock > 0
             ? { icon: TrendingDown, label: 'Negative Stock', value: stats.negativeStock, sub: 'Needs attention', tint: { icon: 'text-red-500', bg: 'bg-red-500/10', spark: '#ef4444' }, delay: 4 }
@@ -1381,7 +1383,7 @@ export default function ProductsPage() {
 
       {/* ── Products Table ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={5}>
-        <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
           {/* Table header / search */}
           <div className="p-5 border-b bg-muted/10">
             <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
@@ -1484,7 +1486,7 @@ export default function ProductsPage() {
                                   <TrendingDown size={9} />{stockVal}
                                 </span>
                               ) : isOut ? (
-                                <span className="inline-flex items-center font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-300 dark:border-slate-600">OUT</span>
+                                <span className="inline-flex items-center font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/25 dark:text-red-400">OUT</span>
                               ) : (
                                 <span className={cn('inline-flex items-center font-mono text-xs px-2 py-0.5 rounded-full border',
                                   isLow ? 'bg-amber-500/10 text-amber-600 border-amber-500/25' : 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
@@ -1588,7 +1590,7 @@ export default function ProductsPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               {/* Most Profitable */}
-              <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
+              <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
                 <div className="border-b bg-emerald-500/5 py-4 px-5">
                   <p className="text-sm font-semibold flex items-center gap-2 text-emerald-700 dark:text-emerald-400"><TrendingUp size={15} /> Most Profitable Products</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Based on total profit from sales</p>
@@ -1613,7 +1615,7 @@ export default function ProductsPage() {
 
               {/* Slow Movers + Issues */}
               <div className="flex flex-col gap-4">
-                <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
+                <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
                   <div className="border-b bg-orange-500/5 py-4 px-5">
                     <p className="text-sm font-semibold flex items-center gap-2 text-orange-600"><TrendingDown size={15} /> Slow Movers</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{analytics.slowMoversCount} products with zero sales</p>
@@ -1676,7 +1678,7 @@ export default function ProductsPage() {
 
             {/* Category Breakdown */}
             {analytics.categoryBreakdown.length > 0 && (
-              <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
+              <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
                 <div className="border-b py-4 px-5">
                   <p className="text-sm font-semibold flex items-center gap-2"><Layers size={14} /> Stock Value by Category</p>
                 </div>
