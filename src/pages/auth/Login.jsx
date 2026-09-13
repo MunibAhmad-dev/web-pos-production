@@ -154,7 +154,11 @@ export default function Login() {
       await login(form.mobile.trim(), form.password);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Unable to log in');
+      if (err.response?.status === 429) {
+        setError('Too many login attempts — please wait 15 minutes before trying again.');
+      } else {
+        setError(err.response?.data?.error || err.message || 'Unable to log in');
+      }
     } finally {
       setLoading(false);
     }
