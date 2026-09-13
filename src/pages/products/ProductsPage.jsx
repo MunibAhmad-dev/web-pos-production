@@ -76,7 +76,7 @@ const IMPORTABLE_FIELDS = [
 const FIELD_ALIASES = {
   name: ['name', 'product name', 'item name', 'product', 'title', 'item', 'naam'],
   price: ['price', 'selling price', 'sale price', 'retail price', 'mrp', 'rate', 'sp'],
-  purchase_price: ['purchase price', 'cost', 'cost price', 'buy price', 'cp', 'pp', 'purchase_price'],
+  purchase_price: ['purchase price', 'cost', 'cost price', 'buy price', 'cp', 'pp', 'purchase_price', 'purchase cost price'],
   stock: ['stock', 'quantity', 'qty', 'inventory', 'units', 'pieces', 'pcs', 'count', 'available'],
   category: ['category', 'cat', 'type', 'group', 'department', 'section'],
   barcode: ['barcode', 'sku', 'code', 'product code', 'item code', 'upc', 'ean'],
@@ -1038,6 +1038,7 @@ export default function ProductsPage() {
   const [importRows, setImportRows] = useState([]);
   const [importProgress, setImportProgress] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [importMode, setImportMode] = useState('add_new'); // 'add_new' | 'overwrite'
   const importFileInputRef = useRef(null);
 
   const products = list('product');
@@ -1283,7 +1284,9 @@ export default function ProductsPage() {
   };
 
   const executeImport = async () => {
-    const validRows = importRows.filter((r) => r._valid);
+    const validRows = importMode === 'add_new'
+      ? importRows.filter((r) => r._valid && !r._isUpdate)
+      : importRows.filter((r) => r._valid);
     if (!validRows.length) return;
     setIsImporting(true); setImportPhase('progress');
     setImportProgress({ done: 0, total: validRows.length, errors: [] });
@@ -1758,6 +1761,37 @@ export default function ProductsPage() {
                     <p className="text-xs text-muted-foreground">Any column names — we'll help you map them</p>
                     <input ref={importFileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} className="hidden" />
                   </div>
+                  {/* Import mode selector */}
+                  <div className="rounded-xl border border-border overflow-hidden">
+                    <div className="px-4 py-3 bg-muted/40 border-b border-border">
+                      <p className="text-xs font-semibold">Import Mode</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">What to do when a product already exists</p>
+                    </div>
+                    <div className="grid grid-cols-2 divide-x divide-border">
+                      {[
+                        { value: 'add_new', label: 'Add New Only', desc: 'Skip existing products — safe for first-time imports' },
+                        { value: 'overwrite', label: 'Add + Overwrite', desc: 'Update price, cost & stock for existing products too' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setImportMode(opt.value)}
+                          className={cn('p-3 text-left transition-colors', importMode === opt.value ? 'bg-primary/8' : 'bg-background hover:bg-muted/40')}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className={cn('w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0',
+                              importMode === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'
+                            )}>
+                              {importMode === opt.value && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                            <p className={cn('text-xs font-semibold', importMode === opt.value ? 'text-primary' : 'text-foreground')}>{opt.label}</p>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground pl-5">{opt.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/30">
                     <div>
                       <p className="text-sm font-semibold">Need a template?</p>
