@@ -13,7 +13,7 @@
  */
 
 const DB_NAME    = 'osatech_pos';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 
 export const WINDOW_DAYS = 60;
 
@@ -34,6 +34,10 @@ export const ALL_IDB_TYPES = [
   'stock_adjustment', 'customer_payment', 'vendor_payment',
   'expense', 'account', 'account_txn', 'register', 'financial_transaction',
   'warranty_claim', 'vendor_khata', 'vendor_khata_payment',
+  'customer_khata', 'customer_khata_payment',
+  'payment_reminder',
+  'attendance',
+  'godown_entry',
 ];
 
 // ── DB lifecycle ──────────────────────────────────────────────────────────────

@@ -20,6 +20,10 @@ import {
   TrendingUp,
   Settings,
   Scale,
+  MapPin,
+  Tag,
+  BellRing,
+  Warehouse,
 } from 'lucide-react';
 
 export const navGroups = [
@@ -37,7 +41,9 @@ export const navGroups = [
     emoji: '📦',
     items: [
       { to: '/products', label: 'Products', icon: Package },
+      { to: '/wholesale', label: 'Wholesale Prices', icon: Tag },
       { to: '/inventory', label: 'Inventory', icon: Boxes },
+      { to: '/godown', label: 'Godown', icon: Warehouse },
       { to: '/vendors', label: 'Vendors', icon: Truck },
       { to: '/purchases', label: 'Purchases / POs', icon: ClipboardList },
       { to: '/returns', label: 'Returns', icon: Undo2 },
@@ -49,6 +55,8 @@ export const navGroups = [
     emoji: '👥',
     items: [
       { to: '/customers', label: 'Customers', icon: Users },
+      { to: '/route-book', label: 'Route Book', icon: MapPin },
+      { to: '/payment-reminders', label: 'Payment Reminders', icon: BellRing },
       { to: '/employees', label: 'Employees', icon: UserCog },
     ],
   },

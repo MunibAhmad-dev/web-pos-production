@@ -3,9 +3,11 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { Store, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { navGroups } from './navConfig';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 
 export default function SidebarNav({ className = '', collapsible = false, collapsed: collapsedProp, onToggleCollapsed }) {
   const location = useLocation();
+  const { user } = useAuth();
 
   const [internalCollapsed, setInternalCollapsed] = useState(() => {
     if (!collapsible) return false;
@@ -86,8 +88,8 @@ export default function SidebarNav({ className = '', collapsible = false, collap
         </div>
         {!isCollapsed && (
           <div className="min-w-0">
-            <p className="truncate text-sm leading-none font-bold">Retail POS</p>
-            <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">Store management</p>
+            <p className="truncate text-sm leading-none font-bold">{user?.store_name || 'Retail POS'}</p>
+            <p className="mt-0.5 text-[10px] font-medium text-muted-foreground truncate">{user?.owner_name || 'Store management'}</p>
           </div>
         )}
       </div>

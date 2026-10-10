@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from 'react';
-import { Eye, Ban, Pencil, ChevronDown, Clock } from 'lucide-react';
+import { Eye, Ban, Pencil, ChevronDown, Clock, Download, FileText, RefreshCw, History } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { WINDOW_DAYS } from '../../store/idb';
 import { useToast } from '../../context/ToastContext';
@@ -11,6 +11,96 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import EditSaleModal from '../../components/sales/EditSaleModal';
 import { DatePicker } from '@/components/form/date-picker';
 import { formatCurrency, formatDateTime } from '../../utils/format';
+
+async function exportSalesPDF(sales, customerById, itemsBySale, storeName = 'Store', from = '', to = '') {
+  const html2pdf = (await import('html2pdf.js')).default;
+  const today = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
+  const dateRange = from && to ? `${from} – ${to}` : from ? `From ${from}` : to ? `To ${to}` : 'All Time';
+
+  const totalRevenue = sales.filter(s => s.status === 'Completed').reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const totalDiscount = sales.filter(s => s.status === 'Completed').reduce((sum, s) => sum + Number(s.discount || 0), 0);
+  const completedCount = sales.filter(s => s.status === 'Completed').length;
+
+  const rows = sales.map((s, i) => {
+    const cust = customerById.get(String(s.customer_id))?.name || 'Walk-in';
+    const items = (itemsBySale.get(String(s.id)) || []).length;
+    const isCancelled = s.status === 'Cancelled';
+    return `<tr style="border-bottom:1px solid #f3f4f6;${isCancelled ? 'opacity:.55' : i % 2 !== 0 ? 'background:#f9fafb' : ''}">
+      <td style="padding:7px 8px;font-size:11px;text-align:center;color:#6b7280">${i + 1}</td>
+      <td style="padding:7px 8px;font-weight:700;font-size:11px;font-family:monospace">INV-${String(s.id).slice(-6).toUpperCase()}</td>
+      <td style="padding:7px 8px;font-size:11px">${cust}</td>
+      <td style="padding:7px 8px;font-size:11px;text-align:center">${items}</td>
+      <td style="padding:7px 8px;font-size:11px;text-align:right;color:#374151">${Number(s.subtotal || 0).toLocaleString()}</td>
+      <td style="padding:7px 8px;font-size:11px;text-align:right;color:#d97706">${Number(s.discount || 0) > 0 ? Number(s.discount).toLocaleString() : '—'}</td>
+      <td style="padding:7px 8px;font-size:12px;text-align:right;font-weight:700">${Number(s.total || 0).toLocaleString()}</td>
+      <td style="padding:7px 8px;font-size:11px;text-align:center"><span style="padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700;background:${isCancelled ? '#fee2e2' : '#d1fae5'};color:${isCancelled ? '#dc2626' : '#059669'}">${s.status}</span></td>
+      <td style="padding:7px 8px;font-size:10px;color:#6b7280">${new Date(s.date_created || 0).toLocaleDateString('en-PK', { day:'2-digit', month:'short', year:'numeric' })}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<div style="font-family:Arial,sans-serif;padding:16px;color:#111">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:14px">
+      <div>
+        <h1 style="margin:0;font-size:20px;font-weight:900;color:#1d4ed8">SALES REPORT</h1>
+        <p style="margin:4px 0 0;font-size:13px;font-weight:700;color:#374151">${storeName}</p>
+        <p style="margin:2px 0 0;font-size:11px;color:#6b7280">Period: ${dateRange}</p>
+      </div>
+      <div style="text-align:right">
+        <p style="margin:0;font-size:12px;color:#6b7280">Exported: <strong>${today}</strong></p>
+        <p style="margin:4px 0 0;font-size:11px;color:#6b7280">${sales.length} transactions · ${completedCount} completed</p>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
+      <div style="background:#dbeafe;border-radius:8px;padding:10px">
+        <p style="margin:0;font-size:10px;font-weight:700;color:#1e40af;text-transform:uppercase">Total Revenue</p>
+        <p style="margin:4px 0 0;font-size:16px;font-weight:900;color:#1d4ed8">PKR ${Math.round(totalRevenue).toLocaleString()}</p>
+      </div>
+      <div style="background:#fef3c7;border-radius:8px;padding:10px">
+        <p style="margin:0;font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase">Total Discounts</p>
+        <p style="margin:4px 0 0;font-size:16px;font-weight:900;color:#d97706">PKR ${Math.round(totalDiscount).toLocaleString()}</p>
+      </div>
+      <div style="background:#d1fae5;border-radius:8px;padding:10px">
+        <p style="margin:0;font-size:10px;font-weight:700;color:#065f46;text-transform:uppercase">Net (After Disc.)</p>
+        <p style="margin:4px 0 0;font-size:16px;font-weight:900;color:#059669">PKR ${Math.round(totalRevenue).toLocaleString()}</p>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:#1d4ed8;color:#fff">
+          <th style="padding:7px 8px;text-align:center;width:25px">#</th>
+          <th style="padding:7px 8px;text-align:left">Invoice</th>
+          <th style="padding:7px 8px;text-align:left">Customer</th>
+          <th style="padding:7px 8px;text-align:center">Items</th>
+          <th style="padding:7px 8px;text-align:right">Subtotal</th>
+          <th style="padding:7px 8px;text-align:right">Disc.</th>
+          <th style="padding:7px 8px;text-align:right">Total (PKR)</th>
+          <th style="padding:7px 8px;text-align:center">Status</th>
+          <th style="padding:7px 8px;text-align:left">Date</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr style="background:#f3f4f6;font-weight:900;border-top:2px solid #e5e7eb">
+          <td colspan="4" style="padding:8px;text-align:right;font-size:12px">TOTAL (Completed)</td>
+          <td colspan="2" style="padding:8px"></td>
+          <td style="padding:8px;text-align:right;color:#1d4ed8;font-size:14px">PKR ${Math.round(totalRevenue).toLocaleString()}</td>
+          <td colspan="2"></td>
+        </tr>
+      </tfoot>
+    </table>
+    <p style="margin-top:14px;font-size:9px;color:#9ca3af;text-align:center">Generated by OsaTech POS · ${today}</p>
+  </div>`;
+
+  const el = document.createElement('div');
+  el.innerHTML = html;
+  document.body.appendChild(el);
+  const filename = `Sales-Report-${from || 'start'}-to-${to || 'end'}.pdf`;
+  await html2pdf().set({
+    margin: 8, filename,
+    html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+  }).from(el).save();
+  document.body.removeChild(el);
+}
 
 const statusTone = { Completed: 'green', Cancelled: 'red' };
 
@@ -32,6 +122,10 @@ export default function SalesHistoryPage() {
   const [cancelling, setCancelling] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [noMoreOlder, setNoMoreOlder] = useState(false);
+  const [exportingPDF, setExportingPDF] = useState(false);
+
+  const allSettings = list('settings');
+  const storeName = allSettings?.[0]?.store_name || allSettings?.[0]?.business_name || 'My Store';
 
   const sales = list('sale');
   const saleItems = list('sale_item');
@@ -232,19 +326,36 @@ export default function SalesHistoryPage() {
     },
   ];
 
+  const handleExportPDF = async () => {
+    setExportingPDF(true);
+    try {
+      await exportSalesPDF(filteredSales, customerById, itemsBySale, storeName, from, to);
+      showToast('Sales report exported');
+    } catch (err) { showToast(err.message || 'Export failed', 'error'); }
+    finally { setExportingPDF(false); }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Sales History</h2>
-          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/15"><History size={16} className="text-blue-500" /></div>
+            <h2 className="text-lg font-bold text-ink">Sales History</h2>
+          </div>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5 ml-[44px]">
             <Clock size={12} className="shrink-0" />
             Showing last {WINDOW_DAYS} days · use date filter or load older below
           </p>
         </div>
-        <div className="flex gap-2">
-          <DatePicker label="From" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" />
-          <DatePicker label="To" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <DatePicker label="From" value={from} onChange={(e) => setFrom(e.target.value)} className="w-36" />
+          <DatePicker label="To" value={to} onChange={(e) => setTo(e.target.value)} className="w-36" />
+          <button onClick={handleExportPDF} disabled={exportingPDF || filteredSales.length === 0}
+            className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-colors disabled:opacity-40">
+            {exportingPDF ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
+            {exportingPDF ? 'Exporting…' : 'Export PDF'}
+          </button>
         </div>
       </div>
 

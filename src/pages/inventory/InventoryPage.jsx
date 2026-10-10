@@ -6,7 +6,7 @@ import {
   Package, Search, RefreshCw, FolderTree, X,
   Calendar, Truck, AlertTriangle, ArrowUpDown, PlusCircle, MinusCircle,
   Info, ChevronRight, BarChart3, Layers,
-  TrendingDown, ShieldCheck, History, Warehouse, FileText, Loader2
+  TrendingDown, ShieldCheck, History, Warehouse, FileText, Loader2, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -180,6 +180,7 @@ export default function InventoryPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [sortBy, setSortBy] = useState('name');
   const [showStockReport, setShowStockReport] = useState(false);
+  const [exportingPDF, setExportingPDF] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState(new Set());
 
   const CAT_PAGE_SIZE = 24;
@@ -363,6 +364,59 @@ export default function InventoryPage() {
               <h1 className="text-2xl font-bold tracking-tight text-foreground">Inventory</h1>
               <p className="text-sm text-muted-foreground mt-0.5">Track and manage your stock in real-time</p>
             </div>
+            <button onClick={async () => {
+              if (exportingPDF || filteredProducts.length === 0) return;
+              setExportingPDF(true);
+              try {
+                const html2pdf = (await import('html2pdf.js')).default;
+                const allSettings = list('settings');
+                const storeName = allSettings?.[0]?.store_name || allSettings?.[0]?.business_name || 'My Store';
+                const rows = filteredProducts.map((p) => {
+                  const stock = Number(p.stock || 0);
+                  const stockClass = stock <= 0 ? 'out' : stock < threshold ? 'low' : 'ok';
+                  return `<tr>
+                    <td>${p.name || '—'}</td>
+                    <td>${p.category || '—'}</td>
+                    <td class="num">${p.barcode || '—'}</td>
+                    <td class="num">PKR ${Math.round(Number(p.price || 0)).toLocaleString('en-PK')}</td>
+                    <td class="num ${stockClass}">${stock}</td>
+                    <td>${p.unit || 'pcs'}</td>
+                  </tr>`;
+                }).join('');
+                const el = document.createElement('div');
+                el.innerHTML = `<style>
+                  body{font-family:Arial,sans-serif;font-size:11px;color:#111}
+                  h2{font-size:16px;margin:0 0 2px}p.sub{font-size:10px;color:#666;margin:0 0 12px}
+                  table{width:100%;border-collapse:collapse}
+                  th{background:#1e40af;color:#fff;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+                  td{padding:6px 10px;border-bottom:1px solid #e2e8f0}
+                  tr:nth-child(even) td{background:#eff6ff}
+                  .num{text-align:right;font-variant-numeric:tabular-nums}
+                  .ok{color:#16a34a;font-weight:700}.low{color:#d97706;font-weight:700}.out{color:#dc2626;font-weight:700}
+                  .summary{margin-top:14px;padding-top:10px;border-top:2px solid #1e40af;display:flex;gap:24px}
+                  .summary .item{display:flex;flex-direction:column;gap:2px}
+                  .summary .label{font-size:9px;text-transform:uppercase;color:#666;letter-spacing:.05em}
+                  .summary .val{font-size:14px;font-weight:700}
+                </style>
+                <h2>${storeName} — Inventory Report</h2>
+                <p class="sub">Generated ${new Date().toLocaleDateString('en-PK',{day:'2-digit',month:'long',year:'numeric'})} · ${filteredProducts.length} products</p>
+                <table><thead><tr><th>Product Name</th><th>Category</th><th style="text-align:right">Barcode</th><th style="text-align:right">Price</th><th style="text-align:right">Stock</th><th>Unit</th></tr></thead><tbody>${rows}</tbody></table>
+                <div class="summary">
+                  <div class="item"><span class="label">Total Products</span><span class="val">${filteredProducts.length}</span></div>
+                  <div class="item"><span class="label">Low Stock</span><span class="val" style="color:#d97706">${prodStats.lowStock}</span></div>
+                  <div class="item"><span class="label">Out of Stock</span><span class="val" style="color:#dc2626">${prodStats.outOfStock}</span></div>
+                </div>`;
+                await html2pdf().set({
+                  margin:10, filename:`Inventory-${new Date().toISOString().slice(0,10)}.pdf`,
+                  html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'landscape'},
+                }).from(el).save();
+              } catch(err){ console.error('PDF export failed',err); }
+              finally{ setExportingPDF(false); }
+            }} disabled={exportingPDF}
+              className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-colors disabled:opacity-40 shrink-0">
+              {exportingPDF ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
+              {exportingPDF ? 'Exporting…' : 'Stock Report PDF'}
+            </button>
           </motion.div>
 
           {/* ── KPI Strip ── */}

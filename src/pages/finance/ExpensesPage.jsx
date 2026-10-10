@@ -3,7 +3,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, Plus, Trash2, FileText, Activity,
-  X, TrendingDown, Layers, BarChart2, CalendarDays,
+  X, TrendingDown, Layers, BarChart2, CalendarDays, Download, RefreshCw,
 } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -92,6 +92,7 @@ export default function ExpensesPage() {
 
   /* ── Delete state ── */
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   /* ── Data ── */
   const allExpenses = useMemo(
@@ -456,10 +457,59 @@ export default function ExpensesPage() {
           <div className="flex items-center gap-2">
             <Layers size={14} className="text-muted-foreground" />
             <span className="text-sm font-semibold">Expense Ledger</span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              · {expenses.length} record{expenses.length !== 1 ? 's' : ''}
+            </span>
           </div>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {expenses.length} record{expenses.length !== 1 ? 's' : ''}
-          </span>
+          <button onClick={async () => {
+            if (exportingPDF || expenses.length === 0) return;
+            setExportingPDF(true);
+            try {
+              const html2pdf = (await import('html2pdf.js')).default;
+              const allSettings = list('settings');
+              const storeName = allSettings?.[0]?.store_name || allSettings?.[0]?.business_name || 'My Store';
+              const rows = expenses.map((e) => `<tr>
+                <td>${formatDate(e.date_created)}</td>
+                <td>${e.description || '—'}</td>
+                <td>${e.category || 'Uncategorized'}</td>
+                <td>${e.payment_method || 'cash'}</td>
+                <td class="num">PKR ${Math.round(Number(e.amount || 0)).toLocaleString('en-PK')}</td>
+              </tr>`).join('');
+              const el = document.createElement('div');
+              el.innerHTML = `<style>
+                body{font-family:Arial,sans-serif;font-size:11px;color:#111}
+                h2{font-size:16px;margin:0 0 2px}p.sub{font-size:10px;color:#666;margin:0 0 12px}
+                table{width:100%;border-collapse:collapse}
+                th{background:#be123c;color:#fff;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+                td{padding:6px 10px;border-bottom:1px solid #e2e8f0}
+                tr:nth-child(even) td{background:#fff1f2}
+                .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+                .summary{margin-top:14px;padding-top:10px;border-top:2px solid #be123c;font-size:11px;display:flex;gap:24px}
+                .summary .item{display:flex;flex-direction:column;gap:2px}
+                .summary .label{font-size:9px;text-transform:uppercase;color:#666;letter-spacing:.05em}
+                .summary .val{font-size:14px;font-weight:700}
+              </style>
+              <h2>${storeName} — Expense Ledger</h2>
+              <p class="sub">Generated ${new Date().toLocaleDateString('en-PK',{day:'2-digit',month:'long',year:'numeric'})} · ${expenses.length} records</p>
+              <table><thead><tr>
+                <th>Date</th><th>Description</th><th>Category</th><th>Payment</th><th style="text-align:right">Amount (PKR)</th>
+              </tr></thead><tbody>${rows}</tbody></table>
+              <div class="summary">
+                <div class="item"><span class="label">Records</span><span class="val">${expenses.length}</span></div>
+                <div class="item"><span class="label">Total</span><span class="val" style="color:#be123c">PKR ${Math.round(totalFiltered).toLocaleString('en-PK')}</span></div>
+                <div class="item"><span class="label">Average</span><span class="val">PKR ${Math.round(avgExpense).toLocaleString('en-PK')}</span></div>
+              </div>`;
+              await html2pdf().set({
+                margin:10, filename:`Expenses-${new Date().toISOString().slice(0,10)}.pdf`,
+                html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'landscape'},
+              }).from(el).save();
+            } catch(err){ console.error('PDF export failed',err); }
+            finally{ setExportingPDF(false); }
+          }} disabled={exportingPDF || expenses.length === 0}
+            className="flex items-center gap-2 h-8 px-3 rounded-lg border border-border bg-background hover:bg-muted text-xs font-semibold transition-colors disabled:opacity-40">
+            {exportingPDF ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+            {exportingPDF ? 'Exporting…' : 'Export PDF'}
+          </button>
         </div>
 
         {/* Column headers */}

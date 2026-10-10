@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Menu, LogOut, Settings, Search, Bell, Package, AlertTriangle } from 'lucide-react';
+import { Menu, LogOut, Settings, Search, Bell, Package, AlertTriangle, BellRing } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useDataStore } from '@/store/dataStore';
@@ -31,7 +32,14 @@ function NotificationBell({ udharCount = 0 }) {
       .slice(0, 8);
   }, [list, threshold]);
 
-  const totalCount = lowStockItems.length + udharCount;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueReminders = useMemo(() => {
+    return list('payment_reminder').filter(
+      (r) => (r.status === 'pending' || !r.status) && r.due_date && r.due_date < today
+    );
+  }, [list, today]);
+
+  const totalCount = lowStockItems.length + udharCount + overdueReminders.length;
 
   useEffect(() => {
     if (!open) return;
@@ -119,6 +127,35 @@ function NotificationBell({ udharCount = 0 }) {
                     <div className="px-4 py-3 text-sm text-muted-foreground">
                       {udharCount} customer{udharCount !== 1 ? 's have' : ' has'} overdue payments.
                     </div>
+                  </div>
+                )}
+
+                {overdueReminders.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 bg-orange-500/5 px-4 py-2">
+                      <BellRing size={11} className="text-orange-500" />
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-orange-600">
+                        Payment Reminders — {overdueReminders.length} overdue
+                      </p>
+                    </div>
+                    {overdueReminders.slice(0, 4).map((r) => (
+                      <div key={r.id} className="flex items-center gap-3 border-b border-border/30 px-4 py-2.5 last:border-0 hover:bg-accent/50 transition-colors">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/10">
+                          <BellRing size={13} className="text-orange-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-foreground">{r.title}</p>
+                          {r.amount > 0 && (
+                            <p className="text-xs font-semibold text-orange-600">PKR {Math.round(r.amount).toLocaleString('en-PK')} due</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {overdueReminders.length > 4 && (
+                      <Link to="/payment-reminders" onClick={() => setOpen(false)} className="block px-4 py-2 text-xs text-center text-primary hover:underline">
+                        View all {overdueReminders.length} reminders →
+                      </Link>
+                    )}
                   </div>
                 )}
               </>

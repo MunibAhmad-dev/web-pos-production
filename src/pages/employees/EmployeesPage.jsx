@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Users, UserPlus, BadgeDollarSign, HandCoins, Briefcase, Pencil, Trash2, History, Wallet, Search } from 'lucide-react';
+import { Users, UserPlus, BadgeDollarSign, HandCoins, Briefcase, Pencil, Trash2, History, Wallet, Search, Download, RefreshCw, CalendarDays } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -7,6 +7,7 @@ import EmployeeFormModal from '../../components/employees/EmployeeFormModal';
 import GiveUdharModal from '../../components/employees/GiveUdharModal';
 import PaySalaryModal from '../../components/employees/PaySalaryModal';
 import EmployeeHistoryModal from '../../components/employees/EmployeeHistoryModal';
+import AttendanceModal from '../../components/employees/AttendanceModal';
 import { formatCurrency, formatDateTime } from '../../utils/format';
 
 function cn(...classes) {
@@ -29,7 +30,7 @@ function KpiCard({ label, value, iconClass, Icon }) {
 }
 
 // ── Employee card ─────────────────────────────────────────────────────────────
-function EmployeeCard({ employee, onPay, onUdhar, onSalaryHistory, onUdharHistory, onEdit, onDelete }) {
+function EmployeeCard({ employee, onPay, onUdhar, onSalaryHistory, onUdharHistory, onAttendance, onEdit, onDelete }) {
   const balance = Number(employee.outstanding_balance || 0);
   const isActive = employee.is_active !== 0;
 
@@ -110,6 +111,13 @@ function EmployeeCard({ employee, onPay, onUdhar, onSalaryHistory, onUdharHistor
           <HandCoins size={13} /> Udhar
         </button>
         <button
+          onClick={onAttendance}
+          title="Attendance"
+          className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+        >
+          <CalendarDays size={13} />
+        </button>
+        <button
           onClick={onSalaryHistory}
           title="Salary History"
           className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-violet-500 hover:bg-violet-500/10 transition-colors"
@@ -158,7 +166,9 @@ export default function EmployeesPage() {
   const [udharTarget, setUdharTarget] = useState(null);
   const [payTarget, setPayTarget] = useState(null);
   const [historyTarget, setHistoryTarget] = useState(null);
+  const [attendanceTarget, setAttendanceTarget] = useState(null);
   const [empSearch, setEmpSearch] = useState('');
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   const activeEmployees = employees.filter((e) => e.is_active !== 0);
   const monthlyPayroll = activeEmployees.reduce((sum, e) => sum + Number(e.monthly_salary || 0), 0);
@@ -288,12 +298,63 @@ export default function EmployeesPage() {
             Payroll, salary history, and udhar (advances / goods taken)
           </p>
         </div>
-        <button
-          onClick={() => { setEditing(null); setModalOpen(true); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm transition-colors flex-shrink-0"
-        >
-          <UserPlus size={15} /> Add Employee
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={async () => {
+            if (exportingPDF || filteredEmployees.length === 0) return;
+            setExportingPDF(true);
+            try {
+              const html2pdf = (await import('html2pdf.js')).default;
+              const allSettings = list('settings');
+              const storeName = allSettings?.[0]?.store_name || allSettings?.[0]?.business_name || 'My Store';
+              const rows = filteredEmployees.map((emp) => `<tr>
+                <td>${emp.name || '—'}</td>
+                <td>${emp.role || emp.position || '—'}</td>
+                <td>${emp.phone || '—'}</td>
+                <td class="num">PKR ${Math.round(Number(emp.monthly_salary || 0)).toLocaleString('en-PK')}</td>
+                <td class="num ${Number(emp.outstanding_balance || 0) > 0 ? 'due' : 'ok'}">${Number(emp.outstanding_balance || 0) > 0 ? 'PKR ' + Math.round(Number(emp.outstanding_balance)).toLocaleString('en-PK') : 'Nil'}</td>
+                <td><span style="padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;background:${emp.is_active !== 0 ? '#dcfce7' : '#fee2e2'};color:${emp.is_active !== 0 ? '#15803d' : '#b91c1c'}">${emp.is_active !== 0 ? 'ACTIVE' : 'INACTIVE'}</span></td>
+              </tr>`).join('');
+              const el = document.createElement('div');
+              el.innerHTML = `<style>
+                body{font-family:Arial,sans-serif;font-size:11px;color:#111}
+                h2{font-size:16px;margin:0 0 2px}p.sub{font-size:10px;color:#666;margin:0 0 12px}
+                table{width:100%;border-collapse:collapse}
+                th{background:#065f46;color:#fff;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+                td{padding:6px 10px;border-bottom:1px solid #e2e8f0}
+                tr:nth-child(even) td{background:#f0fdf4}
+                .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+                .ok{color:#16a34a}.due{color:#b91c1c}
+                .summary{margin-top:14px;padding-top:10px;border-top:2px solid #065f46;font-size:11px;display:flex;gap:24px}
+                .summary .item{display:flex;flex-direction:column;gap:2px}
+                .summary .label{font-size:9px;text-transform:uppercase;color:#666;letter-spacing:.05em}
+                .summary .val{font-size:14px;font-weight:700}
+              </style>
+              <h2>${storeName} — Employees Directory</h2>
+              <p class="sub">Generated ${new Date().toLocaleDateString('en-PK',{day:'2-digit',month:'long',year:'numeric'})} · ${filteredEmployees.length} employees</p>
+              <table><thead><tr><th>Name</th><th>Role</th><th>Phone</th><th style="text-align:right">Salary/Mo</th><th style="text-align:right">Udhar Owed</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+              <div class="summary">
+                <div class="item"><span class="label">Active</span><span class="val">${activeEmployees.length}</span></div>
+                <div class="item"><span class="label">Monthly Payroll</span><span class="val">PKR ${Math.round(monthlyPayroll).toLocaleString('en-PK')}</span></div>
+                <div class="item"><span class="label">Total Udhar</span><span class="val" style="color:#b91c1c">PKR ${Math.round(totalUdharOwed).toLocaleString('en-PK')}</span></div>
+              </div>`;
+              await html2pdf().set({
+                margin:10, filename:`Employees-${new Date().toISOString().slice(0,10)}.pdf`,
+                html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'landscape'},
+              }).from(el).save();
+            } catch(err){ console.error('PDF export failed',err); }
+            finally{ setExportingPDF(false); }
+          }} disabled={exportingPDF || filteredEmployees.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-colors disabled:opacity-40 flex-shrink-0">
+            {exportingPDF ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+            {exportingPDF ? 'Exporting…' : 'Export PDF'}
+          </button>
+          <button
+            onClick={() => { setEditing(null); setModalOpen(true); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm transition-colors flex-shrink-0"
+          >
+            <UserPlus size={15} /> Add Employee
+          </button>
+        </div>
       </div>
 
       {/* KPI strip */}
@@ -350,6 +411,7 @@ export default function EmployeesPage() {
               onUdhar={() => setUdharTarget(emp)}
               onSalaryHistory={() => setHistoryTarget({ employee: emp, tab: 'salary' })}
               onUdharHistory={() => setHistoryTarget({ employee: emp, tab: 'udhar' })}
+              onAttendance={() => setAttendanceTarget(emp)}
               onEdit={() => { setEditing(emp); setModalOpen(true); }}
               onDelete={() => setDeleteTarget(emp)}
             />
@@ -415,6 +477,12 @@ export default function EmployeesPage() {
         description={`Remove "${deleteTarget?.name}"? This cannot be undone.`}
         confirmLabel="Remove"
       />
+      {attendanceTarget && (
+        <AttendanceModal
+          employee={attendanceTarget}
+          onClose={() => setAttendanceTarget(null)}
+        />
+      )}
     </div>
   );
 }

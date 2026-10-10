@@ -6,7 +6,7 @@ import {
   Plus, Minus, Search, Package, Truck, Receipt, X, CheckCircle,
   ShoppingCart, Tag, History, ChevronRight, Briefcase,
   Building2, Wallet, Trash2, Eye, Ban, PackageCheck,
-  HandCoins, AlertCircle, CreditCard, RotateCcw,
+  HandCoins, AlertCircle, CreditCard, RotateCcw, Download, RefreshCw,
 } from 'lucide-react';
 import { getModuleSettings } from '../../hooks/useModuleSettings';
 import { cn } from '@/lib/utils';
@@ -308,6 +308,7 @@ export default function PurchasesPage() {
   const [historyStatusFilter, setHistoryStatusFilter] = useState('all');
   const [historyDetail, setHistoryDetail] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   const products = list('product');
   const vendors = list('vendor');
@@ -545,6 +546,80 @@ export default function PurchasesPage() {
   }, [purchases, vendorPayments, vendors, historySearch, historyStatusFilter]);
 
   const { paged: pagedHistory, page: histPage, pageCount: histPageCount, setPage: setHistPage } = usePagination(historyRows, 30);
+
+  const handleExportPurchasesPDF = async () => {
+    if (exportingPDF || historyRows.length === 0) return;
+    setExportingPDF(true);
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const allSettings = list('settings');
+      const storeName = allSettings?.[0]?.store_name || allSettings?.[0]?.business_name || 'My Store';
+      const rows = historyRows.map((p) => `
+        <tr>
+          <td>${fmtPoRef(p.id, p.date_created)}</td>
+          <td>${p.vendorName || '—'}</td>
+          <td class="num">${Math.round(Number(p.grand_total || p.total || 0)).toLocaleString('en-PK')}</td>
+          <td class="num ok">${Math.round(p.amountPaid || 0).toLocaleString('en-PK')}</td>
+          <td class="num ${p.due > 0.5 ? 'due' : 'ok'}">${p.due > 0.5 ? Math.round(p.due).toLocaleString('en-PK') : 'Settled'}</td>
+          <td><span class="badge ${p.status}">${p.status.toUpperCase()}</span></td>
+          <td>${fmtDate(p.date_created)}</td>
+        </tr>`).join('');
+      const totalAmount = historyRows.reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
+      const totalPaid = historyRows.reduce((s, p) => s + (p.amountPaid || 0), 0);
+      const totalDue = historyRows.reduce((s, p) => s + (p.due || 0), 0);
+      const filterLabel = historyStatusFilter !== 'all' ? ` — ${historyStatusFilter.charAt(0).toUpperCase() + historyStatusFilter.slice(1)}` : '';
+      const el = document.createElement('div');
+      el.innerHTML = `
+        <style>
+          body { font-family: Arial, sans-serif; font-size: 11px; color: #111; }
+          h2 { font-size: 16px; margin: 0 0 2px; }
+          p.sub { font-size: 10px; color: #666; margin: 0 0 12px; }
+          table { width: 100%; border-collapse: collapse; }
+          th { background: #1e293b; color: #fff; padding: 7px 8px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+          td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          .num { text-align: right; font-variant-numeric: tabular-nums; }
+          .ok { color: #16a34a; font-weight: 600; }
+          .due { color: #b45309; font-weight: 600; }
+          .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; }
+          .badge.received { background: #dcfce7; color: #15803d; }
+          .badge.paid { background: #dbeafe; color: #1d4ed8; }
+          .badge.pending { background: #fef3c7; color: #92400e; }
+          .badge.cancelled { background: #fee2e2; color: #b91c1c; }
+          .summary { display: flex; gap: 24px; margin-top: 14px; padding-top: 10px; border-top: 2px solid #1e293b; font-size: 11px; }
+          .summary .item { display: flex; flex-direction: column; gap: 2px; }
+          .summary .label { font-size: 9px; text-transform: uppercase; color: #666; letter-spacing: .05em; }
+          .summary .val { font-size: 14px; font-weight: 700; }
+        </style>
+        <h2>${storeName} — Purchase Orders${filterLabel}</h2>
+        <p class="sub">Generated ${new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })} · ${historyRows.length} orders</p>
+        <table>
+          <thead><tr>
+            <th>PO #</th><th>Vendor</th><th style="text-align:right">Total (PKR)</th>
+            <th style="text-align:right">Paid (PKR)</th><th style="text-align:right">Balance</th>
+            <th>Status</th><th>Date</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="summary">
+          <div class="item"><span class="label">Total Orders</span><span class="val">${historyRows.length}</span></div>
+          <div class="item"><span class="label">Total Amount</span><span class="val">PKR ${Math.round(totalAmount).toLocaleString('en-PK')}</span></div>
+          <div class="item"><span class="label">Total Paid</span><span class="val" style="color:#16a34a">PKR ${Math.round(totalPaid).toLocaleString('en-PK')}</span></div>
+          <div class="item"><span class="label">Outstanding</span><span class="val" style="color:#b45309">PKR ${Math.round(totalDue).toLocaleString('en-PK')}</span></div>
+        </div>`;
+      const today = new Date().toISOString().slice(0, 10);
+      await html2pdf().set({
+        margin: 10,
+        filename: `Purchases-${filterLabel.trim() || 'All'}-${today}.pdf`,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+      }).from(el).save();
+    } catch (err) {
+      console.error('PDF export failed', err);
+    } finally {
+      setExportingPDF(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6 w-full">
@@ -859,13 +934,20 @@ export default function PurchasesPage() {
                 <input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="Search by vendor, PO number..."
                   className="w-full h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-muted/20 focus:outline-none" />
               </div>
-              <div className="flex gap-1 p-1 rounded-xl bg-muted/60 border border-border/40">
-                {[['all', 'All'], ['pending', 'Pending'], ['received', 'Received'], ['paid', 'Paid'], ['cancelled', 'Cancelled']].map(([val, label]) => (
-                  <button key={val} onClick={() => setHistoryStatusFilter(val)}
-                    className={cn('px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200', historyStatusFilter === val ? 'bg-background text-foreground shadow-sm border border-border/60' : 'text-muted-foreground hover:text-foreground')}>
-                    {label}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex gap-1 p-1 rounded-xl bg-muted/60 border border-border/40">
+                  {[['all', 'All'], ['pending', 'Pending'], ['received', 'Received'], ['paid', 'Paid'], ['cancelled', 'Cancelled']].map(([val, label]) => (
+                    <button key={val} onClick={() => setHistoryStatusFilter(val)}
+                      className={cn('px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200', historyStatusFilter === val ? 'bg-background text-foreground shadow-sm border border-border/60' : 'text-muted-foreground hover:text-foreground')}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={handleExportPurchasesPDF} disabled={exportingPDF || historyRows.length === 0}
+                  className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-colors disabled:opacity-40">
+                  {exportingPDF ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
+                  {exportingPDF ? 'Exporting…' : 'Export PDF'}
+                </button>
               </div>
             </div>
 

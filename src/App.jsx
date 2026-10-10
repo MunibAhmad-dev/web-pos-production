@@ -17,11 +17,15 @@ import Register from './pages/auth/Register';
 import PendingApproval from './pages/auth/PendingApproval';
 import Dashboard from './pages/Dashboard';
 import ProductsPage from './pages/products/ProductsPage';
+import WholesalePricelist from './pages/products/WholesalePricelist';
 import InventoryPage from './pages/inventory/InventoryPage';
+import GodownPage from './pages/inventory/GodownPage';
 import POSPage from './pages/sales/POSPage';
 import SalesHistoryPage from './pages/sales/SalesHistoryPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
+import RouteBookPage from './pages/customers/RouteBookPage';
+import PaymentRemindersPage from './pages/customers/PaymentRemindersPage';
 import VendorsPage from './pages/vendors/VendorsPage';
 import VendorDetailPage from './pages/vendors/VendorDetailPage';
 import EmployeesPage from './pages/employees/EmployeesPage';
@@ -118,7 +122,9 @@ export default function App() {
                   <Route path="/sales" element={<POSPage />} />
                   <Route path="/sales/history" element={<SalesHistoryPage />} />
                   <Route path="/products" element={<ProductsPage />} />
+                  <Route path="/wholesale" element={<WholesalePricelist />} />
                   <Route path="/inventory" element={<InventoryPage />} />
+                  <Route path="/godown" element={<GodownPage />} />
                   <Route path="/vendors" element={<VendorsPage />} />
                   <Route path="/vendors/:id" element={<VendorDetailPage />} />
                   <Route path="/purchases" element={<PurchasesPage />} />
@@ -126,6 +132,8 @@ export default function App() {
                   <Route path="/warranty" element={<WarrantyPage />} />
                   <Route path="/customers" element={<CustomersPage />} />
                   <Route path="/customers/:id" element={<CustomerDetailPage />} />
+                  <Route path="/route-book" element={<RouteBookPage />} />
+                  <Route path="/payment-reminders" element={<PaymentRemindersPage />} />
                   <Route path="/employees" element={<EmployeesPage />} />
                   <Route path="/accounts" element={<AccountsPage />} />
                   <Route path="/expenses" element={<ExpensesPage />} />

@@ -34,8 +34,13 @@ const PLURAL_TO_SINGULAR = {
   registers:             'register',
   financial_transactions:'financial_transaction',
   warranty_claims:       'warranty_claim',
-  vendor_khatas:         'vendor_khata',
-  vendor_khata_payments: 'vendor_khata_payment',
+  vendor_khatas:          'vendor_khata',
+  vendor_khata_payments:  'vendor_khata_payment',
+  customer_khatas:        'customer_khata',
+  customer_khata_payments:'customer_khata_payment',
+  payment_reminders:      'payment_reminder',
+  attendances:            'attendance',
+  godown_entries:         'godown_entry',
 };
 const ENTITY_TYPES = Object.values(PLURAL_TO_SINGULAR);
 

@@ -47,6 +47,7 @@ export default function POSPage() {
   });
   const [cart, setCart] = useState([]);
   const [discount, setDiscount] = useState('');
+  const [discountType, setDiscountType] = useState('fixed'); // 'fixed' | 'percent'
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customItemModalOpen, setCustomItemModalOpen] = useState(false);
@@ -173,7 +174,11 @@ export default function POSPage() {
   };
 
   const subtotal = useMemo(() => cart.reduce((sum, i) => sum + i.unitPrice * i.qty, 0), [cart]);
-  const discountAmount = Math.min(Number(discount) || 0, subtotal);
+  const discountAmount = useMemo(() => {
+    const raw = Number(discount) || 0;
+    if (discountType === 'percent') return Math.min((subtotal * Math.min(raw, 100)) / 100, subtotal);
+    return Math.min(raw, subtotal);
+  }, [discount, discountType, subtotal]);
   const total = Math.max(subtotal - discountAmount, 0);
 
   const selectedCustomer = useMemo(
@@ -184,6 +189,7 @@ export default function POSPage() {
   const resetCart = () => {
     setCart([]);
     setDiscount('');
+    setDiscountType('fixed');
     setSelectedCustomerId('');
   };
 
@@ -650,36 +656,66 @@ export default function POSPage() {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-border px-4 py-3">
-            <Input
-              label="Discount"
-              type="number"
-              min="0"
-              max={subtotal}
-              placeholder="0"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-            />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Discount</label>
+              <div className="flex gap-1.5">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max={discountType === 'percent' ? 100 : subtotal}
+                    placeholder="0"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    className="w-full h-9 pl-3 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+                <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('fixed')}
+                    className={`px-2.5 h-9 text-xs font-bold transition-colors ${discountType === 'fixed' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
+                  >PKR</button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('percent')}
+                    className={`px-2.5 h-9 text-xs font-bold transition-colors ${discountType === 'percent' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
+                  >%</button>
+                </div>
+              </div>
+              {discountType === 'percent' && Number(discount) > 0 && (
+                <p className="text-xs text-muted-foreground">= PKR {Math.round(discountAmount).toLocaleString('en-PK')} off</p>
+              )}
+            </div>
 
-            <div className="flex flex-col gap-1 text-sm">
-              <div className="flex justify-between text-muted-foreground">
+            <div className="rounded-xl bg-muted/30 border border-border/50 p-3 flex flex-col gap-1.5 text-sm">
+              <div className="flex justify-between text-muted-foreground text-xs">
                 <span>Subtotal</span>
-                <span>{formatCurrency(subtotal, currency)}</span>
+                <span className="font-mono">{formatCurrency(subtotal, currency)}</span>
               </div>
               {discountAmount > 0 && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Discount</span>
-                  <span>-{formatCurrency(discountAmount, currency)}</span>
+                <div className="flex justify-between text-emerald-600 text-xs">
+                  <span>Discount {discountType === 'percent' ? `(${discount}%)` : ''}</span>
+                  <span className="font-mono font-semibold">-{formatCurrency(discountAmount, currency)}</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-border pt-1 text-2xl font-black text-primary">
-                <span className="text-base font-semibold text-foreground">Total</span>
-                <span>{formatCurrency(total, currency)}</span>
+              <div className="flex justify-between border-t border-border/60 pt-1.5 mt-0.5">
+                <span className="text-sm font-bold text-foreground">Total</span>
+                <span className="text-xl font-black text-primary tabular-nums">{formatCurrency(total, currency)}</span>
               </div>
             </div>
 
-            <Button className="w-full justify-center" disabled={cart.length === 0} onClick={() => setCheckoutOpen(true)}>
-              Checkout · {formatCurrency(total, currency)}
-            </Button>
+            <button
+              disabled={cart.length === 0}
+              onClick={() => setCheckoutOpen(true)}
+              className="w-full flex items-center justify-between gap-3 rounded-xl px-4 py-3 bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed"
+            >
+              <span className="flex items-center gap-2">
+                <ShoppingCart size={16} />
+                Checkout
+              </span>
+              <span className="tabular-nums text-base font-black opacity-90">{formatCurrency(total, currency)}</span>
+            </button>
           </div>
         </div>
       </div>

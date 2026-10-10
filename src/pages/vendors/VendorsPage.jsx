@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Truck, Pencil, Trash2, Phone, MessageCircle,
   X, ArrowRight, ShoppingCart, RefreshCw,
-  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink, Wallet, Printer, Eye,
+  ChevronRight, Receipt, CreditCard, RotateCcw, MoreVertical, ExternalLink, Wallet, Printer, Eye, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -152,6 +152,7 @@ export default function VendorsPage() {
   const [detailPO, setDetailPO] = useState(null);
   const [customBillsVendor, setCustomBillsVendor] = useState(null);
   const [showGlobalBills, setShowGlobalBills] = useState(false);
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   const vendors = list('vendor');
   const allPurchases = list('purchase');
@@ -213,6 +214,69 @@ export default function VendorsPage() {
     return { purchases, payments, returns, totalPurchased, totalPaid, totalReturned, balance, timeline };
   }, [selectedVendor, allPurchases, allPayments, allReturns]);
 
+  const handleExportVendorsPDF = async () => {
+    if (exportingPDF || filtered.length === 0) return;
+    setExportingPDF(true);
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const allSettings = list('settings');
+      const storeName = allSettings?.[0]?.store_name || allSettings?.[0]?.business_name || 'My Store';
+      const rows = filtered.map((v) => {
+        const balance = vendorBalanceMap.get(String(v.id)) || 0;
+        return `<tr>
+          <td>${v.name || '—'}</td>
+          <td>${v.phone || '—'}</td>
+          <td>${v.email || '—'}</td>
+          <td>${v.address || '—'}</td>
+          <td class="num ${balance > 0 ? 'due' : 'ok'}">${balance > 0 ? 'PKR ' + Math.round(balance).toLocaleString('en-PK') : 'Settled'}</td>
+        </tr>`;
+      }).join('');
+      const totalBalance = filtered.reduce((s, v) => s + (vendorBalanceMap.get(String(v.id)) || 0), 0);
+      const el = document.createElement('div');
+      el.innerHTML = `
+        <style>
+          body { font-family: Arial, sans-serif; font-size: 11px; color: #111; }
+          h2 { font-size: 16px; margin: 0 0 2px; }
+          p.sub { font-size: 10px; color: #666; margin: 0 0 12px; }
+          table { width: 100%; border-collapse: collapse; }
+          th { background: #4c1d95; color: #fff; padding: 7px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+          td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; }
+          tr:nth-child(even) td { background: #faf5ff; }
+          .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+          .ok { color: #16a34a; }
+          .due { color: #b91c1c; }
+          .summary { margin-top: 14px; padding-top: 10px; border-top: 2px solid #4c1d95; font-size: 11px; display: flex; gap: 24px; }
+          .summary .item { display: flex; flex-direction: column; gap: 2px; }
+          .summary .label { font-size: 9px; text-transform: uppercase; color: #666; letter-spacing: .05em; }
+          .summary .val { font-size: 14px; font-weight: 700; }
+        </style>
+        <h2>${storeName} — Vendors Directory</h2>
+        <p class="sub">Generated ${new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })} · ${filtered.length} vendors</p>
+        <table>
+          <thead><tr>
+            <th>Vendor Name</th><th>Phone</th><th>Email</th><th>Address</th>
+            <th style="text-align:right">Outstanding Balance</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="summary">
+          <div class="item"><span class="label">Total Vendors</span><span class="val">${filtered.length}</span></div>
+          <div class="item"><span class="label">With Balance</span><span class="val">${filtered.filter(v => (vendorBalanceMap.get(String(v.id)) || 0) > 0.5).length}</span></div>
+          <div class="item"><span class="label">Total Outstanding</span><span class="val" style="color:#b91c1c">PKR ${Math.round(totalBalance).toLocaleString('en-PK')}</span></div>
+        </div>`;
+      await html2pdf().set({
+        margin: 10,
+        filename: `Vendors-${new Date().toISOString().slice(0, 10)}.pdf`,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+      }).from(el).save();
+    } catch (err) {
+      console.error('PDF export failed', err);
+    } finally {
+      setExportingPDF(false);
+    }
+  };
+
   const openAdd = () => { setFormInitial({ name: '', phone: '', email: '', address: '' }); setIsEditing(false); setShowForm(true); };
   const openEdit = (v, e) => { e?.stopPropagation(); setFormInitial({ ...v }); setIsEditing(true); setShowForm(true); };
   const openVendor = (v) => { setSelectedVendor(v); setPerCardAmts({}); };
@@ -273,13 +337,20 @@ export default function VendorsPage() {
               </div>
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest ml-[52px]">{vendors.length} total vendors</p>
             </div>
-            <button onClick={() => setShowGlobalBills(true)}
-              className="flex items-center gap-2 h-10 px-4 rounded-xl border border-amber-400 bg-amber-500/5 hover:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-semibold transition-colors">
-              <Wallet size={15} /> All Custom Bills
-            </button>
-            <button onClick={openAdd} className="flex items-center gap-2 h-10 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold transition-colors shadow-sm">
-              <Plus size={15} /> New Vendor
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowGlobalBills(true)}
+                className="flex items-center gap-2 h-10 px-4 rounded-xl border border-amber-400 bg-amber-500/5 hover:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-semibold transition-colors">
+                <Wallet size={15} /> All Custom Bills
+              </button>
+              <button onClick={handleExportVendorsPDF} disabled={exportingPDF || filtered.length === 0}
+                className="flex items-center gap-2 h-10 px-4 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-colors disabled:opacity-40">
+                {exportingPDF ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+                {exportingPDF ? 'Exporting…' : 'PDF'}
+              </button>
+              <button onClick={openAdd} className="flex items-center gap-2 h-10 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold transition-colors shadow-sm">
+                <Plus size={15} /> New Vendor
+              </button>
+            </div>
           </motion.div>
 
           <motion.div custom={1} variants={fadeUp} initial="hidden" animate="visible" className="relative">

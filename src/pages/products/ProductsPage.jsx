@@ -8,8 +8,9 @@ import {
   Plus, Pencil, Trash2, Search, Package, Layers, BarChart2,
   TrendingUp, TrendingDown, AlertCircle, X, Upload, Download,
   FileSpreadsheet, CheckCircle2, ChevronDown, ChevronRight,
-  Archive, Eye, ShoppingCart,
+  Archive, Eye, ShoppingCart, Printer,
 } from 'lucide-react';
+import BarcodeLabelModal from '../../components/products/BarcodeLabelModal';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -1028,6 +1029,7 @@ export default function ProductsPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [viewProduct, setViewProduct] = useState(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [labelProduct, setLabelProduct] = useState(null);
 
   // Import state
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -1506,6 +1508,10 @@ export default function ProductsPage() {
                                   className="h-8 w-8 flex items-center justify-center rounded-lg text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
                                   <Pencil size={13} />
                                 </button>
+                                <button onClick={() => setLabelProduct(p)} title="Print barcode label"
+                                  className="h-8 w-8 flex items-center justify-center rounded-lg text-violet-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors">
+                                  <Printer size={13} />
+                                </button>
                                 {deleteConfirmId === p.id ? (
                                   <div className="flex items-center gap-1 bg-destructive/8 px-2 rounded-lg border border-destructive/20 animate-in fade-in">
                                     <span className="text-[11px] font-semibold text-destructive">Sure?</span>
@@ -1707,6 +1713,11 @@ export default function ProductsPage() {
             )}
           </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* ── Barcode Label Modal ── */}
+      <AnimatePresence>
+        {labelProduct && <BarcodeLabelModal product={labelProduct} onClose={() => setLabelProduct(null)} />}
       </AnimatePresence>
 
       {/* ── Product Detail Modal ── */}
