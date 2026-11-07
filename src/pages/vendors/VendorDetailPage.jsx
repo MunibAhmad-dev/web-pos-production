@@ -6,14 +6,14 @@ import {
   Phone, Mail, MapPin, CreditCard, ShoppingCart, Undo2, History,
   MessageCircle, ChevronDown, ChevronRight, Plus, Printer, Download,
   Trash2, Check, Clock, FileText, TrendingUp, Package, ArrowLeft, X,
-  Boxes, DollarSign, CheckCircle2, Eye, Tag, CalendarDays,
+  Boxes, DollarSign, CheckCircle2, Eye, Tag, CalendarDays, Share2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { getReceiptSettings, printInvoice, downloadInvoicePdf } from '../../utils/receipt';
+import { getReceiptSettings, printInvoice, downloadInvoicePdf, buildAccountStatementHtml, downloadStatementPdf, shareStatementViaWhatsApp } from '../../utils/receipt';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -69,6 +69,7 @@ export default function VendorDetailPage() {
   const [genPayAmount, setGenPayAmount] = useState('');
   const [genPayNotes, setGenPayNotes] = useState('');
   const [showCustomBills, setShowCustomBills] = useState(false);
+  const [stmtLoading, setStmtLoading] = useState(null);
 
   const vendor = list('vendor').find((v) => String(v.id) === String(id));
   const allPurchases = list('purchase');
@@ -189,6 +190,58 @@ export default function VendorDetailPage() {
   const deletePayment = async (paymentId) => {
     await pushEntity('vendor_payment', 'delete', { id: paymentId });
     showToast('Payment removed');
+  };
+
+  const buildVendorLedger = () => {
+    if (!data) return [];
+    const rows = [];
+    for (const p of data.purchases) {
+      if (p.status === 'Cancelled') continue;
+      rows.push({ date: new Date(p.date_created || 0), type: 'Purchase', desc: `PO #${p.id}`, debit: Number(p.grand_total || p.total || 0), credit: 0 });
+    }
+    for (const p of data.payments) {
+      rows.push({ date: new Date(p.date_created || p.date_added || 0), type: 'Payment', desc: p.notes ? `Payment – ${p.notes}` : 'Payment Made', debit: 0, credit: Number(p.amount || 0) });
+    }
+    for (const r of data.returns) {
+      rows.push({ date: new Date(r.date_created || 0), type: 'Return', desc: `Return on PO #${r.purchase_id}`, debit: 0, credit: Number(r.total_returned || 0) });
+    }
+    for (const k of allVendorKhatas.filter((k) => String(k.vendor_id) === String(vendor.id))) {
+      rows.push({ date: new Date(k.date_created || k.created_at || 0), type: 'Custom Bill', desc: k.description || k.notes || 'Custom Bill (Khata)', debit: Number(k.total_amount || 0), credit: 0 });
+    }
+    for (const p of allVendorKhataPayments) {
+      const k = allVendorKhatas.find((kh) => String(kh.id) === String(p.khata_id) && String(kh.vendor_id) === String(vendor.id));
+      if (!k) continue;
+      rows.push({ date: new Date(p.date_created || p.created_at || 0), type: 'Khata Payment', desc: p.notes ? `Khata Payment – ${p.notes}` : 'Khata Payment', debit: 0, credit: Number(p.amount || 0) });
+    }
+    return rows.sort((a, b) => a.date - b.date);
+  };
+
+  const generateStatement = async (action) => {
+    if (!data || stmtLoading) return;
+    setStmtLoading(action);
+    try {
+      const ledger = buildVendorLedger();
+      const settings = getReceiptSettings();
+      const storeName = settings.store_name || 'My Store';
+      const html = buildAccountStatementHtml({
+        name: vendor.name, phone: vendor.phone, address: vendor.address,
+        type: 'vendor', ledger,
+        totals: { invoiced: data.totalPurchased, paid: data.totalPaid, returned: data.totalReturned, balance: data.balance },
+        settings: { ...settings, store_name: storeName },
+      });
+      const filename = `vendor-statement-${(vendor.name || 'vendor').replace(/\s+/g, '-')}.pdf`;
+      if (action === 'pdf') {
+        await downloadStatementPdf(html, filename);
+      } else {
+        const result = await shareStatementViaWhatsApp(html, { name: vendor.name, phone: vendor.phone, balance: data.balance, filename });
+        if (result === 'downloaded') showToast('PDF saved — opening WhatsApp');
+        else if (result === 'shared') showToast('Statement shared');
+      }
+    } catch (e) {
+      showToast('Failed to generate statement', 'error');
+    } finally {
+      setStmtLoading(null);
+    }
   };
 
   if (!vendor) {
@@ -336,7 +389,7 @@ export default function VendorDetailPage() {
           </div>
 
           {/* Count pills */}
-          <div className="px-5 py-4 mt-auto">
+          <div className="px-5 py-3 border-b border-border">
             <div className="flex gap-2 text-[11px]">
               {[['Payments', payments.length], ['Returns', returns.length], ['Events', activity.length]].map(([lbl, cnt]) => (
                 <div key={lbl} className="flex-1 rounded-lg bg-muted/50 px-3 py-2 text-center">
@@ -344,6 +397,26 @@ export default function VendorDetailPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Statement actions */}
+          <div className="px-5 py-4 mt-auto space-y-2">
+            <button
+              onClick={() => generateStatement('pdf')}
+              disabled={!!stmtLoading}
+              className="w-full h-9 rounded-xl border border-border flex items-center justify-center gap-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors disabled:opacity-50">
+              {stmtLoading === 'pdf' ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Download size={13} />}
+              Export Statement PDF
+            </button>
+            {vendor.phone && (
+              <button
+                onClick={() => generateStatement('wa')}
+                disabled={!!stmtLoading}
+                className="w-full h-9 rounded-xl bg-[#25d366]/10 border border-[#25d366]/30 flex items-center justify-center gap-2 text-xs font-semibold text-[#1a9e4e] hover:bg-[#25d366]/20 transition-colors disabled:opacity-50">
+                {stmtLoading === 'wa' ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Share2 size={13} />}
+                Send Statement via WhatsApp
+              </button>
+            )}
           </div>
         </div>
 

@@ -443,3 +443,182 @@ export function buildWhatsAppLink(data) {
   if (phone.startsWith('0')) phone = '92' + phone.substring(1);
   return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 }
+
+// ─── Account Statement ────────────────────────────────────────────────────────
+/**
+ * Build an A4 account statement HTML.
+ * @param {{ name, phone, address, type: 'customer'|'vendor', ledger: Array, totals, settings }} params
+ *   ledger rows: { date: Date|string, type: string, desc: string, debit: number, credit: number }
+ *   totals:      { invoiced, paid, returned, balance }
+ */
+export function buildAccountStatementHtml({ name, phone, address, type = 'customer', ledger = [], totals = {}, settings = {} }) {
+  const pkr = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
+  const fmtD = (d) => new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
+  const today = new Date().toLocaleDateString('en-PK', { day: 'numeric', month: 'long', year: 'numeric' });
+  const storeName = settings.store_name || 'OsaTech POS';
+  const isVendor = type === 'vendor';
+
+  // Build rows with running balance (ledger must be oldest-first)
+  let running = 0;
+  const rows = ledger.map((row) => {
+    const debit  = Number(row.debit  || 0);
+    const credit = Number(row.credit || 0);
+    running += debit - credit;
+    const isDebit = debit > 0;
+    const typeCols = {
+      'Sale':          { color: '#dc2626', prefix: '+' },
+      'Custom Bill':   { color: '#ea580c', prefix: '+' },
+      'Purchase':      { color: '#dc2626', prefix: '+' },
+      'Payment':       { color: '#16a34a', prefix: '−' },
+      'Khata Payment': { color: '#16a34a', prefix: '−' },
+      'Return':        { color: '#d97706', prefix: '−' },
+    };
+    const col = typeCols[row.type] || { color: '#6b7280', prefix: isDebit ? '+' : '−' };
+    const rtColor = running > 0.5 ? '#dc2626' : running < -0.5 ? '#16a34a' : '#6b7280';
+    const rtLabel = running > 0.5 ? `${pkr(running)} DR` : running < -0.5 ? `${pkr(Math.abs(running))} CR` : 'NIL';
+    return `<tr>
+      <td style="padding:6px 9px;border-bottom:1px solid #f3f4f6;font-size:10.5px;white-space:nowrap">${fmtD(row.date)}</td>
+      <td style="padding:6px 9px;border-bottom:1px solid #f3f4f6;font-size:10.5px;font-weight:700;color:${col.color}">${esc(row.type)}</td>
+      <td style="padding:6px 9px;border-bottom:1px solid #f3f4f6;font-size:10.5px;max-width:220px">${esc(row.desc)}</td>
+      <td style="padding:6px 9px;border-bottom:1px solid #f3f4f6;font-size:10.5px;text-align:right;font-weight:700;color:#dc2626">${debit > 0.5 ? pkr(debit) : '—'}</td>
+      <td style="padding:6px 9px;border-bottom:1px solid #f3f4f6;font-size:10.5px;text-align:right;font-weight:700;color:#16a34a">${credit > 0.5 ? pkr(credit) : '—'}</td>
+      <td style="padding:6px 9px;border-bottom:1px solid #f3f4f6;font-size:10.5px;text-align:right;font-weight:800;color:${rtColor}">${rtLabel}</td>
+    </tr>`;
+  }).join('');
+
+  const { invoiced = 0, paid = 0, returned = 0, balance = 0 } = totals;
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+<title>${isVendor ? 'Vendor' : 'Customer'} Statement – ${esc(name)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4;margin:0}
+html,body{background:#fff;color:#1a1a1a;font-family:Arial,Helvetica,sans-serif;font-size:11pt}
+body{padding:14mm 16mm 12mm}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:9px;border-bottom:3px solid #cc0000;margin-bottom:14px}
+.store-name{font-size:19pt;font-weight:900;color:#cc0000;line-height:1.1}
+.store-sub{font-size:8pt;color:#555;margin-top:3px}
+.stmt-title{font-size:15pt;font-weight:900;letter-spacing:2px;text-align:right}
+.stmt-meta{font-size:8pt;color:#666;text-align:right;margin-top:3px}
+.entity-bar{background:#fafafa;border:1px solid #e8e8e8;border-radius:4px;padding:9px 13px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-start}
+.entity-name{font-size:12pt;font-weight:800}
+.entity-sub{font-size:8pt;color:#555;margin-top:2px}
+.kpis{display:flex;gap:10px;margin-bottom:16px}
+.kpi{flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:11px;text-align:center}
+.kpi-lbl{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:5px}
+.kpi-val{font-size:14pt;font-weight:900}
+table{width:100%;border-collapse:collapse}
+thead tr{background:#cc0000;color:#fff}
+thead th{padding:7px 9px;font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:left}
+thead th.r{text-align:right}
+tbody tr:nth-child(even){background:#fafafa}
+.footer{margin-top:16px;padding-top:10px;border-top:2px solid #e5e7eb;font-size:8pt;color:#9ca3af;display:flex;justify-content:space-between}
+</style>
+</head><body>
+<div class="hdr">
+  <div>
+    <div class="store-name">${esc(storeName)}</div>
+    <div class="store-sub">${settings.store_address ? esc(settings.store_address) : ''}${settings.store_phone ? (settings.store_address ? ' · ' : '') + 'Tel: ' + esc(settings.store_phone) : ''}</div>
+  </div>
+  <div>
+    <div class="stmt-title">${isVendor ? 'VENDOR STATEMENT' : 'ACCOUNT STATEMENT'}</div>
+    <div class="stmt-meta">Generated: ${today}</div>
+  </div>
+</div>
+<div class="entity-bar">
+  <div>
+    <div class="entity-name">${esc(name)}</div>
+    ${phone ? `<div class="entity-sub">📞 ${esc(phone)}</div>` : ''}
+    ${address ? `<div class="entity-sub">📍 ${esc(address)}</div>` : ''}
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:8pt;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em">Balance Due</div>
+    <div style="font-size:17pt;font-weight:900;color:${balance > 0 ? '#dc2626' : '#16a34a'}">${pkr(balance)}</div>
+  </div>
+</div>
+<div class="kpis">
+  <div class="kpi"><div class="kpi-lbl">Total ${isVendor ? 'Purchased' : 'Invoiced'}</div><div class="kpi-val" style="color:#dc2626">${pkr(invoiced)}</div></div>
+  <div class="kpi"><div class="kpi-lbl">Total Paid</div><div class="kpi-val" style="color:#16a34a">${pkr(paid)}</div></div>
+  ${returned > 0 ? `<div class="kpi"><div class="kpi-lbl">Total Returned</div><div class="kpi-val" style="color:#d97706">${pkr(returned)}</div></div>` : ''}
+</div>
+<table>
+  <thead><tr><th>Date</th><th>Type</th><th>Description</th><th class="r">Debit (DR)</th><th class="r">Credit (CR)</th><th class="r">Balance</th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="6" style="padding:14px;text-align:center;color:#9ca3af">No transactions found.</td></tr>'}</tbody>
+</table>
+<div class="footer">
+  <span>Generated by OsaTech POS · +92 329 874 8232</span>
+  <span>${ledger.length} transactions · Balance Due: ${pkr(balance)}</span>
+</div>
+</body></html>`;
+}
+
+/**
+ * Download account statement as an A4 PDF.
+ * @param {string} html - output of buildAccountStatementHtml
+ * @param {string} filename - e.g. "statement-Ali.pdf"
+ */
+export async function downloadStatementPdf(html, filename) {
+  const { default: html2pdf } = await import('html2pdf.js');
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;height:1400px;border:0;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open(); doc.write(html); doc.close();
+  await new Promise((r) => setTimeout(r, 350));
+  const el = doc.body;
+  const opt = { margin: 0, filename, image: { type: 'jpeg', quality: 0.97 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+  try { await html2pdf().set(opt).from(el).save(); }
+  finally { document.body.removeChild(iframe); }
+}
+
+/**
+ * Generate statement PDF and share via WhatsApp.
+ * On mobile: tries Web Share API (native picker, user picks WhatsApp).
+ * On desktop / fallback: downloads PDF + opens wa.me link with a text message.
+ * @returns {'shared'|'downloaded'} how it was sent
+ */
+export async function shareStatementViaWhatsApp(html, { name, phone, balance, filename }) {
+  const { default: html2pdf } = await import('html2pdf.js');
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;height:1400px;border:0;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open(); doc.write(html); doc.close();
+  await new Promise((r) => setTimeout(r, 350));
+  const opt = { margin: 0, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+  let blob;
+  try {
+    const pdfWorker = html2pdf().set(opt).from(doc.body);
+    blob = await pdfWorker.outputPdf('blob');
+  } finally {
+    document.body.removeChild(iframe);
+  }
+
+  const fname = filename || `statement-${name}.pdf`;
+  const file = new File([blob], fname, { type: 'application/pdf' });
+
+  // Try Web Share API (Android/iOS mobile)
+  if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: `Account Statement – ${name}` });
+      return 'shared';
+    } catch (e) {
+      if (e.name === 'AbortError') return 'cancelled';
+    }
+  }
+
+  // Fallback: download the PDF + open WhatsApp with a text prompt
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fname; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+  if (phone) {
+    const pkr = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
+    let p = String(phone).replace(/\D/g, '');
+    if (p.startsWith('0')) p = '92' + p.substring(1);
+    const msg = `📊 *Account Statement*\n*${name}*\n━━━━━━━━━━━━━━━━━━━\n💰 *Balance Due: ${pkr(balance)}*\n\nStatement PDF saved — please attach it in WhatsApp.`;
+    window.open(`https://wa.me/${p}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+  return 'downloaded';
+}

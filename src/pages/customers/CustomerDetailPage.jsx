@@ -4,7 +4,7 @@ import {
   X, Phone, Mail, MapPin, CreditCard, Receipt, Undo2, History,
   MessageCircle, ChevronDown, ChevronRight, Plus, Printer,
   Trash2, Check, Clock, FileText, TrendingUp, Package, ArrowLeft,
-  CheckCircle2, Eye, Tag, CalendarDays, BookOpen, Pencil,
+  CheckCircle2, Eye, Tag, CalendarDays, BookOpen, Pencil, Download, Share2,
 } from 'lucide-react';
 import CustomerKhataPanel from '../../components/customers/CustomerKhataPanel';
 import EditSaleModal from '../../components/sales/EditSaleModal';
@@ -13,7 +13,7 @@ import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { getReceiptSettings, printInvoice, buildWhatsAppLink } from '../../utils/receipt';
+import { getReceiptSettings, printInvoice, buildWhatsAppLink, buildAccountStatementHtml, downloadStatementPdf, shareStatementViaWhatsApp } from '../../utils/receipt';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -54,6 +54,7 @@ export default function CustomerDetailPage() {
   const [payNotesBySale, setPayNotesBySale] = useState({});
   const [expandedSaleId, setExpandedSaleId] = useState(null);
   const [editSale, setEditSale] = useState(null);
+  const [stmtLoading, setStmtLoading] = useState(null); // null | 'pdf' | 'wa'
 
   const customer = list('customer').find((c) => String(c.id) === String(id));
   const allSales = list('sale');
@@ -222,6 +223,60 @@ export default function CustomerDetailPage() {
     setEditSale(null);
   };
 
+  // Build a chronological ledger for the account statement
+  const buildCustomerLedger = () => {
+    if (!data) return [];
+    const rows = [];
+    for (const s of data.sales) {
+      if (s.status === 'Cancelled') continue;
+      rows.push({ date: new Date(s.date_created || 0), type: 'Sale', desc: `Invoice #${s.id}`, debit: Number(s.total || 0), credit: 0 });
+    }
+    for (const p of data.payments) {
+      rows.push({ date: new Date(p.date_added || p.date_created || 0), type: 'Payment', desc: p.notes ? `Payment – ${p.notes}` : 'Payment Received', debit: 0, credit: Number(p.amount || 0) });
+    }
+    for (const r of data.returns) {
+      rows.push({ date: new Date(r.date_created || 0), type: 'Return', desc: r.reason ? `Return – ${r.reason}` : `Return on Invoice #${r.sale_id}`, debit: 0, credit: Number(r.total_returned || 0) });
+    }
+    // Khata entries
+    for (const k of allKhatas.filter((k) => String(k.customer_id) === String(customer.id))) {
+      rows.push({ date: new Date(k.date_created || k.created_at || 0), type: 'Custom Bill', desc: k.description || k.notes || 'Custom Bill (Khata)', debit: Number(k.total_amount || 0), credit: 0 });
+    }
+    for (const p of allKhataPayments) {
+      const k = allKhatas.find((kh) => String(kh.id) === String(p.khata_id) && String(kh.customer_id) === String(customer.id));
+      if (!k) continue;
+      rows.push({ date: new Date(p.date_created || p.created_at || 0), type: 'Khata Payment', desc: p.notes ? `Khata Payment – ${p.notes}` : 'Khata Payment', debit: 0, credit: Number(p.amount || 0) });
+    }
+    return rows.sort((a, b) => a.date - b.date); // oldest first for running balance
+  };
+
+  const generateStatement = async (action) => {
+    if (!data || stmtLoading) return;
+    setStmtLoading(action);
+    try {
+      const ledger = buildCustomerLedger();
+      const settings = getReceiptSettings();
+      const storeName = settings.store_name || user?.store_name || 'My Store';
+      const html = buildAccountStatementHtml({
+        name: customer.name, phone: customer.phone, address: customer.address,
+        type: 'customer', ledger,
+        totals: { invoiced: data.totalTaken, paid: data.totalPaid, returned: data.totalReturned, balance: data.totalBalance },
+        settings: { ...settings, store_name: storeName },
+      });
+      const filename = `statement-${(customer.name || 'customer').replace(/\s+/g, '-')}.pdf`;
+      if (action === 'pdf') {
+        await downloadStatementPdf(html, filename);
+      } else {
+        const result = await shareStatementViaWhatsApp(html, { name: customer.name, phone: customer.phone, balance: data.totalBalance, filename });
+        if (result === 'downloaded') showToast('PDF saved — opening WhatsApp');
+        else if (result === 'shared') showToast('Statement shared');
+      }
+    } catch (e) {
+      showToast('Failed to generate statement', 'error');
+    } finally {
+      setStmtLoading(null);
+    }
+  };
+
   // Print / WhatsApp an existing invoice — same builders as the POS receipt
   const invoiceDataFor = (sale) => {
     const settings = getReceiptSettings();
@@ -333,7 +388,7 @@ export default function CustomerDetailPage() {
           </div>
 
           {/* Count pills */}
-          <div className="px-5 py-4 mt-auto">
+          <div className="px-5 py-3 border-b border-border">
             <div className="flex gap-2 text-[11px]">
               {[['Payments', payments.length], ['Returns', returns.length], ['Events', activity.length]].map(([lbl, cnt]) => (
                 <div key={lbl} className="flex-1 rounded-lg bg-muted/50 px-3 py-2 text-center">
@@ -341,6 +396,26 @@ export default function CustomerDetailPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Statement actions */}
+          <div className="px-5 py-4 mt-auto space-y-2">
+            <button
+              onClick={() => generateStatement('pdf')}
+              disabled={!!stmtLoading}
+              className="w-full h-9 rounded-xl border border-border flex items-center justify-center gap-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors disabled:opacity-50">
+              {stmtLoading === 'pdf' ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Download size={13} />}
+              Export Statement PDF
+            </button>
+            {customer.phone && (
+              <button
+                onClick={() => generateStatement('wa')}
+                disabled={!!stmtLoading}
+                className="w-full h-9 rounded-xl bg-[#25d366]/10 border border-[#25d366]/30 flex items-center justify-center gap-2 text-xs font-semibold text-[#1a9e4e] hover:bg-[#25d366]/20 transition-colors disabled:opacity-50">
+                {stmtLoading === 'wa' ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Share2 size={13} />}
+                Send Statement via WhatsApp
+              </button>
+            )}
           </div>
         </div>
 
