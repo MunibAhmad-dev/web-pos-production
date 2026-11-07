@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,7 +9,7 @@ import {
   Plus, Pencil, Trash2, Search, Package, Layers, BarChart2,
   TrendingUp, TrendingDown, AlertCircle, X, Upload, Download,
   FileSpreadsheet, CheckCircle2, ChevronDown, ChevronRight,
-  Archive, Eye, ShoppingCart, Printer,
+  Archive, Eye, ShoppingCart, Printer, Tag,
 } from 'lucide-react';
 import BarcodeLabelModal from '../../components/products/BarcodeLabelModal';
 import { cn } from '@/lib/utils';
@@ -50,7 +51,7 @@ function StatCard({ icon: Icon, label, value, sub, tint }) {
         </div>
         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
       </div>
-      <p className="text-2xl font-bold text-foreground tracking-tight">{value}</p>
+      <p className="text-2xl font-black text-foreground tracking-tight tabular-nums">{value}</p>
       <div className="flex items-center justify-between mt-2">
         <p className="text-xs text-muted-foreground">{sub}</p>
         <Sparkline color={tint.spark} />
@@ -1018,6 +1019,7 @@ function ProductDetailModal({ product, onClose }) {
 
 // ─── Main Products Page ───────────────────────────────────────────────────────
 export default function ProductsPage() {
+  const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
   const { showToast } = useToast();
   const { modules } = useModuleSettings();
@@ -1354,6 +1356,10 @@ export default function ProductsPage() {
           <p className="text-sm text-muted-foreground mt-0.5">Manage products, categories and inventory</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => navigate('/wholesale')} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors" title="Wholesale Price List">
+            <Tag size={15} />
+            <span className="hidden sm:inline">Price List</span>
+          </button>
           <button onClick={() => setShowImportDialog(true)} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors" title="Import Excel">
             <Upload size={15} />
             <span className="hidden sm:inline">Import</span>

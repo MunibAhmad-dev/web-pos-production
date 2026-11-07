@@ -56,7 +56,7 @@ function StatCard({ icon: Icon, label, value, sub, color, delay = 0 }) {
           <div className={cn('w-11 h-11 rounded-xl flex items-center justify-center shrink-0', color)}><Icon size={20} /></div>
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground font-medium">{label}</p>
-            <p className="text-xl font-bold leading-tight truncate">{value}</p>
+            <p className="text-xl font-black leading-tight tabular-nums truncate">{value}</p>
             {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
           </div>
         </div>

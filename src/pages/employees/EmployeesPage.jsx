@@ -23,7 +23,7 @@ function KpiCard({ label, value, iconClass, Icon }) {
       </div>
       <div>
         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 mb-0.5">{label}</p>
-        <p className="text-xl font-bold font-mono tracking-tight">{value}</p>
+        <p className="text-xl font-black tracking-tight tabular-nums">{value}</p>
       </div>
     </div>
   );

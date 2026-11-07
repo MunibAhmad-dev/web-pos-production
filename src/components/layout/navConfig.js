@@ -20,10 +20,10 @@ import {
   TrendingUp,
   Settings,
   Scale,
-  MapPin,
-  Tag,
-  BellRing,
-  Warehouse,
+  FileText,
+  Shield,
+  Info,
+  Wrench,
 } from 'lucide-react';
 
 export const navGroups = [
@@ -34,6 +34,7 @@ export const navGroups = [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid, end: true },
       { to: '/sales', label: 'New Sale', icon: ShoppingCart, end: true },
       { to: '/sales/history', label: 'Sales History', icon: History },
+      { to: '/invoices', label: 'Invoices', icon: FileText },
     ],
   },
   {
@@ -41,9 +42,7 @@ export const navGroups = [
     emoji: '📦',
     items: [
       { to: '/products', label: 'Products', icon: Package },
-      { to: '/wholesale', label: 'Wholesale Prices', icon: Tag },
       { to: '/inventory', label: 'Inventory', icon: Boxes },
-      { to: '/godown', label: 'Godown', icon: Warehouse },
       { to: '/vendors', label: 'Vendors', icon: Truck },
       { to: '/purchases', label: 'Purchases / POs', icon: ClipboardList },
       { to: '/returns', label: 'Returns', icon: Undo2 },
@@ -55,8 +54,6 @@ export const navGroups = [
     emoji: '👥',
     items: [
       { to: '/customers', label: 'Customers', icon: Users },
-      { to: '/route-book', label: 'Route Book', icon: MapPin },
-      { to: '/payment-reminders', label: 'Payment Reminders', icon: BellRing },
       { to: '/employees', label: 'Employees', icon: UserCog },
     ],
   },
@@ -71,6 +68,7 @@ export const navGroups = [
       { to: '/payment-ledger', label: 'Payment Ledger', icon: CreditCard },
       { to: '/transactions', label: 'Transactions', icon: Receipt },
       { to: '/loans', label: 'Receivables & Payables', icon: Scale },
+      { to: '/register-history', label: 'Register History', icon: History },
     ],
   },
   {
@@ -79,11 +77,16 @@ export const navGroups = [
     items: [
       { to: '/reports', label: 'Reports', icon: BarChart3 },
       { to: '/balance-sheet', label: 'Balance Sheet', icon: TrendingUp },
+      { to: '/fbr', label: 'FBR e-Invoicing', icon: Shield },
     ],
   },
   {
     label: 'System',
     emoji: '⚙️',
-    items: [{ to: '/settings', label: 'Settings', icon: Settings }],
+    items: [
+      { to: '/settings', label: 'Settings', icon: Settings },
+      { to: '/repairs', label: 'Repairs', icon: Wrench },
+      { to: '/about', label: 'About', icon: Info },
+    ],
   },
 ];

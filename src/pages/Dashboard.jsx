@@ -270,6 +270,8 @@ export default function Dashboard() {
   const purchaseReturns  = list('purchase_return');
   const accounts    = list('account');
   const accountTxns = list('account_txn');
+  const allKhatas        = list('customer_khata');
+  const allKhataPayments = list('customer_khata_payment');
 
   // productById for unit_type lookup in COGS and stock value calculations
   const productById = useMemo(() => {
@@ -316,16 +318,21 @@ export default function Dashboard() {
     };
   }, [products, LOW_STOCK_THRESHOLD]);
 
-  // Customer AR — use outstanding_balance maintained by the Electron app on each
-  // customer record. Computing from sum(sales.total) overcounts because it treats
-  // every named-customer sale as credit, including cash sales.
+  // Customer AR — outstanding_balance (invoice credit) + khata net balance
   const customerAR = useMemo(() => {
-    const withBalance = customers
-      .map((c) => ({ ...c, balance: Math.max(0, Number(c.outstanding_balance || 0)) }))
-      .filter((c) => c.balance > 0.01)
-      .sort((a, b) => b.balance - a.balance);
+    const withBalance = customers.map((c) => {
+      const invoiceBal = Math.max(0, Number(c.outstanding_balance || 0));
+      const cid = String(c.id);
+      const khataBal = allKhatas
+        .filter((k) => String(k.customer_id) === cid)
+        .reduce((s, k) => {
+          const paid = allKhataPayments.filter((p) => String(p.khata_id) === String(k.id)).reduce((a, p) => a + Number(p.amount || 0), 0);
+          return s + Math.max(0, Number(k.total_amount || 0) - paid);
+        }, 0);
+      return { ...c, balance: invoiceBal + khataBal };
+    }).filter((c) => c.balance > 0.01).sort((a, b) => b.balance - a.balance);
     return { totalAR: withBalance.reduce((s, c) => s + c.balance, 0), debtors: withBalance };
-  }, [customers]);
+  }, [customers, allKhatas, allKhataPayments]);
 
   const payableVendors = useMemo(() => {
     return vendors.map((v) => {
@@ -511,11 +518,16 @@ export default function Dashboard() {
         <KpiCard icon={Zap}          label="Today's Revenue" value={fmtPKR(todayRevenue)}         sublabel="local midnight" />
       </motion.div>
 
-      {/* ── Store KPIs (Stock / AR / Low Stock) ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* ── Store KPIs (Stock / AR / AP / Low Stock) ── */}
+      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
         <KpiCard icon={Boxes}         label="Stock Value"     value={fmtPKR(stockStats.stockValue)}       sublabel="Inventory at cost" />
         <KpiCard icon={PiggyBank}     label="Retail Stock"    value={fmtPKR(stockStats.retailStockValue)} sublabel={`Uplift: ${fmtPKR(stockStats.retailProfit)}`} />
-        <KpiCard icon={Wallet}        label="Customer Credit" value={fmtPKR(customerAR.totalAR)}          sublabel={`${customerAR.debtors.length} debtors`} />
+        <KpiCard icon={Wallet}        label="Customer Credit" value={fmtPKR(customerAR.totalAR)}          sublabel={`${customerAR.debtors.length} debtors (incl. khata)`}
+          valueClass={customerAR.totalAR > 0 ? 'text-rose-600 dark:text-rose-400' : undefined}
+          accent={customerAR.totalAR > 0 ? '#f43f5e' : undefined} />
+        <KpiCard icon={Truck}         label="Vendor Payable"  value={fmtPKR(payableVendors.reduce((s, v) => s + v.balance, 0))} sublabel={`${payableVendors.length} vendors`}
+          valueClass={payableVendors.length > 0 ? 'text-orange-600 dark:text-orange-400' : undefined}
+          accent={payableVendors.length > 0 ? '#f97316' : undefined} />
         <KpiCard icon={AlertTriangle} label="Low Stock"       value={stockStats.lowStockCount}            sublabel="Below threshold"
           valueClass={stockStats.lowStockCount > 0 ? 'text-amber-600 dark:text-amber-400' : undefined}
           accent={stockStats.lowStockCount > 0 ? '#f59e0b' : undefined} />

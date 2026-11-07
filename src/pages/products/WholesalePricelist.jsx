@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Package, Search, Download, RefreshCw, Printer, Grid3x3, List,
-  Tag, ChevronDown, BarChart3, DollarSign, Boxes, ArrowUpDown,
+  Tag, ChevronDown, BarChart3, DollarSign, Boxes, ArrowUpDown, ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -86,6 +87,7 @@ async function printPricelist(products, categories, storeName = 'Store', categor
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function WholesalePricelist() {
+  const navigate = useNavigate();
   const { list } = useDataStore();
   const { showToast } = useToast();
 
@@ -145,12 +147,19 @@ export default function WholesalePricelist() {
       {/* ── Header ── */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/15"><Tag size={18} className="text-violet-500" /></div>
-            <h1 className="text-2xl font-black tracking-tight">Wholesale Price List</h1>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/products')}
+            className="h-9 w-9 flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
+            title="Back to Products">
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/15"><Tag size={18} className="text-violet-500" /></div>
+              <h1 className="text-2xl font-black tracking-tight">Wholesale Price List</h1>
+            </div>
+            <p className="text-xs font-medium text-muted-foreground ml-[52px]">Catalog with retail & wholesale pricing for all products</p>
           </div>
-          <p className="text-xs font-medium text-muted-foreground ml-[52px]">Catalog with retail & wholesale pricing for all products</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleExportPDF} disabled={exporting}

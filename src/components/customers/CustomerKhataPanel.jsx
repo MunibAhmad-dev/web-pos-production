@@ -149,13 +149,13 @@ export default function CustomerKhataPanel({ customer, onClose }) {
         {/* Summary strip */}
         <div className="grid grid-cols-3 divide-x divide-border border-b shrink-0">
           {[
-            { label: 'Total Bills', value: PKR(khatas.reduce((s, k) => s + Number(k.total_amount || 0), 0)), color: 'text-foreground' },
-            { label: 'Total Paid',  value: PKR(totalPaid), color: 'text-emerald-600' },
-            { label: 'Outstanding', value: PKR(totalDue),  color: totalDue > 0 ? 'text-rose-600' : 'text-emerald-600' },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="flex flex-col items-center py-3 px-2 bg-muted/20">
-              <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">{label}</p>
-              <p className={cn('text-sm font-bold mt-0.5', color)}>{value}</p>
+            { label: 'Total Bills', value: PKR(khatas.reduce((s, k) => s + Number(k.total_amount || 0), 0)), color: 'text-foreground', bg: 'bg-muted/20' },
+            { label: 'Total Paid',  value: PKR(totalPaid), color: 'text-emerald-600', bg: 'bg-emerald-500/5' },
+            { label: 'Outstanding', value: PKR(totalDue),  color: totalDue > 0 ? 'text-rose-600' : 'text-emerald-600', bg: totalDue > 0 ? 'bg-rose-500/5' : 'bg-emerald-500/5' },
+          ].map(({ label, value, color, bg }) => (
+            <div key={label} className={cn('flex flex-col items-center py-3.5 px-2', bg)}>
+              <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest">{label}</p>
+              <p className={cn('text-base font-black tabular-nums mt-1 leading-none', color)}>{value}</p>
             </div>
           ))}
         </div>

@@ -41,6 +41,7 @@ const PLURAL_TO_SINGULAR = {
   payment_reminders:      'payment_reminder',
   attendances:            'attendance',
   godown_entries:         'godown_entry',
+  repair_jobs:            'repair_job',
 };
 const ENTITY_TYPES = Object.values(PLURAL_TO_SINGULAR);
 

@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Warehouse, Plus, ArrowDownToLine, ArrowUpFromLine, Search,
-  Trash2, X, RefreshCw, Package,
+  Trash2, X, RefreshCw, Package, ArrowLeft,
 } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -115,6 +116,7 @@ function AddEntryModal({ products, onClose, onSave }) {
 }
 
 export default function GodownPage() {
+  const navigate = useNavigate();
   const { list, pushEntity, nextId } = useDataStore();
   const { showToast } = useToast();
 
@@ -175,6 +177,11 @@ export default function GodownPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/expenses')}
+            className="h-9 w-9 flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
+            title="Back to Expenses">
+            <ArrowLeft size={16} />
+          </button>
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Warehouse size={18} className="text-primary" />
           </div>
@@ -210,15 +217,19 @@ export default function GodownPage() {
 
       {/* Current stock summary */}
       {Object.keys(stockMap).length > 0 && (
-        <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
-          <div className="px-5 py-3 border-b bg-muted/20">
-            <p className="text-sm font-semibold">Current Godown Stock</p>
+        <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
+          <div className="px-5 py-3 border-b bg-muted/20 flex items-center justify-between">
+            <p className="text-sm font-bold">Current Godown Stock</p>
+            <span className="text-xs text-muted-foreground">{Object.values(stockMap).filter(v => v.qty > 0).length} items</span>
           </div>
-          <div className="divide-y divide-border/40">
+          <div className="divide-y divide-border/30">
             {Object.entries(stockMap).filter(([, v]) => v.qty > 0).map(([key, v]) => (
-              <div key={key} className="flex items-center justify-between px-5 py-2.5">
-                <span className="text-sm font-medium">{v.name}</span>
-                <span className="text-sm font-bold text-emerald-600 tabular-nums">{v.qty}</span>
+              <div key={key} className="flex items-center justify-between px-5 py-3 hover:bg-muted/20 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="text-sm font-medium">{v.name}</span>
+                </div>
+                <span className="text-sm font-bold text-emerald-600 tabular-nums bg-emerald-500/10 px-2.5 py-0.5 rounded-full">{v.qty}</span>
               </div>
             ))}
             {Object.values(stockMap).filter(v => v.qty > 0).length === 0 && (

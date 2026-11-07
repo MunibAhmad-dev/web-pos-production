@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell, Plus, X, CheckCircle2, Clock, AlertTriangle,
-  ChevronDown, ChevronUp, Search, RefreshCw, Trash2, Filter,
+  ChevronDown, ChevronUp, Search, RefreshCw, Trash2, Filter, ArrowLeft,
 } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -97,6 +98,7 @@ function AddReminderModal({ customers, onClose, onSave }) {
 }
 
 export default function PaymentRemindersPage() {
+  const navigate = useNavigate();
   const { list, pushEntity, nextId } = useDataStore();
   const { showToast } = useToast();
 
@@ -192,6 +194,11 @@ export default function PaymentRemindersPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/customers')}
+            className="h-9 w-9 flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
+            title="Back to Customers">
+            <ArrowLeft size={16} />
+          </button>
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Bell size={18} className="text-primary" />
           </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -67,6 +68,7 @@ function SimpleModal({ isOpen, title, icon: Icon, accentColor, children, onClose
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function CashRegisterPage() {
+  const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
   const { showToast } = useToast();
 
@@ -154,8 +156,15 @@ export default function CashRegisterPage() {
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <span>Home</span><ChevronRight size={12} /><span className="text-foreground font-medium">Cash Register</span>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">Cash Register</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Open, reconcile and close your daily cash drawer</p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Cash Register</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Open, reconcile and close your daily cash drawer</p>
+          </div>
+          <button onClick={() => navigate('/register-history')} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-xl border border-border bg-background hover:bg-muted transition-colors font-medium shrink-0">
+            <History size={14} /> History
+          </button>
+        </div>
       </motion.div>
 
       {/* ── Current Session ── */}

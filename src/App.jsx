@@ -41,7 +41,13 @@ import TransactionsPage from './pages/finance/TransactionsPage';
 import LoansPage from './pages/finance/LoansPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import BalanceSheetPage from './pages/reports/BalanceSheetPage';
+import FbrInvoicingPage from './pages/reports/FbrInvoicingPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import InvoicesPage from './pages/invoices/InvoicesPage';
+import RegisterHistoryPage from './pages/finance/RegisterHistoryPage';
+import VendorReportsPage from './pages/vendors/VendorReportsPage';
+import RepairsPage from './pages/repairs/RepairsPage';
+import AboutPage from './pages/AboutPage';
 import ManufacturingLogin from './pages/manufacturing/ManufacturingLogin';
 import ManufacturingRegister from './pages/manufacturing/ManufacturingRegister';
 import ManufacturingPendingApproval from './pages/manufacturing/ManufacturingPendingApproval';
@@ -144,6 +150,12 @@ export default function App() {
                   <Route path="/loans" element={<LoansPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/balance-sheet" element={<BalanceSheetPage />} />
+                  <Route path="/fbr" element={<FbrInvoicingPage />} />
+                  <Route path="/invoices" element={<InvoicesPage />} />
+                  <Route path="/register-history" element={<RegisterHistoryPage />} />
+                  <Route path="/vendor-reports" element={<VendorReportsPage />} />
+                  <Route path="/repairs" element={<RepairsPage />} />
+                  <Route path="/about" element={<AboutPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>
 

@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   MapPin, Phone, MessageCircle, CheckCircle2, Circle, Search,
   Download, Printer, SortAsc, Users, Wallet, TrendingDown,
-  ChevronDown, Filter, RefreshCw, IndianRupee,
+  ChevronDown, Filter, RefreshCw, IndianRupee, ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
@@ -111,6 +112,7 @@ async function printRouteSheet(customers, collections, storeName = 'Store') {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RouteBookPage() {
+  const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
   const { showToast } = useToast();
 
@@ -212,12 +214,19 @@ export default function RouteBookPage() {
       {/* ── Header ── */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/15"><MapPin size={18} className="text-blue-500" /></div>
-            <h1 className="text-2xl font-black tracking-tight">Route Book</h1>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/customers')}
+            className="h-9 w-9 flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
+            title="Back to Customers">
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/15"><MapPin size={18} className="text-blue-500" /></div>
+              <h1 className="text-2xl font-black tracking-tight">Route Book</h1>
+            </div>
+            <p className="text-xs font-medium text-muted-foreground ml-[52px]">{today}</p>
           </div>
-          <p className="text-xs font-medium text-muted-foreground ml-[52px]">{today}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {Object.values(collections).some(v => Number(v) > 0) && (

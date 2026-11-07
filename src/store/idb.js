@@ -13,7 +13,7 @@
  */
 
 const DB_NAME    = 'osatech_pos';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const WINDOW_DAYS = 60;
 
@@ -38,6 +38,7 @@ export const ALL_IDB_TYPES = [
   'payment_reminder',
   'attendance',
   'godown_entry',
+  'repair_job',
 ];
 
 // ── DB lifecycle ──────────────────────────────────────────────────────────────

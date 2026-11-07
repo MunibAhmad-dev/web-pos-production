@@ -4,8 +4,10 @@ import {
   X, Phone, Mail, MapPin, CreditCard, Receipt, Undo2, History,
   MessageCircle, ChevronDown, ChevronRight, Plus, Printer,
   Trash2, Check, Clock, FileText, TrendingUp, Package, ArrowLeft,
-  CheckCircle2, Eye, Tag, CalendarDays,
+  CheckCircle2, Eye, Tag, CalendarDays, BookOpen, Pencil,
 } from 'lucide-react';
+import CustomerKhataPanel from '../../components/customers/CustomerKhataPanel';
+import EditSaleModal from '../../components/sales/EditSaleModal';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -51,6 +53,7 @@ export default function CustomerDetailPage() {
   const [payAmounts, setPayAmounts] = useState({});
   const [payNotesBySale, setPayNotesBySale] = useState({});
   const [expandedSaleId, setExpandedSaleId] = useState(null);
+  const [editSale, setEditSale] = useState(null);
 
   const customer = list('customer').find((c) => String(c.id) === String(id));
   const allSales = list('sale');
@@ -58,6 +61,8 @@ export default function CustomerDetailPage() {
   const allPayments = list('customer_payment');
   const allReturns = list('sale_return');
   const allReturnItems = list('sale_return_item');
+  const allKhatas = list('customer_khata');
+  const allKhataPayments = list('customer_khata_payment');
 
   const data = useMemo(() => {
     if (!customer) return null;
@@ -77,6 +82,14 @@ export default function CustomerDetailPage() {
     const totalReturned = custReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
     const balance = Math.max(0, totalTaken - totalPaid - totalReturned);
 
+    const khataBalance = allKhatas
+      .filter((k) => String(k.customer_id) === cid)
+      .reduce((s, k) => {
+        const paid = allKhataPayments.filter((p) => String(p.khata_id) === String(k.id)).reduce((a, p) => a + Number(p.amount || 0), 0);
+        return s + Math.max(0, Number(k.total_amount || 0) - paid);
+      }, 0);
+    const totalBalance = balance + khataBalance;
+
     const enhancedSales = custSales.map((sale) => {
       const items = allSaleItems.filter((i) => String(i.sale_id) === String(sale.id));
       const linkedPayments = custPayments.filter((p) => String(p.sale_id) === String(sale.id));
@@ -93,8 +106,8 @@ export default function CustomerDetailPage() {
       ...custReturns.map((r) => ({ type: 'RETURN', date: r.date_created, notes: `Return — ${fmtPKR(r.total_returned)}`, amount: Number(r.total_returned || 0), id: r.id })),
     ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-    return { sales: enhancedSales, payments: custPayments, returns: custReturns, activity, totalTaken, totalPaid, totalReturned, balance };
-  }, [customer, allSales, allSaleItems, allPayments, allReturns]);
+    return { sales: enhancedSales, payments: custPayments, returns: custReturns, activity, totalTaken, totalPaid, totalReturned, balance, khataBalance, totalBalance };
+  }, [customer, allSales, allSaleItems, allPayments, allReturns, allKhatas, allKhataPayments]);
 
   const timeline = useMemo(() => {
     if (!data) return [];
@@ -168,6 +181,47 @@ export default function CustomerDetailPage() {
     showToast('Payment removed');
   };
 
+  const handleSaveEdit = async ({ lines, subtotal, discount, total }) => {
+    const sale = editSale;
+    const now = new Date().toISOString();
+    const originalItems = sale.items || [];
+    const originalById = new Map(originalItems.map((i) => [String(i.id), i]));
+    const keptIds = new Set(lines.filter((l) => l.saleItemId != null).map((l) => String(l.saleItemId)));
+    const events = [{ entityType: 'sale', operation: 'update', payload: { ...sale, subtotal, discount, total, edited_at: now } }];
+    const products = list('product');
+    for (const item of originalItems) {
+      if (!keptIds.has(String(item.id))) {
+        events.push({ entityType: 'sale_item', operation: 'delete', payload: { id: item.id } });
+        if (item.product_id != null) {
+          const prod = products.find((p) => String(p.id) === String(item.product_id));
+          if (prod) events.push({ entityType: 'product', operation: 'update', payload: { ...prod, stock: Number(prod.stock || 0) + Number(item.quantity || 0), updated_at: now } });
+        }
+      }
+    }
+    for (const line of lines) {
+      if (line.saleItemId != null) {
+        const orig = originalById.get(String(line.saleItemId));
+        if (orig) {
+          events.push({ entityType: 'sale_item', operation: 'update', payload: { ...orig, price: line.price, purchase_price: line.purchase_price, quantity: line.qty, updated_at: now } });
+          if (line.product_id != null) {
+            const prod = products.find((p) => String(p.id) === String(line.product_id));
+            const delta = Number(orig.quantity || 0) - Number(line.qty || 0);
+            if (prod && delta !== 0) events.push({ entityType: 'product', operation: 'update', payload: { ...prod, stock: Number(prod.stock || 0) + delta, updated_at: now } });
+          }
+        }
+      } else {
+        events.push({ entityType: 'sale_item', operation: 'create', payload: { sale_id: sale.id, product_id: line.product_id ?? null, product_name: line.name, price: line.price, purchase_price: line.purchase_price ?? 0, quantity: line.qty, is_custom: line.isCustom ? 1 : 0, created_at: now } });
+        if (line.product_id != null) {
+          const prod = products.find((p) => String(p.id) === String(line.product_id));
+          if (prod) events.push({ entityType: 'product', operation: 'update', payload: { ...prod, stock: Number(prod.stock || 0) - Number(line.qty || 0), updated_at: now } });
+        }
+      }
+    }
+    await pushBatch(events);
+    showToast('Invoice updated');
+    setEditSale(null);
+  };
+
   // Print / WhatsApp an existing invoice — same builders as the POS receipt
   const invoiceDataFor = (sale) => {
     const settings = getReceiptSettings();
@@ -197,7 +251,7 @@ export default function CustomerDetailPage() {
   }
   if (!data) return null;
 
-  const { sales, payments, returns, activity, totalTaken, totalPaid, totalReturned, balance } = data;
+  const { sales, payments, returns, activity, totalTaken, totalPaid, totalReturned, balance, khataBalance, totalBalance } = data;
   const hasMoreSales = sales.length > salesPage * SALES_PER_PAGE;
   const paidCount = sales.filter((s) => s.remaining <= 0.5 && s.status !== 'Cancelled').length;
   const unpaidCount = sales.filter((s) => s.remaining > 0.5 && s.status !== 'Cancelled').length;
@@ -243,10 +297,16 @@ export default function CustomerDetailPage() {
 
           {/* Balance */}
           <div className="px-5 pt-5 pb-3 border-b border-border">
-            <div className={cn('rounded-xl p-4 border text-center', balance > 0.5 ? 'bg-rose-500/8 border-rose-500/20' : 'bg-emerald-500/8 border-emerald-500/20')}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Outstanding (Qaraz)</p>
-              <p className={cn('text-2xl font-black', balance > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(balance)}</p>
-              {balance <= 0.5 && <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">All clear ✓</p>}
+            <div className={cn('rounded-xl p-4 border text-center', totalBalance > 0.5 ? 'bg-rose-500/8 border-rose-500/20' : 'bg-emerald-500/8 border-emerald-500/20')}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Total Balance Due</p>
+              <p className={cn('text-2xl font-black', totalBalance > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(totalBalance)}</p>
+              {totalBalance <= 0.5 && <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">All clear ✓</p>}
+              {totalBalance > 0.5 && (balance > 0.01 || khataBalance > 0.01) && (
+                <div className="flex justify-center gap-3 mt-2 text-[9px] font-semibold text-muted-foreground">
+                  {balance > 0.01 && <span>Invoice: <span className="text-rose-500">{fmtPKR(balance)}</span></span>}
+                  {khataBalance > 0.01 && <span>Khata: <span className="text-orange-500">{fmtPKR(khataBalance)}</span></span>}
+                </div>
+              )}
             </div>
           </div>
 
@@ -294,6 +354,7 @@ export default function CustomerDetailPage() {
                   ['payments', CreditCard, 'Ledger', payments.length],
                   ['returns', Undo2, 'Returns', returns.length],
                   ['activity', History, 'Activity Log', 0],
+                  ['khata', BookOpen, 'Khata', 0],
                 ].map(([val, Icon, lbl, cnt]) => (
                   <TabsTrigger key={val} value={val} className="gap-1.5 text-xs">
                     <Icon size={12} /> {lbl}
@@ -424,6 +485,12 @@ export default function CustomerDetailPage() {
                             </>
                           )}
                           <div className="flex items-center gap-1.5 ml-auto">
+                            {sale.status !== 'Cancelled' && (
+                              <button onClick={() => setEditSale(sale)} title="Edit invoice"
+                                className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/10 transition-colors shrink-0">
+                                <Pencil size={13} />
+                              </button>
+                            )}
                             {customer.phone && (
                               <button
                                 onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(sale)); if (url) window.open(url, '_blank'); }}
@@ -618,9 +685,23 @@ export default function CustomerDetailPage() {
                 </div>
               )}
             </TabsContent>
+            {/* KHATA */}
+            <TabsContent value="khata" className="lg:flex-1 lg:overflow-y-auto m-0 p-0">
+              <CustomerKhataPanel customer={customer} onClose={() => setTab('invoices')} />
+            </TabsContent>
           </Tabs>
         </div>
       </div>
+
+      {/* ── Edit Invoice Modal ── */}
+      <EditSaleModal
+        open={!!editSale}
+        sale={editSale}
+        items={editSale?.items || []}
+        products={list('product')}
+        onClose={() => setEditSale(null)}
+        onSave={handleSaveEdit}
+      />
     </div>
   );
 }

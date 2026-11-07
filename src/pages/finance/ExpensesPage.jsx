@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePagination } from '../../hooks/usePagination';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, Plus, Trash2, FileText, Activity,
-  X, TrendingDown, Layers, BarChart2, CalendarDays, Download, RefreshCw,
+  X, TrendingDown, Layers, BarChart2, CalendarDays, Download, RefreshCw, Warehouse,
 } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
@@ -74,6 +75,7 @@ function isInRange(dateStr, filter, fromDate, toDate) {
    MAIN PAGE COMPONENT
 ═══════════════════════════════════════════════════════════════════════════ */
 export default function ExpensesPage() {
+  const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
   const { showToast } = useToast();
 
@@ -197,19 +199,29 @@ export default function ExpensesPage() {
             Track operational costs — rent, utilities, and everything in between
           </p>
         </div>
-        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowAdd(v => !v)}
-            className={cn(
-              'inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all',
-              showAdd
-                ? 'bg-muted text-foreground hover:bg-muted/80 border border-border'
-                : 'bg-rose-600 hover:bg-rose-700 text-white',
-            )}
+            onClick={() => navigate('/godown')}
+            className="flex items-center gap-2 h-9 px-3 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-colors"
+            title="Godown Log"
           >
-            {showAdd ? <><X size={15} /> Cancel</> : <><Plus size={15} /> Add Expense</>}
+            <Warehouse size={15} />
+            <span className="hidden sm:inline">Godown Log</span>
           </button>
-        </motion.div>
+          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
+            <button
+              onClick={() => setShowAdd(v => !v)}
+              className={cn(
+                'inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all',
+                showAdd
+                  ? 'bg-muted text-foreground hover:bg-muted/80 border border-border'
+                  : 'bg-rose-600 hover:bg-rose-700 text-white',
+              )}
+            >
+              {showAdd ? <><X size={15} /> Cancel</> : <><Plus size={15} /> Add Expense</>}
+            </button>
+          </motion.div>
+        </div>
       </motion.div>
 
       {/* ── Date filter ── */}
@@ -279,7 +291,7 @@ export default function ExpensesPage() {
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 mb-0.5">{kpi.label}</p>
-                <p className="text-xl font-bold font-mono tracking-tight">{kpi.value}</p>
+                <p className="text-xl font-black tracking-tight tabular-nums">{kpi.value}</p>
               </div>
             </div>
           </motion.div>

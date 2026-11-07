@@ -36,7 +36,7 @@ function StatCard({ icon: Icon, label, value, sub, tint }) {
         <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', tint.bg)}><Icon size={18} className={tint.icon} /></div>
         <p className="text-sm font-semibold text-muted-foreground">{label}</p>
       </div>
-      <p className="text-2xl font-bold text-foreground tracking-tight">{value}</p>
+      <p className="text-2xl font-black text-foreground tracking-tight tabular-nums">{value}</p>
       <div className="flex items-center justify-between mt-2">
         <p className="text-xs text-muted-foreground">{sub}</p>
         <Sparkline color={tint.spark} />

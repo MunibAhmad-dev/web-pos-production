@@ -76,6 +76,8 @@ export default function VendorDetailPage() {
   const allPayments = list('vendor_payment');
   const allReturns = list('purchase_return');
   const allProducts = list('product');
+  const allVendorKhatas = list('vendor_khata');
+  const allVendorKhataPayments = list('vendor_khata_payment');
 
   const data = useMemo(() => {
     if (!vendor) return null;
@@ -95,7 +97,15 @@ export default function VendorDetailPage() {
     const totalPurchased = vendPurchases.filter((p) => p.status !== 'Cancelled').reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
     const totalPaid = vendPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
     const totalReturned = vendReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
-    const balance = Math.max(0, totalPurchased - totalPaid - totalReturned);
+    const purchaseBal = Math.max(0, totalPurchased - totalPaid - totalReturned);
+
+    const khataBal = allVendorKhatas
+      .filter((k) => String(k.vendor_id) === vid)
+      .reduce((s, k) => {
+        const kPaid = allVendorKhataPayments.filter((p) => String(p.khata_id) === String(k.id)).reduce((a, p) => a + Number(p.amount || 0), 0);
+        return s + Math.max(0, Number(k.total_amount || 0) - kPaid);
+      }, 0);
+    const balance = purchaseBal + khataBal;
 
     const enhancedPOs = vendPurchases.map((po) => {
       const items = allPurchaseItems.filter((i) => String(i.purchase_id) === String(po.id));
@@ -116,8 +126,8 @@ export default function VendorDetailPage() {
       ...vendReturns.map((r) => ({ type: 'RETURN', date: r.date_created, notes: `Return — ${fmtPKR(r.total_returned)}`, amount: Number(r.total_returned || 0), id: r.id })),
     ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-    return { purchases: enhancedPOs, payments: vendPayments, returns: vendReturns, products: vendorProducts, activity, totalPurchased, totalPaid, totalReturned, balance, stockCostValue, totalStock };
-  }, [vendor, allPurchases, allPurchaseItems, allPayments, allReturns, allProducts]);
+    return { purchases: enhancedPOs, payments: vendPayments, returns: vendReturns, products: vendorProducts, activity, totalPurchased, totalPaid, totalReturned, purchaseBal, khataBal, balance, stockCostValue, totalStock };
+  }, [vendor, allPurchases, allPurchaseItems, allPayments, allReturns, allProducts, allVendorKhatas, allVendorKhataPayments]);
 
   const timeline = useMemo(() => {
     if (!data) return [];
@@ -191,7 +201,7 @@ export default function VendorDetailPage() {
   }
   if (!data) return null;
 
-  const { purchases, payments, returns, products, activity, totalPurchased, totalPaid, totalReturned, balance, stockCostValue, totalStock } = data;
+  const { purchases, payments, returns, products, activity, totalPurchased, totalPaid, totalReturned, purchaseBal, khataBal, balance, stockCostValue, totalStock } = data;
   const filteredPOs = purchases.filter((p) => {
     if (poFilter === 'all') return true;
     if (poFilter === 'cancelled') return p.status === 'Cancelled';
@@ -289,9 +299,15 @@ export default function VendorDetailPage() {
           {/* Balance */}
           <div className="px-5 pt-5 pb-3 border-b border-border">
             <div className={cn('rounded-xl p-4 border text-center', balance > 0.5 ? 'bg-rose-500/8 border-rose-500/20' : 'bg-emerald-500/8 border-emerald-500/20')}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Amount Owed (Baqi)</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Total Owed (Baqi)</p>
               <p className={cn('text-2xl font-black', balance > 0.5 ? 'text-rose-600' : 'text-emerald-600')}>{fmtPKR(balance)}</p>
               {balance <= 0.5 && <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">All clear ✓</p>}
+              {balance > 0.5 && (purchaseBal > 0.01 || khataBal > 0.01) && (
+                <div className="flex justify-center gap-3 mt-2 text-[9px] font-semibold text-muted-foreground">
+                  {purchaseBal > 0.01 && <span>Bills: <span className="text-rose-500">{fmtPKR(purchaseBal)}</span></span>}
+                  {khataBal > 0.01 && <span>Khata: <span className="text-orange-500">{fmtPKR(khataBal)}</span></span>}
+                </div>
+              )}
             </div>
           </div>
 
