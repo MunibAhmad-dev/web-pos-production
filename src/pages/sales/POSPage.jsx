@@ -207,6 +207,7 @@ export default function POSPage() {
       price: item.unitPrice,
       purchase_price: item.unitCost,
       is_custom: Boolean(item.isCustom),
+      date_created: now,
       created_at: now,
       carton_qty: item.ws_carton_qty || 0,
       piece_name: item.ws_piece_name || null,
