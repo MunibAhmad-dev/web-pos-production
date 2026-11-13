@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, BarChart3, TrendingUp, Package, Wallet, ShoppingCart, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
+import { isCancelled, vendorBalances, khataBalances } from '@/lib/ledger';
 
 const fmtPKR  = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -26,17 +27,23 @@ export default function VendorReportsPage() {
   const purchases  = list('purchase');
   const payments   = list('vendor_payment');
   const khataPayments = list('vendor_khata_payment');
+  const purchaseReturns = list('purchase_return');
+  const vendorKhatas = list('vendor_khata');
 
   const stats = useMemo(() => {
+    // Outstanding = desktop get-vendors rule + open custom bills (vendors carry no stored balance).
+    const balByV = vendorBalances({ purchases, vendorPayments: payments, purchaseReturns });
+    const khataByV = khataBalances(vendorKhatas, khataPayments, 'vendor_id');
+    const khataVendor = new Map(vendorKhatas.map((k) => [String(k.id), String(k.vendor_id)]));
     return vendors
       .map((v) => {
         const vid = String(v.id);
         const vPurchases = purchases.filter((p) => String(p.vendor_id) === vid && (!cutoff || new Date(p.date_created || 0) >= cutoff));
         const vPayments  = payments.filter((p) => String(p.vendor_id) === vid);
-        const vKhata     = khataPayments.filter((p) => String(p.vendor_id) === vid);
-        const totalSpend    = vPurchases.reduce((s, p) => s + Number(p.total || 0), 0);
+        const vKhata     = khataPayments.filter((p) => khataVendor.get(String(p.khata_id)) === vid);
+        const totalSpend    = vPurchases.filter((p) => !isCancelled(p)).reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
         const totalPaid     = [...vPayments, ...vKhata].reduce((s, p) => s + Number(p.amount || 0), 0);
-        const outstanding   = Math.max(0, Number(v.outstanding_balance || 0));
+        const outstanding   = Math.max(0, (balByV.get(vid) || 0) + (khataByV.get(vid) || 0));
         const lastPurchase  = vPurchases.sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0))[0];
         return {
           ...v,
@@ -49,7 +56,7 @@ export default function VendorReportsPage() {
       })
       .filter((v) => v.totalSpend > 0 || v.outstanding > 0 || v.purchaseCount > 0)
       .sort((a, b) => b.totalSpend - a.totalSpend);
-  }, [vendors, purchases, payments, khataPayments, cutoff]);
+  }, [vendors, purchases, payments, khataPayments, purchaseReturns, vendorKhatas, cutoff]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();

@@ -18,6 +18,7 @@ import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/format';
 import { useModuleSettings, getModuleSettings } from '../../hooks/useModuleSettings';
 import { Switch } from '@/components/ui/switch';
+import { isCancelled } from '@/lib/ledger';
 
 // ─── Format helper ────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(n ?? 0).toLocaleString('en-PK');
@@ -854,7 +855,7 @@ function ProductDetailModal({ product, onClose }) {
       .filter((si) => String(si.product_id) === pid)
       .forEach((si) => {
         const sale = saleMap[String(si.sale_id)];
-        if (sale?.status === 'cancelled') return;
+        if (isCancelled(sale)) return;
         events.push({ type: 'sale', amount: -Number(si.quantity || 0), createdAt: sale?.date_created || '' });
       });
 
@@ -1095,7 +1096,7 @@ export default function ProductsPage() {
   const analytics = useMemo(() => {
     if (!showAnalytics || !products.length) return null;
     const completedSaleIds = new Set(
-      sales.filter((s) => s.status !== 'cancelled').map((s) => String(s.id))
+      sales.filter((s) => !isCancelled(s)).map((s) => String(s.id))
     );
     const saleMap = Object.fromEntries(sales.map((s) => [String(s.id), s]));
 

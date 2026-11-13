@@ -8,6 +8,7 @@ import {
   CalendarDays, Plus, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isCancelled, saleStatus, buildSaleRefundTxn } from '@/lib/ledger';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/format';
@@ -225,8 +226,9 @@ export default function ReturnsPage() {
   const { paged: pagedPurchaseReturns, page: prPage, pageCount: prPageCount, setPage: setPrPage } = usePagination(filteredPurchaseReturns, 30);
 
   // Form: returnable documents
-  const returnableSales = useMemo(() => sales.filter((s) => s.status === 'Completed'), [sales]);
-  const returnablePurchases = useMemo(() => purchases.filter((p) => p.status === 'received'), [purchases]);
+  // Desktop writes Completed / paid / Partial; purchases are Completed / Partial / Pending — 'received' never matched them.
+  const returnableSales = useMemo(() => sales.filter((s) => !isCancelled(s) && saleStatus(s) !== 'returned'), [sales]);
+  const returnablePurchases = useMemo(() => purchases.filter((p) => !isCancelled(p)), [purchases]);
 
   const selectedDoc = useMemo(() => {
     if (!selectedId) return null;
@@ -236,18 +238,27 @@ export default function ReturnsPage() {
 
   const formItems = useMemo(() => {
     if (!selectedDoc) return [];
+    // qty = what is still returnable after earlier returns on the same document
     if (formTab === 'sale') {
+      const priorIds = new Set(saleReturns.filter((r) => String(r.sale_id) === String(selectedDoc.id)).map((r) => String(r.id)));
+      const prior = saleReturnItems.filter((ri) => priorIds.has(String(ri.return_id)));
       return saleItems.filter((i) => String(i.sale_id) === String(selectedDoc.id) && i.product_id != null)
-        .map((i) => ({ product_id: i.product_id, name: i.product_name || i.name, qty: i.quantity, price: i.price }));
+        .map((i) => {
+          const done = prior.filter((ri) => (ri.sale_item_id != null ? String(ri.sale_item_id) === String(i.id) : String(ri.product_id) === String(i.product_id)))
+            .reduce((a, ri) => a + Number(ri.quantity || 0), 0);
+          return { sale_item_id: i.id, product_id: i.product_id, name: i.product_name || i.name, qty: Math.max(0, Number(i.quantity || 0) - done), price: i.price };
+        });
     }
+    const priorPr = new Set(purchaseReturns.filter((r) => String(r.purchase_id) === String(selectedDoc.id)).map((r) => String(r.id)));
+    const priorPri = list('purchase_return_item').filter((ri) => priorPr.has(String(ri.return_id)));
     const piItems = list('purchase_item').filter((pi) => String(pi.purchase_id) === String(selectedDoc.id));
     return piItems.map((i) => ({
       product_id: i.product_id,
       name: i.product_name || products.find((p) => String(p.id) === String(i.product_id))?.name || `#${i.product_id}`,
-      qty: i.quantity,
+      qty: Math.max(0, Number(i.quantity || 0) - priorPri.filter((ri) => String(ri.product_id) === String(i.product_id)).reduce((a, ri) => a + Number(ri.quantity || 0), 0)),
       price: i.purchase_price || i.unit_cost || 0,
     }));
-  }, [selectedDoc, formTab, saleItems, products, list]);
+  }, [selectedDoc, formTab, saleItems, saleReturns, saleReturnItems, purchaseReturns, products, list]);
 
   const totalRefund = useMemo(() => formItems.reduce((s, item) => s + Number(qtyMap[item.product_id] || 0) * item.price, 0), [formItems, qtyMap]);
 
@@ -255,7 +266,7 @@ export default function ReturnsPage() {
     const returnItems = formItems.filter((item) => Number(qtyMap[item.product_id] || 0) > 0);
     if (returnItems.length === 0) { showToast('Enter return quantity for at least one item', 'error'); return; }
     const invalids = returnItems.filter((item) => Number(qtyMap[item.product_id]) > item.qty);
-    if (invalids.length > 0) { showToast(`Cannot return more than sold for: ${invalids.map((i) => i.name).join(', ')}`, 'error'); return; }
+    if (invalids.length > 0) { showToast(`Cannot return more than what is left for: ${invalids.map((i) => i.name).join(', ')}`, 'error'); return; }
     setSubmitting(true);
     try {
       const now = new Date().toISOString();
@@ -263,9 +274,26 @@ export default function ReturnsPage() {
       const events = [];
 
       if (formTab === 'sale') {
-        events.push({ entityType: 'sale_return', operation: 'create', payload: { id: returnId, sale_id: selectedDoc.id, customer_id: selectedDoc.customer_id, date_created: now, reason, total_returned: totalRefund } });
+        // Desktop rule: a return first comes off what the customer still owes on this bill; any
+        // excess is cash handed back (cash_refunded). Credit is capped at what's left of the bill.
+        const sid = String(selectedDoc.id);
+        const priorReturned = saleReturns.filter((r) => String(r.sale_id) === sid).reduce((a, r) => a + Number(r.total_returned || 0), 0);
+        const credit = Math.max(0, Math.min(totalRefund, Number(selectedDoc.total || 0) - priorReturned));
+        const customer = selectedDoc.customer_id != null ? customers.find((c) => String(c.id) === String(selectedDoc.customer_id)) : null;
+        const paidOnSale = list('customer_payment').filter((p) => String(p.sale_id) === sid).reduce((a, p) => a + Number(p.amount || 0), 0);
+        const st = saleStatus(selectedDoc);
+        const due = (!customer || st === 'paid') ? 0
+          : Math.max(0, Number(selectedDoc.total || 0) - paidOnSale - priorReturned - Number(selectedDoc.write_off_amount || 0));
+        const reduce = Math.min(due, credit);
+        const cashRefunded = Math.round((credit - reduce) * 100) / 100;
+        const refund = buildSaleRefundTxn({ saleId: selectedDoc.id, amount: cashRefunded, accounts: list('account'), accountTxns: list('account_txn'), now });
+        events.push({ entityType: 'sale_return', operation: 'create', payload: { id: returnId, sale_id: selectedDoc.id, customer_id: selectedDoc.customer_id, date_created: now, reason, total_returned: credit, cash_refunded: cashRefunded, refund_account_id: refund?.accountId ?? null } });
+        if (refund) events.push(refund.event);
+        if (customer && reduce > 0.009) {
+          events.push({ entityType: 'customer', operation: 'update', payload: { ...customer, outstanding_balance: Math.max(0, Number(customer.outstanding_balance || 0) - reduce), updated_at: now } });
+        }
         for (const item of returnItems) {
-          events.push({ entityType: 'sale_return_item', operation: 'create', payload: { return_id: returnId, product_id: item.product_id, product_name: item.name, quantity: Number(qtyMap[item.product_id]), price: item.price, date_created: now } });
+          events.push({ entityType: 'sale_return_item', operation: 'create', payload: { return_id: returnId, sale_item_id: item.sale_item_id, product_id: item.product_id, product_name: item.name, quantity: Number(qtyMap[item.product_id]), price: item.price, date_created: now } });
           const product = products.find((p) => String(p.id) === String(item.product_id));
           if (product) events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: Number(product.stock || 0) + Number(qtyMap[item.product_id]), updated_at: now } });
         }

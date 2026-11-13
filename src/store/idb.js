@@ -17,13 +17,16 @@ const DB_VERSION = 4;
 
 export const WINDOW_DAYS = 60;
 
+// purchase, purchase_return and account_txn are NOT windowed: vendor payables and
+// account balances are sums over full history, and vendor_payment is unwindowed —
+// windowing only one side made old vendors read as fully paid and balances wrong.
 export const WINDOWED_TYPES = new Set([
   'sale', 'sale_item',
   'sale_return', 'sale_return_item',
-  'purchase', 'purchase_item', 'inventory_batch',
-  'purchase_return', 'purchase_return_item',
+  'purchase_item', 'inventory_batch',
+  'purchase_return_item',
   'expense',
-  'financial_transaction', 'account_txn',
+  'financial_transaction',
 ]);
 
 // All entity types that get an IDB object store
@@ -98,6 +101,30 @@ export function idbPutMany(db, type, records) {
     const tx    = db.transaction(type, 'readwrite');
     const store = tx.objectStore(type);
     for (const r of records) store.put({ ...r, id: String(r.id) });
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+/** Remove records of one entity type by id. */
+export function idbDeleteMany(db, type, ids) {
+  if (!ids?.length) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(type, 'readwrite');
+    const store = tx.objectStore(type);
+    for (const id of ids) store.delete(String(id));
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+/** Replace a store's contents — a full export is authoritative, so rows deleted in the cloud must not linger. */
+export function idbReplaceAll(db, type, records) {
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(type, 'readwrite');
+    const store = tx.objectStore(type);
+    store.clear();
+    for (const r of records || []) store.put({ ...r, id: String(r.id) });
     tx.oncomplete = resolve;
     tx.onerror    = () => reject(tx.error);
   });

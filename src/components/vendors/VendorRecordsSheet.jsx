@@ -11,12 +11,13 @@ import { useToast } from '../../context/ToastContext';
 import { computeVendorLedger } from '../../utils/vendorStats';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/format';
 import { cn } from '@/lib/utils';
+import { isCancelled } from '@/lib/ledger';
 
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' }) : '—';
 
 function poStatus(po) {
-  if (po.status === 'cancelled') return { label: 'Cancelled', tone: 'gray' };
+  if (isCancelled(po)) return { label: 'Cancelled', tone: 'gray' };
   if (po.remaining <= 0.5) return { label: 'Settled', tone: 'green' };
   if (po.paidAgainstOrder > 0) return { label: 'Partial', tone: 'orange' };
   return { label: 'Unpaid', tone: 'red' };
@@ -61,7 +62,7 @@ export default function VendorRecordsSheet({ open, onClose, vendor }) {
   const ledgerRows = useMemo(() => {
     if (!ledger) return [];
     const events = [
-      ...ledger.purchases.filter((p) => p.status !== 'cancelled').map((po) => ({ label: `PO-${String(po.id).slice(-6)}`, date: po.date_created, debit: Number(po.total || 0), credit: 0 })),
+      ...ledger.purchases.filter((p) => !isCancelled(p)).map((po) => ({ label: `PO-${String(po.id).slice(-6)}`, date: po.date_created, debit: Number(po.total || 0), credit: 0 })),
       ...ledger.payments.map((p) => ({ label: 'Payment', date: p.date_created, debit: 0, credit: Number(p.amount || 0) })),
       ...ledger.returns.map((r) => ({ label: r.reason || 'Return', date: r.date_created, debit: 0, credit: Number(r.total || 0) })),
     ].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
@@ -130,7 +131,7 @@ export default function VendorRecordsSheet({ open, onClose, vendor }) {
 
   if (!vendor || !ledger) return null;
 
-  const pendingPOs = ledger.purchases.filter((po) => po.remaining > 0.5 && po.status !== 'cancelled');
+  const pendingPOs = ledger.purchases.filter((po) => po.remaining > 0.5 && !isCancelled(po));
   const paidPct = ledger.totalPurchased > 0 ? Math.round((ledger.totalPaid / ledger.totalPurchased) * 100) : 0;
 
   return (
@@ -317,7 +318,7 @@ export default function VendorRecordsSheet({ open, onClose, vendor }) {
                         )}
 
                         {/* Inline pay for this PO */}
-                        {po.remaining > 0.5 && po.status !== 'cancelled' && (
+                        {po.remaining > 0.5 && !isCancelled(po) && (
                           <div className="px-4 py-3 border-t border-border/30">
                             {payingPoId === po.id ? (
                               <div className="space-y-2">

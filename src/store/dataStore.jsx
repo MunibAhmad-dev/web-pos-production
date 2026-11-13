@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import cloudApi from '../api/cloudClient';
 import { pushEvents, nextId } from '../api/syncClient';
 import {
-  openPosDB, idbPutMany, idbGetAll, idbGetSince, idbGetBefore, idbGetSaleItems,
+  openPosDB, idbPutMany, idbDeleteMany, idbReplaceAll, idbGetAll, idbGetSince, idbGetBefore, idbGetSaleItems,
   idbClearAll, getIdbMeta, setIdbMeta,
   ALL_IDB_TYPES, WINDOWED_TYPES, WINDOW_DAYS,
 } from './idb';
@@ -108,14 +108,20 @@ export function DataStoreProvider({ children }) {
     });
   }, []);
 
-  /** Merge incremental pull-data changes into React state. */
-  const applyIncoming = useCallback((byEntityType) => {
-    if (!byEntityType) return;
+  /** Merge incremental pull-data changes (upserts + deletes) into React state. */
+  const applyIncoming = useCallback((byEntityType, deletedByType) => {
+    if (!byEntityType && !deletedByType) return;
     setCollections((prev) => {
       const next = { ...prev };
-      for (const [entityType, rows] of Object.entries(byEntityType)) {
+      for (const [entityType, ids] of Object.entries(deletedByType || {})) {
+        if (!ENTITY_TYPES.includes(entityType) || !Array.isArray(ids)) continue;
+        const map = new Map(next[entityType]);
+        for (const id of ids) map.delete(String(id));
+        next[entityType] = map;
+      }
+      for (const [entityType, rows] of Object.entries(byEntityType || {})) {
         if (!ENTITY_TYPES.includes(entityType) || !Array.isArray(rows)) continue;
-        const map = new Map(prev[entityType]);
+        const map = new Map(next[entityType]);
         for (const row of rows) {
           if (row?.id == null) continue;
           map.set(String(row.id), row);
@@ -152,23 +158,51 @@ export function DataStoreProvider({ children }) {
       const db = await openPosDB();
       for (const [plural, singular] of Object.entries(PLURAL_TO_SINGULAR)) {
         const rows = exportData[plural];
-        if (!Array.isArray(rows) || !rows.length) continue;
-        await idbPutMany(db, singular, rows.map(r => ({ ...r, id: String(r.id) })));
+        if (!Array.isArray(rows)) continue;
+        await idbReplaceAll(db, singular, rows.filter(r => r?.id != null)).catch(() => {});
       }
     } catch {} // IDB unavailable (e.g. private browsing) — continue
   }, []);
 
-  /** Write incremental changes to IDB in the background. */
-  const persistIncomingToIdb = useCallback(async (byEntityType) => {
-    if (!byEntityType) return;
+  /** Write incremental changes (upserts + deletes) to IDB in the background. */
+  const persistIncomingToIdb = useCallback(async (byEntityType, deletedByType) => {
     try {
       const db = await openPosDB();
-      for (const [entityType, rows] of Object.entries(byEntityType)) {
+      for (const [entityType, ids] of Object.entries(deletedByType || {})) {
+        if (!ENTITY_TYPES.includes(entityType) || !Array.isArray(ids) || !ids.length) continue;
+        await idbDeleteMany(db, entityType, ids).catch(() => {});
+      }
+      for (const [entityType, rows] of Object.entries(byEntityType || {})) {
         if (!ENTITY_TYPES.includes(entityType) || !Array.isArray(rows) || !rows.length) continue;
         await idbPutMany(db, entityType, rows.map(r => ({ ...r, id: String(r.id) }))).catch(() => {});
       }
     } catch {}
   }, []);
+
+  /**
+   * Pull every change since the cursor. The server caps a page at 3000 events and
+   * signals hasMore — jumping straight to "now" after one page silently dropped the rest.
+   */
+  const pullSince = useCallback(async (meta) => {
+    let params = meta?.lastId != null ? { sinceId: meta.lastId } : { since: meta?.savedAt };
+    let lastId = meta?.lastId ?? null;
+    let pulledAt = null;
+    for (let page = 0; page < 200; page++) {
+      const { data } = await cloudApi.get('/instances/pull-data', { params });
+      if (data?.data || data?.deleted) {
+        applyIncoming(data.data, data.deleted);
+        void persistIncomingToIdb(data.data, data.deleted);
+      }
+      pulledAt = pulledAt || data?.pulled_at || new Date().toISOString();
+      // An empty date-based page reports lastId 0 — adopting it would make the next pull re-fetch all history.
+      if (Number(data?.lastId) > Number(lastId || 0)) lastId = Number(data.lastId);
+      if (!data?.hasMore || data?.lastId == null) break;
+      params = { sinceId: data.lastId };
+    }
+    const next = { savedAt: pulledAt || new Date().toISOString(), lastId };
+    lastSyncRef.current = next;
+    setIdbMeta(next);
+  }, [applyIncoming, persistIncomingToIdb]);
 
   // ── bootstrap ─────────────────────────────────────────────────────────────
   //   force=false (default): try IDB cache first
@@ -184,25 +218,12 @@ export function DataStoreProvider({ children }) {
           try {
             const db = await openPosDB();
             await hydrateFromIdb(db);
-            lastSyncRef.current = meta.savedAt;
+            lastSyncRef.current = meta;
             setBootstrapped(true);
             setLoading(false);
 
             // Background catch-up — fire and forget
-            void (async () => {
-              try {
-                const { data } = await cloudApi.get('/instances/pull-data', {
-                  params: { since: meta.savedAt },
-                });
-                if (data?.data) {
-                  applyIncoming(data.data);
-                  void persistIncomingToIdb(data.data);
-                }
-                const newTs = data.pulled_at || new Date().toISOString();
-                lastSyncRef.current = newTs;
-                setIdbMeta({ savedAt: newTs });
-              } catch {}
-            })();
+            void pullSince(meta).catch(() => {});
             return;
           } catch {} // IDB read failed — fall through to network
         }
@@ -213,8 +234,8 @@ export function DataStoreProvider({ children }) {
       const savedAt = exportData.exported_at || new Date().toISOString();
 
       applyExportWindowed(exportData);
-      lastSyncRef.current = savedAt;
-      setIdbMeta({ savedAt });
+      lastSyncRef.current = { savedAt, lastId: null };
+      setIdbMeta({ savedAt, lastId: null });
       setBootstrapped(true);
 
       // Write everything to IDB in background (doesn't block the UI)
@@ -223,21 +244,13 @@ export function DataStoreProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [applyExportWindowed, applyIncoming, hydrateFromIdb, persistExportToIdb, persistIncomingToIdb]);
+  }, [applyExportWindowed, hydrateFromIdb, persistExportToIdb, pullSince]);
 
   // ── incremental refresh ── every 45 s + window focus
   const refresh = useCallback(async () => {
     if (!lastSyncRef.current) return;
-    const since      = lastSyncRef.current;
-    const { data }   = await cloudApi.get('/instances/pull-data', { params: { since } });
-    if (data?.data) {
-      applyIncoming(data.data);
-      void persistIncomingToIdb(data.data);
-    }
-    const newTs = data.pulled_at || new Date().toISOString();
-    lastSyncRef.current = newTs;
-    setIdbMeta({ savedAt: newTs });
-  }, [applyIncoming, persistIncomingToIdb]);
+    await pullSince(lastSyncRef.current);
+  }, [pullSince]);
 
   useEffect(() => {
     if (!bootstrapped) return undefined;
@@ -298,9 +311,13 @@ export function DataStoreProvider({ children }) {
       const snapshot = collectionsRef.current[entityType]?.get(String(final.id));
       applyLocal(entityType, operation, final);
       try {
-        await pushEvents([{ entity_type: entityType, operation, payload: final, local_id: final.id }]);
-        // Persist to IDB so it survives a refresh
-        void openPosDB().then(db => idbPutMany(db, entityType, [{ ...final, id: String(final.id) }])).catch(() => {});
+        const res = await pushEvents([{ entity_type: entityType, operation, payload: final, local_id: final.id }]);
+        const itemErr = res?.results?.find?.(r => r && r.success === false);
+        if (itemErr) throw new Error(itemErr.error || 'Cloud rejected the change');
+        // Persist to IDB so it survives a refresh (a delete must be removed, not re-stored)
+        void openPosDB().then(db => operation === 'delete'
+          ? idbDeleteMany(db, entityType, [final.id])
+          : idbPutMany(db, entityType, [{ ...final, id: String(final.id) }])).catch(() => {});
       } catch (err) {
         // Restore previous state on error — don't delete entities that already existed
         if (snapshot != null) applyLocal(entityType, 'update', snapshot);
@@ -322,11 +339,15 @@ export function DataStoreProvider({ children }) {
       const snapshots = prepared.map(e => collectionsRef.current[e.entityType]?.get(String(e.payload.id)));
       for (const e of prepared) applyLocal(e.entityType, e.operation, e.payload);
       try {
-        await pushEvents(
+        const res = await pushEvents(
           prepared.map(e => ({ entity_type: e.entityType, operation: e.operation, payload: e.payload, local_id: e.payload.id }))
         );
+        const itemErr = res?.results?.find?.(r => r && r.success === false);
+        if (itemErr) throw new Error(itemErr.error || 'Cloud rejected part of the change');
         void openPosDB().then(db =>
-          Promise.all(prepared.map(e => idbPutMany(db, e.entityType, [{ ...e.payload, id: String(e.payload.id) }]).catch(() => {})))
+          Promise.all(prepared.map(e => (e.operation === 'delete'
+            ? idbDeleteMany(db, e.entityType, [e.payload.id])
+            : idbPutMany(db, e.entityType, [{ ...e.payload, id: String(e.payload.id) }])).catch(() => {})))
         ).catch(() => {});
       } catch (err) {
         for (let i = 0; i < prepared.length; i++) {

@@ -4,6 +4,7 @@ import { Card, CardHeader } from '@/components/ui/panel';
 import { DatePicker } from '@/components/form/date-picker';
 import Badge from '@/components/ui/status-badge';
 import { formatCurrency } from '../../utils/format';
+import { isActiveSale, vendorBalances } from '@/lib/ledger';
 
 const Line = ({ label, value, bold, tone }) => (
   <div className={`flex justify-between py-1.5 text-sm ${bold ? 'border-t border-border font-semibold text-ink' : 'text-muted-foreground'}`}>
@@ -35,37 +36,45 @@ export default function BalanceSheetPage() {
   const purchaseReturns = list('purchase_return');
   const accounts = list('account');
   const accountTxns = list('account_txn');
+  const saleReturns = list('sale_return');
+  const saleReturnItems = list('sale_return_item');
 
   const inRange = (date) => {
     if (!date) return true;
     const d = new Date(date);
     if (from && d < new Date(from)) return false;
-    if (to && d > new Date(new Date(to).getTime() + 86400000)) return false;
+    if (to && d >= new Date(new Date(to).getTime() + 86400000)) return false;
     return true;
   };
 
   const data = useMemo(() => {
-    const inventoryValue = products.reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.purchase_price || 0), 0);
+    // Gram products store stock in grams with a per-kg cost; negative stock is a count error, not value.
+    const inventoryValue = products.reduce((sum, p) => {
+      const stock = Math.max(0, Number(p.stock || 0));
+      const qty = p.unit_type === 'gram' ? stock / 1000 : stock;
+      return sum + qty * Number(p.purchase_price || 0);
+    }, 0);
 
     // Receivables/payables use the running customer/vendor balances (this web
     // app tracks credit as a whole-account balance, not per-invoice, so this
     // mirrors that model rather than the desktop's per-sale reconstruction).
     const receivables = customers.reduce((sum, c) => sum + Math.max(0, Number(c.outstanding_balance || 0)), 0);
-    const payables = vendors.reduce((sum, v) => {
-      const owed = purchases.filter((p) => String(p.vendor_id) === String(v.id) && p.status !== 'cancelled').reduce((s, p) => s + Number(p.total || 0), 0);
-      const paid = vendorPayments.filter((p) => String(p.vendor_id) === String(v.id)).reduce((s, p) => s + Number(p.amount || 0), 0);
-      const returned = purchaseReturns.filter((r) => String(r.vendor_id) === String(v.id)).reduce((s, r) => s + Number(r.total || 0), 0);
-      return sum + Math.max(0, owed - paid - returned);
-    }, 0);
+    // Desktop get-vendors rule (purchase returns link by purchase_id — they carry no vendor_id).
+    const balByVendor = vendorBalances({ purchases, vendorPayments, purchaseReturns });
+    const payables = vendors.reduce((sum, v) => sum + Math.max(0, balByVendor.get(String(v.id)) || 0), 0);
 
-    const salesInRange = sales.filter((s) => s.status === 'Completed' && inRange(s.date_created));
-    const revenue = salesInRange.reduce((sum, s) => sum + Number(s.total || 0), 0);
-
+    // Desktop P&L: completed/paid/partial sales (any case), net of returns, COGS on net quantity.
+    const salesInRange = sales.filter((s) => isActiveSale(s) && inRange(s.date_created));
     const saleIds = new Set(salesInRange.map((s) => String(s.id)));
+    const returnedAmt = saleReturns.filter((r) => saleIds.has(String(r.sale_id))).reduce((sum, r) => sum + Number(r.total_returned || 0), 0);
+    const revenue = salesInRange.reduce((sum, s) => sum + Number(s.total || 0), 0) - returnedAmt;
+
+    const retQty = new Map();
+    for (const ri of saleReturnItems) retQty.set(String(ri.sale_item_id), (retQty.get(String(ri.sale_item_id)) || 0) + Number(ri.quantity || 0));
     const productCost = new Map(products.map((p) => [String(p.id), Number(p.purchase_price || 0)]));
     const cogs = saleItems
       .filter((i) => saleIds.has(String(i.sale_id)))
-      .reduce((sum, i) => sum + Number(i.quantity || 0) * Number(i.purchase_price || productCost.get(String(i.product_id)) || 0), 0);
+      .reduce((sum, i) => sum + Math.max(Number(i.quantity || 0) - (retQty.get(String(i.id)) || 0), 0) * Math.min(Number(i.purchase_price || productCost.get(String(i.product_id)) || 0), 1_000_000), 0);
 
     const expensesInRange = expenses.filter((e) => inRange(e.date_added)).reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
@@ -116,7 +125,7 @@ export default function BalanceSheetPage() {
       debtToEquity: totalEquity !== 0 ? (totalLiabilities / totalEquity).toFixed(2) : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, sales, saleItems, expenses, customers, vendors, purchases, vendorPayments, purchaseReturns, accounts, accountTxns, from, to]);
+  }, [products, sales, saleItems, saleReturns, saleReturnItems, expenses, customers, vendors, purchases, vendorPayments, purchaseReturns, accounts, accountTxns, from, to]);
 
   return (
     <div className="flex flex-col gap-4">

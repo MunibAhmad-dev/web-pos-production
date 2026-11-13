@@ -15,6 +15,7 @@ import { useDataStore, clearDataCache } from '../../store/dataStore';
 import { useModuleSettings } from '../../hooks/useModuleSettings';
 import Badge from '@/components/ui/status-badge';
 import { cn } from '@/lib/utils';
+import { isCancelled } from '@/lib/ledger';
 
 const statusTone = { approved: 'green', pending: 'orange', blocked: 'red' };
 
@@ -441,7 +442,7 @@ export default function SettingsPage() {
         ...(Number(sale.discount) > 0 ? [{ label: 'Subtotal', value: subtotal, tone: 'muted' }, { label: 'Discount', value: Number(sale.discount), tone: 'muted' }] : []),
         { label: 'TOTAL', value: Number(sale.total), emphasis: true },
       ],
-      status: sale.status === 'Cancelled'
+      status: isCancelled(sale)
         ? { label: 'CANCELLED', tone: 'destructive' }
         : Number(sale.remaining || 0) > 0.5
           ? { label: 'PARTIAL PAYMENT', tone: 'warning' }
@@ -952,8 +953,8 @@ export default function SettingsPage() {
                 <div className="divide-y divide-border/30 max-h-[480px] overflow-y-auto">
                   {reprintSales.map(s => {
                     const cust = s.customer_id ? (collections.customers || new Map()).get(String(s.customer_id)) : null;
-                    const isPending = Number(s.remaining || 0) > 0.5 && s.status !== 'Cancelled';
-                    const isCancelled = s.status === 'Cancelled';
+                    const isPending = Number(s.remaining || 0) > 0.5 && !isCancelled(s);
+                    const cancelled = isCancelled(s);
                     const itemCount = Array.from((collections.sale_items || new Map()).values())
                       .filter(si => String(si.sale_id) === String(s.id)).length;
 
@@ -964,9 +965,9 @@ export default function SettingsPage() {
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[11px] font-black font-mono">#{s.id}</span>
                             <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full',
-                              isCancelled ? 'bg-muted text-muted-foreground' : isPending ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                              cancelled ? 'bg-muted text-muted-foreground' : isPending ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
                             )}>
-                              {isCancelled ? 'Cancelled' : isPending ? 'Partial' : 'Paid'}
+                              {cancelled ? 'Cancelled' : isPending ? 'Partial' : 'Paid'}
                             </span>
                             {s.payment_method && (
                               <span className="text-[9px] font-semibold text-muted-foreground/70 capitalize">{s.payment_method}</span>

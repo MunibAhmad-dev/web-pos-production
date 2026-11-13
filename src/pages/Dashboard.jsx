@@ -12,6 +12,7 @@ import {
   ArrowUpRight, Banknote, RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isActiveSale, isCancelled, vendorBalances, khataBalances } from '@/lib/ledger';
 import cloudApi from '../api/cloudClient';
 import { useAuth } from '../context/AuthContext';
 import { useDataStore } from '../store/dataStore';
@@ -67,7 +68,7 @@ function buildPnl(analyticsData, saleItems, sales, productById = {}, saleReturnI
   // Cancelled sales are excluded from COGS too — matches the Electron dashboard,
   // whose COGS join filters status IN ('completed','paid','partial').
   for (const s of sales) {
-    if (s.date_created && s.status !== 'Cancelled') dayOf[String(s.id)] = String(s.date_created).slice(0, 10);
+    if (s.date_created && isActiveSale(s)) dayOf[String(s.id)] = String(s.date_created).slice(0, 10);
   }
   const cogsByDay = {};
   // Map saleId:productId → purchase cost info (first line wins for the rare duplicate-product case)
@@ -320,28 +321,18 @@ export default function Dashboard() {
 
   // Customer AR — outstanding_balance (invoice credit) + khata net balance
   const customerAR = useMemo(() => {
+    const khataByC = khataBalances(allKhatas, allKhataPayments, 'customer_id');
     const withBalance = customers.map((c) => {
       const invoiceBal = Math.max(0, Number(c.outstanding_balance || 0));
-      const cid = String(c.id);
-      const khataBal = allKhatas
-        .filter((k) => String(k.customer_id) === cid)
-        .reduce((s, k) => {
-          const paid = allKhataPayments.filter((p) => String(p.khata_id) === String(k.id)).reduce((a, p) => a + Number(p.amount || 0), 0);
-          return s + Math.max(0, Number(k.total_amount || 0) - paid);
-        }, 0);
-      return { ...c, balance: invoiceBal + khataBal };
+      return { ...c, balance: invoiceBal + (khataByC.get(String(c.id)) || 0) };
     }).filter((c) => c.balance > 0.01).sort((a, b) => b.balance - a.balance);
     return { totalAR: withBalance.reduce((s, c) => s + c.balance, 0), debtors: withBalance };
   }, [customers, allKhatas, allKhataPayments]);
 
   const payableVendors = useMemo(() => {
-    return vendors.map((v) => {
-      const vid    = String(v.id);
-      const owed   = purchases.filter((p) => String(p.vendor_id) === vid && p.status !== 'Cancelled').reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
-      const paid   = vendorPayments.filter((p) => String(p.vendor_id) === vid).reduce((s, p) => s + Number(p.amount || 0), 0);
-      const ret    = purchaseReturns.filter((r) => String(r.vendor_id) === vid).reduce((s, r) => s + Number(r.total_returned || 0), 0);
-      return { ...v, balance: Math.max(0, owed - paid - ret) };
-    }).filter((v) => v.balance > 0.01).sort((a, b) => b.balance - a.balance);
+    const balByV = vendorBalances({ purchases, vendorPayments, purchaseReturns });
+    return vendors.map((v) => ({ ...v, balance: Math.max(0, balByV.get(String(v.id)) || 0) }))
+      .filter((v) => v.balance > 0.01).sort((a, b) => b.balance - a.balance);
   }, [vendors, purchases, vendorPayments, purchaseReturns]);
 
   // Period analytics computed locally from synced data — the cloud analytics
@@ -359,8 +350,9 @@ export default function Dashboard() {
     const dayKey = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD, local tz
     const salesByDayMap = {};
     let count = 0, revenue = 0;
+    const activeSaleIds = new Set(sales.filter(isActiveSale).map((s) => String(s.id)));
     for (const s of sales) {
-      if (s.status === 'Cancelled' || !s.date_created) continue;
+      if (!isActiveSale(s) || !s.date_created) continue;
       const d = new Date(String(s.date_created).replace(' ', 'T'));
       if (isNaN(d) || d < start || d > end) continue;
       const day = dayKey(d);
@@ -371,7 +363,8 @@ export default function Dashboard() {
     // Deduct sale returns from revenue — refunded money isn't revenue.
     // Mirrors the Electron dashboard's returns deduction.
     for (const r of saleReturnsAll) {
-      if (!r.date_created) continue;
+      // Returns on cancelled/fully-returned sales were never in revenue — subtracting them double-counts.
+      if (!r.date_created || !activeSaleIds.has(String(r.sale_id))) continue;
       const d = new Date(String(r.date_created).replace(' ', 'T'));
       if (isNaN(d) || d < start || d > end) continue;
       const amt = Number(r.total_returned || 0);
@@ -405,9 +398,9 @@ export default function Dashboard() {
     const rangeFrom = new Date(range.date_from);
     const rangeTo   = new Date(range.date_to);
     const inRange = sales.filter((s) => {
-      if (s.status === 'Cancelled') return false;
+      if (!isActiveSale(s)) return false;
       if (!s.date_created) return true;
-      const d = new Date(s.date_created);
+      const d = new Date(String(s.date_created).replace(' ', 'T'));
       return d >= rangeFrom && d <= rangeTo;
     });
     const map = new Map();
@@ -425,7 +418,7 @@ export default function Dashboard() {
   }, [sales, period, from, to]);
 
   const recentSales = useMemo(() =>
-    sales.filter((s) => s.status === 'Completed').slice().sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0)).slice(0, 10),
+    sales.filter((s) => !isCancelled(s)).slice().sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0)).slice(0, 10),
   [sales]);
 
   // Today's revenue computed locally from synced sales. The cloud endpoint
@@ -436,14 +429,16 @@ export default function Dashboard() {
   const todayRevenue = useMemo(() => {
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
+    const activeIds = new Set();
     const gross = sales.reduce((sum, s) => {
-      if (s.status === 'Cancelled' || !s.date_created) return sum;
+      if (!isActiveSale(s) || !s.date_created) return sum;
+      activeIds.add(String(s.id));
       const d = new Date(String(s.date_created).replace(' ', 'T'));
       return d >= midnight ? sum + Number(s.total || 0) : sum;
     }, 0);
     // Net of today's returns — same as the Electron dashboard
     const returnedToday = saleReturnsAll.reduce((sum, r) => {
-      if (!r.date_created) return sum;
+      if (!r.date_created || !activeIds.has(String(r.sale_id))) return sum;
       const d = new Date(String(r.date_created).replace(' ', 'T'));
       return d >= midnight ? sum + Number(r.total_returned || 0) : sum;
     }, 0);

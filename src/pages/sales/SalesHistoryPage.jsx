@@ -11,6 +11,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import EditSaleModal from '../../components/sales/EditSaleModal';
 import { DatePicker } from '@/components/form/date-picker';
 import { formatCurrency, formatDateTime } from '../../utils/format';
+import { isCancelled, buildCancelSaleEvents } from '@/lib/ledger';
 
 async function exportSalesPDF(sales, customerById, itemsBySale, storeName = 'Store', from = '', to = '') {
   const html2pdf = (await import('html2pdf.js')).default;
@@ -24,8 +25,8 @@ async function exportSalesPDF(sales, customerById, itemsBySale, storeName = 'Sto
   const rows = sales.map((s, i) => {
     const cust = customerById.get(String(s.customer_id))?.name || 'Walk-in';
     const items = (itemsBySale.get(String(s.id)) || []).length;
-    const isCancelled = s.status === 'Cancelled';
-    return `<tr style="border-bottom:1px solid #f3f4f6;${isCancelled ? 'opacity:.55' : i % 2 !== 0 ? 'background:#f9fafb' : ''}">
+    const cancelled = isCancelled(s);
+    return `<tr style="border-bottom:1px solid #f3f4f6;${cancelled ? 'opacity:.55' : i % 2 !== 0 ? 'background:#f9fafb' : ''}">
       <td style="padding:7px 8px;font-size:11px;text-align:center;color:#6b7280">${i + 1}</td>
       <td style="padding:7px 8px;font-weight:700;font-size:11px;font-family:monospace">INV-${String(s.id).slice(-6).toUpperCase()}</td>
       <td style="padding:7px 8px;font-size:11px">${cust}</td>
@@ -33,7 +34,7 @@ async function exportSalesPDF(sales, customerById, itemsBySale, storeName = 'Sto
       <td style="padding:7px 8px;font-size:11px;text-align:right;color:#374151">${Number(s.subtotal || 0).toLocaleString()}</td>
       <td style="padding:7px 8px;font-size:11px;text-align:right;color:#d97706">${Number(s.discount || 0) > 0 ? Number(s.discount).toLocaleString() : '—'}</td>
       <td style="padding:7px 8px;font-size:12px;text-align:right;font-weight:700">${Number(s.total || 0).toLocaleString()}</td>
-      <td style="padding:7px 8px;font-size:11px;text-align:center"><span style="padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700;background:${isCancelled ? '#fee2e2' : '#d1fae5'};color:${isCancelled ? '#dc2626' : '#059669'}">${s.status}</span></td>
+      <td style="padding:7px 8px;font-size:11px;text-align:center"><span style="padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700;background:${cancelled ? '#fee2e2' : '#d1fae5'};color:${cancelled ? '#dc2626' : '#059669'}">${s.status}</span></td>
       <td style="padding:7px 8px;font-size:10px;color:#6b7280">${new Date(s.date_created || 0).toLocaleDateString('en-PK', { day:'2-digit', month:'short', year:'numeric' })}</td>
     </tr>`;
   }).join('');
@@ -112,7 +113,7 @@ const StatBlock = ({ label, value, tone = 'text-ink' }) => (
 );
 
 export default function SalesHistoryPage() {
-  const { list, pushBatch, loadOlderSales } = useDataStore();
+  const { list, get, pushBatch, loadOlderSales } = useDataStore();
   const { showToast } = useToast();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -185,36 +186,12 @@ export default function SalesHistoryPage() {
     setCancelling(true);
     try {
       const now = new Date().toISOString();
-      const events = [{ entityType: 'sale', operation: 'update', payload: { ...sale, status: 'Cancelled', updated_at: now } }];
-
-      for (const item of items) {
-        if (item.product_id == null) continue;
-        const product = products.find((p) => String(p.id) === String(item.product_id));
-        if (!product) continue;
-        const newStock = Number(product.stock || 0) + Number(item.quantity || 0);
-        events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: newStock, updated_at: now } });
-      }
-
-      // Compute actual remaining rather than original due_amount — subsequent
-      // payments reduce outstanding_balance but don't update sale.due_amount.
-      const salePayments = customerPayments.filter((p) => String(p.sale_id) === String(sale.id));
-      const totalPaidForSale = salePayments.reduce((s, p) => s + Number(p.amount || 0), 0);
-      const remainingForSale = Math.max(0, Number(sale.total || 0) - totalPaidForSale);
-      if (remainingForSale > 0.01 && sale.customer_id != null) {
-        const customer = customerById.get(String(sale.customer_id));
-        if (customer) {
-          const newBalance = Math.max(0, Number(customer.outstanding_balance || 0) - remainingForSale);
-          events.push({
-            entityType: 'customer',
-            operation: 'update',
-            payload: { ...customer, outstanding_balance: newBalance, updated_at: now },
-          });
-        }
-      }
-      for (const payment of salePayments) {
-        events.push({ entityType: 'customer_payment', operation: 'delete', payload: { id: payment.id } });
-      }
-
+      const events = buildCancelSaleEvents({
+        sale: get('sale', sale.id) || sale, items, now,
+        customer: sale.customer_id != null ? customerById.get(String(sale.customer_id)) : null,
+        products, payments: customerPayments, returns: saleReturns, returnItems: list('sale_return_item'),
+      });
+      if (!events) { showToast('Sale is already cancelled', 'error'); setCancelTarget(null); return; }
       await pushBatch(events);
       showToast('Sale cancelled');
       setCancelTarget(null);

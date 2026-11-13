@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { buildTransactionLedger } from '../../utils/ledger';
+import { vendorBalances } from '@/lib/ledger';
 
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-PK', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -62,17 +63,6 @@ export default function PaymentLedgerPage() {
 
   const rows = useMemo(() => {
     if (party === 'customer') {
-      const salesByC = new Map();
-      for (const s of list('sale')) {
-        if (s.status === 'Cancelled') continue;
-        const cid = String(s.customer_id);
-        salesByC.set(cid, (salesByC.get(cid) || 0) + Number(s.total || 0));
-      }
-      const paidByC = new Map();
-      for (const p of customerPayments) {
-        const cid = String(p.customer_id);
-        paidByC.set(cid, (paidByC.get(cid) || 0) + Number(p.amount || 0));
-      }
       const txnsByC = new Map();
       for (const t of ledger) {
         if (!t.customer_id) continue;
@@ -84,26 +74,14 @@ export default function PaymentLedgerPage() {
         .filter((c) => !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search))
         .map((c) => {
           const cid = String(c.id);
-          const balance = Math.max(0, (salesByC.get(cid) || 0) - (paidByC.get(cid) || 0));
+          // Desktop-maintained invoice balance — local sales are only the last 60 days (windowed),
+          // so sales − all-time payments under-reported every older debt.
+          const balance = Math.max(0, Number(c.outstanding_balance || 0));
           return { party: c, balance, transactions: txnsByC.get(cid) || [] };
         });
     }
-    const owedByV = new Map();
-    for (const p of purchases) {
-      if (p.status === 'cancelled' || p.status === 'Cancelled') continue;
-      const vid = String(p.vendor_id);
-      owedByV.set(vid, (owedByV.get(vid) || 0) + Number(p.grand_total || p.total || 0));
-    }
-    const paidByV = new Map();
-    for (const p of vendorPayments) {
-      const vid = String(p.vendor_id);
-      paidByV.set(vid, (paidByV.get(vid) || 0) + Number(p.amount || 0));
-    }
-    const returnedByV = new Map();
-    for (const r of purchaseReturns) {
-      const vid = String(r.vendor_id);
-      returnedByV.set(vid, (returnedByV.get(vid) || 0) + Number(r.total_returned || r.total || 0));
-    }
+    // Desktop get-vendors rule (returns link via purchase_id; payments on cancelled purchases don't count).
+    const balByV = vendorBalances({ purchases, vendorPayments, purchaseReturns });
     const txnsByV = new Map();
     for (const t of ledger) {
       if (!t.vendor_id) continue;
@@ -115,7 +93,7 @@ export default function PaymentLedgerPage() {
       .filter((v) => !search || v.name?.toLowerCase().includes(search.toLowerCase()) || v.phone?.includes(search))
       .map((v) => {
         const vid = String(v.id);
-        const balance = Math.max(0, (owedByV.get(vid) || 0) - (paidByV.get(vid) || 0) - (returnedByV.get(vid) || 0));
+        const balance = Math.max(0, balByV.get(vid) || 0);
         return { party: v, balance, transactions: txnsByV.get(vid) || [] };
       });
   }, [party, customers, vendors, purchases, vendorPayments, purchaseReturns, customerPayments, ledger, search, list]);

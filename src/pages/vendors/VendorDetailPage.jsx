@@ -14,6 +14,7 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { getReceiptSettings, printInvoice, downloadInvoicePdf, buildAccountStatementHtml, downloadStatementPdf, shareStatementViaWhatsApp } from '../../utils/receipt';
+import { isCancelled, vendorBalances, khataBalances } from '@/lib/ledger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -37,7 +38,7 @@ const stockProductVal = (p) => {
 };
 
 function poStatus(po) {
-  if (po.status === 'Cancelled') return { label: 'Cancelled', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
+  if (isCancelled(po)) return { label: 'Cancelled', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
   if (po.remaining <= 0.5) return { label: 'Settled', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' };
   if (po.amountPaid <= 0) return { label: 'Unpaid', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400' };
   return { label: 'Partial', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' };
@@ -95,17 +96,12 @@ export default function VendorDetailPage() {
 
     const vendorProducts = allProducts.filter((p) => String(p.vendor_id) === vid);
 
-    const totalPurchased = vendPurchases.filter((p) => p.status !== 'Cancelled').reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
+    const totalPurchased = vendPurchases.filter((p) => !isCancelled(p)).reduce((s, p) => s + Number(p.grand_total || p.total || 0), 0);
     const totalPaid = vendPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
     const totalReturned = vendReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
-    const purchaseBal = Math.max(0, totalPurchased - totalPaid - totalReturned);
-
-    const khataBal = allVendorKhatas
-      .filter((k) => String(k.vendor_id) === vid)
-      .reduce((s, k) => {
-        const kPaid = allVendorKhataPayments.filter((p) => String(p.khata_id) === String(k.id)).reduce((a, p) => a + Number(p.amount || 0), 0);
-        return s + Math.max(0, Number(k.total_amount || 0) - kPaid);
-      }, 0);
+    // Desktop get-vendors rule: payments on a cancelled purchase don't offset other purchases.
+    const purchaseBal = Math.max(0, vendorBalances({ purchases: vendPurchases, vendorPayments: vendPayments, purchaseReturns: vendReturns }).get(vid) || 0);
+    const khataBal = khataBalances(allVendorKhatas, allVendorKhataPayments, 'vendor_id').get(vid) || 0;
     const balance = purchaseBal + khataBal;
 
     const enhancedPOs = vendPurchases.map((po) => {
@@ -114,7 +110,7 @@ export default function VendorDetailPage() {
       const linkedReturns = vendReturns.filter((r) => String(r.purchase_id) === String(po.id));
       const amountPaid = linkedPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
       const amountReturned = linkedReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
-      const remaining = Math.max(0, Number(po.grand_total || po.total || 0) - amountPaid - amountReturned);
+      const remaining = isCancelled(po) ? 0 : Math.max(0, Number(po.grand_total || po.total || 0) - amountPaid - amountReturned);
       return { ...po, items, linkedPayments, linkedReturns, amountPaid, amountReturned, remaining };
     });
 
@@ -134,8 +130,8 @@ export default function VendorDetailPage() {
     if (!data) return [];
     const filteredPOs = data.purchases.filter((p) => {
       if (poFilter === 'all') return true;
-      if (poFilter === 'cancelled') return p.status === 'Cancelled';
-      if (p.status === 'Cancelled') return false;
+      if (poFilter === 'cancelled') return isCancelled(p);
+      if (isCancelled(p)) return false;
       if (poFilter === 'settled') return p.remaining <= 0.5;
       if (poFilter === 'partial') return p.remaining > 0.5 && p.amountPaid > 0;
       if (poFilter === 'unpaid') return p.remaining > 0.5 && p.amountPaid <= 0;
@@ -196,7 +192,7 @@ export default function VendorDetailPage() {
     if (!data) return [];
     const rows = [];
     for (const p of data.purchases) {
-      if (p.status === 'Cancelled') continue;
+      if (isCancelled(p)) continue;
       rows.push({ date: new Date(p.date_created || 0), type: 'Purchase', desc: `PO #${p.id}`, debit: Number(p.grand_total || p.total || 0), credit: 0 });
     }
     for (const p of data.payments) {
@@ -257,16 +253,16 @@ export default function VendorDetailPage() {
   const { purchases, payments, returns, products, activity, totalPurchased, totalPaid, totalReturned, purchaseBal, khataBal, balance, stockCostValue, totalStock } = data;
   const filteredPOs = purchases.filter((p) => {
     if (poFilter === 'all') return true;
-    if (poFilter === 'cancelled') return p.status === 'Cancelled';
-    if (p.status === 'Cancelled') return false;
+    if (poFilter === 'cancelled') return isCancelled(p);
+    if (isCancelled(p)) return false;
     if (poFilter === 'settled') return p.remaining <= 0.5;
     if (poFilter === 'partial') return p.remaining > 0.5 && p.amountPaid > 0;
     if (poFilter === 'unpaid') return p.remaining > 0.5 && p.amountPaid <= 0;
     return true;
   });
   const hasMorePOs = filteredPOs.length > posPage * POS_PER_PAGE;
-  const settledCount = purchases.filter((p) => p.remaining <= 0.5 && p.status !== 'Cancelled').length;
-  const pendingCount = purchases.filter((p) => p.remaining > 0.5 && p.status !== 'Cancelled').length;
+  const settledCount = purchases.filter((p) => p.remaining <= 0.5 && !isCancelled(p)).length;
+  const pendingCount = purchases.filter((p) => p.remaining > 0.5 && !isCancelled(p)).length;
 
   const poNumber = (po) => {
     const d = po.date_created ? new Date(po.date_created) : new Date();
@@ -553,7 +549,7 @@ export default function VendorDetailPage() {
 
                         {/* Action bar: Amount | Pay (green) | WA | Print | Cancel */}
                         <div className="flex items-center gap-1.5 px-4 pb-3 flex-wrap">
-                          {po.remaining > 0.5 && po.status !== 'Cancelled' && (
+                          {po.remaining > 0.5 && !isCancelled(po) && (
                             <>
                               <div className="relative">
                                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
@@ -584,7 +580,7 @@ export default function VendorDetailPage() {
                               className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
                               <Printer size={13} />
                             </button>
-                            {po.status !== 'Cancelled' && (
+                            {!isCancelled(po) && (
                               <button onClick={() => cancelPO(po)} title="Cancel order"
                                 className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors shrink-0">
                                 <X size={13} />

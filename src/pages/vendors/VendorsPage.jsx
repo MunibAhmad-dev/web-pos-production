@@ -13,6 +13,7 @@ import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import CustomBillsPanel from '../../components/vendors/CustomBillsPanel';
 import GlobalCustomBillsOverlay from '../../components/vendors/GlobalCustomBillsOverlay';
+import { vendorBalances, khataBalances } from '@/lib/ledger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -156,20 +157,14 @@ export default function VendorsPage() {
   const allVendorKhatas = list('vendor_khata');
   const allVendorKhataPayments = list('vendor_khata_payment');
 
+  // Desktop get-vendors rule + open custom bills (Vendors.tsx shows balance + khata_balance).
   const vendorBalanceMap = useMemo(() => {
+    const purchaseBal = vendorBalances({ purchases: allPurchases, vendorPayments: allPayments, purchaseReturns: allReturns });
+    const khataBal = khataBalances(allVendorKhatas, allVendorKhataPayments, 'vendor_id');
     const m = new Map();
     for (const v of vendors) {
       const vid = String(v.id);
-      const total = allPurchases.filter((p) => String(p.vendor_id) === vid && p.status !== 'Cancelled').reduce((s, p) => s + Number(p.total || 0), 0);
-      const paid  = allPayments.filter((p) => String(p.vendor_id) === vid).reduce((s, p) => s + Number(p.amount || 0), 0);
-      const ret   = allReturns.filter((r) => String(r.vendor_id) === vid).reduce((s, r) => s + Number(r.total_returned || 0), 0);
-      const khataBal = allVendorKhatas
-        .filter((k) => String(k.vendor_id) === vid)
-        .reduce((s, k) => {
-          const kPaid = allVendorKhataPayments.filter((p) => String(p.khata_id) === String(k.id)).reduce((a, p) => a + Number(p.amount || 0), 0);
-          return s + Math.max(0, Number(k.total_amount || 0) - kPaid);
-        }, 0);
-      m.set(vid, Math.max(0, total - paid - ret) + khataBal);
+      m.set(vid, Math.max(0, (purchaseBal.get(vid) || 0) + (khataBal.get(vid) || 0)));
     }
     return m;
   }, [vendors, allPurchases, allPayments, allReturns, allVendorKhatas, allVendorKhataPayments]);

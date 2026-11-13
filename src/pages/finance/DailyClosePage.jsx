@@ -7,6 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { buildTransactionLedger } from '../../utils/ledger';
+import { isActiveSale } from '@/lib/ledger';
 
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
@@ -47,7 +48,7 @@ export default function DailyClosePage() {
 
   const summaryFor = (key) => {
     const totalSales = sales
-      .filter((s) => s.status === 'Completed' && s.date_created && dayKey(s.date_created) === key)
+      .filter((s) => isActiveSale(s) && s.date_created && dayKey(s.date_created) === key)
       .reduce((sum, s) => sum + Number(s.total || 0), 0);
     const totalExpenses = expenses
       .filter((e) => (e.date_added || e.date_created) && dayKey(e.date_added || e.date_created) === key)

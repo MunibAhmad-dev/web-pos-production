@@ -12,6 +12,7 @@ import { getModuleSettings } from '../../hooks/useModuleSettings';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
+import { isCancelled } from '@/lib/ledger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -202,7 +203,7 @@ function PurchaseDetailModal({ purchase, vendors, purchaseItems, purchaseReturns
           <div>
             <h2 className="text-lg font-bold">{fmtPoRef(purchase.id, purchase.date_created)}</h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full border', purchase.status === 'received' || purchase.status === 'paid' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/25' : purchase.status === 'cancelled' ? 'bg-rose-500/10 text-rose-700 border-rose-500/25' : 'bg-amber-500/10 text-amber-700 border-amber-500/25')}>{purchase.status?.toUpperCase()}</span>
+              <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full border', purchase.status === 'received' || purchase.status === 'paid' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/25' : isCancelled(purchase) ? 'bg-rose-500/10 text-rose-700 border-rose-500/25' : 'bg-amber-500/10 text-amber-700 border-amber-500/25')}>{purchase.status?.toUpperCase()}</span>
               {vendor && <span className="text-sm text-muted-foreground">{vendor.name}</span>}
             </div>
           </div>
@@ -264,7 +265,7 @@ function PurchaseDetailModal({ purchase, vendors, purchaseItems, purchaseReturns
           )}
 
           {/* Pay Action */}
-          {due > 0 && purchase.status !== 'cancelled' && (
+          {due > 0 && !isCancelled(purchase) && (
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
               <p className="text-xs font-bold text-primary">Record Payment to Vendor</p>
               <div className="flex gap-2">
@@ -321,7 +322,7 @@ export default function PurchasesPage() {
   const stats = useMemo(() => {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonth = purchases.filter((p) => new Date(p.date_created || 0) >= monthStart && p.status !== 'cancelled');
+    const thisMonth = purchases.filter((p) => new Date(p.date_created || 0) >= monthStart && !isCancelled(p));
     const totalPurchasesMonth = thisMonth.reduce((s, p) => s + (Number(p.grand_total || p.total || 0)), 0);
     const pending = purchases.filter((p) => p.status === 'pending' || (p.status === 'received' && (() => {
       const paid = vendorPayments.filter((vp) => String(vp.purchase_id) === String(p.id)).reduce((s, vp) => s + Number(vp.amount || 0), 0);
@@ -533,9 +534,9 @@ export default function PurchasesPage() {
       })
       .filter((p) => {
         if (historyStatusFilter === 'pending' && p.status !== 'pending') return false;
-        if (historyStatusFilter === 'received' && (p.status === 'Cancelled' || p.due <= 0.5 && p.status === 'received')) return false;
+        if (historyStatusFilter === 'received' && (isCancelled(p) || p.due <= 0.5 && p.status === 'received')) return false;
         if (historyStatusFilter === 'paid' && p.due > 0.5) return false;
-        if (historyStatusFilter === 'cancelled' && p.status !== 'Cancelled') return false;
+        if (historyStatusFilter === 'cancelled' && !isCancelled(p)) return false;
         if (q) {
           const pool = [String(p.id), p.vendorName, p.bill_no || ''].join(' ').toLowerCase();
           if (!pool.includes(q)) return false;
@@ -986,7 +987,7 @@ export default function PurchasesPage() {
                       <td className="py-3">
                         <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase',
                           p.status === 'received' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/25' :
-                          p.status === 'cancelled' ? 'bg-rose-500/10 text-rose-700 border-rose-500/25' :
+                          isCancelled(p) ? 'bg-rose-500/10 text-rose-700 border-rose-500/25' :
                           'bg-amber-500/10 text-amber-700 border-amber-500/25')}>{p.status}</span>
                       </td>
                       <td className="py-3 text-muted-foreground text-xs">{fmtDate(p.date_created)}</td>
@@ -995,7 +996,7 @@ export default function PurchasesPage() {
                           <button onClick={() => setHistoryDetail(p)} className="h-7 w-7 flex items-center justify-center rounded-lg text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors">
                             <Eye size={13} />
                           </button>
-                          {p.due > 0.5 && p.status !== 'cancelled' && (
+                          {p.due > 0.5 && !isCancelled(p) && (
                             <button onClick={() => setHistoryDetail(p)} title="Pay vendor" className="h-7 w-7 flex items-center justify-center rounded-lg text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
                               <HandCoins size={13} />
                             </button>

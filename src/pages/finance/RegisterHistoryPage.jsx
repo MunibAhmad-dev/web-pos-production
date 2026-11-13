@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Landmark, Lock, Unlock, TrendingUp, TrendingDown, Search, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
+import { isActiveSale } from '@/lib/ledger';
 
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDT  = (d) => d ? new Date(d).toLocaleString('en-PK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -18,7 +19,7 @@ function computeMovement(session, sales, expenses) {
   const inWin = (d) => d && new Date(d) >= start && new Date(d) <= end;
   let cashIn = 0, cashOut = 0;
   for (const s of sales) {
-    if ((s.payment_method === 'cash' || s.payment_method === 'Cash') && s.status === 'Completed' && inWin(s.date_created))
+    if ((s.payment_method === 'cash' || s.payment_method === 'Cash') && isActiveSale(s) && inWin(s.date_created))
       cashIn += Number(s.total || 0);
   }
   for (const e of expenses) {

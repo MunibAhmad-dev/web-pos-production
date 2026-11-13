@@ -4,6 +4,7 @@ import { ArrowLeft, Shield, CheckCircle2, Clock, XCircle, AlertTriangle, Search,
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
+import { isCancelled } from '@/lib/ledger';
 
 const fmtPKR  = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -30,7 +31,7 @@ export default function FbrInvoicingPage() {
 
   const invoices = useMemo(() => {
     return list('sale')
-      .filter((s) => s.status !== 'Cancelled')
+      .filter((s) => !isCancelled(s))
       .map((s) => ({
         ...s,
         fbr_status: s.fbr_status || (s.fbr_invoice_number ? 'sent' : 'pending'),

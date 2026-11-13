@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDataStore } from '../../store/dataStore';
 import { computeVendorLedger } from '../../utils/vendorStats';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/format';
+import { isCancelled } from '@/lib/ledger';
 
 const StatRow = ({ icon: Icon, label, value }) => (
   <div className="flex items-center justify-between py-1.5 text-xs">
@@ -18,7 +19,7 @@ const StatRow = ({ icon: Icon, label, value }) => (
 
 function PurchaseRow({ po }) {
   const [open, setOpen] = useState(false);
-  const status = po.status === 'cancelled' ? 'Cancelled' : po.remaining <= 0.5 ? 'Settled' : po.paidAgainstOrder > 0 ? 'Partial' : 'Unpaid';
+  const status = isCancelled(po) ? 'Cancelled' : po.remaining <= 0.5 ? 'Settled' : po.paidAgainstOrder > 0 ? 'Partial' : 'Unpaid';
   const tone = { Settled: 'green', Partial: 'orange', Unpaid: 'red', Cancelled: 'gray' }[status];
 
   return (

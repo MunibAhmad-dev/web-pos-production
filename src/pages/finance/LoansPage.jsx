@@ -5,11 +5,12 @@ import {
   Phone, User, Truck,
 } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
-import { pushEntity, nextId } from '../../api/syncClient';
+import { pushEntity, pushEvents, nextId } from '../../api/syncClient';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { computeVendorLedger } from '../../utils/vendorStats';
+import { isCancelled } from '@/lib/ledger';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) =>
@@ -19,35 +20,29 @@ const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 // ── Balance computation helpers ──────────────────────────────────────────────
-function computeCustomerBalance(customerId, allSales, allPayments, allReturns) {
-  const cid = String(customerId);
-  const taken = allSales
-    .filter((s) => String(s.customer_id) === cid && s.status !== 'cancelled' && s.status !== 'Cancelled')
-    .reduce((a, s) => a + (Number(s.total) || 0), 0);
-  const paid = allPayments
-    .filter((p) => String(p.customer_id) === cid)
-    .reduce((a, p) => a + (Number(p.amount) || 0), 0);
-  const ret = allReturns
-    .filter((r) => String(r.customer_id) === cid)
-    .reduce((a, r) => a + (Number(r.total_returned) || 0), 0);
-  return Math.max(0, taken - paid - ret);
+// Invoice balance = the desktop-maintained outstanding_balance. Sales here are only the
+// last 60 days (windowed) while payments are all-time, so recomputing locally under-reported
+// debts and blocked legitimate payments.
+function computeCustomerBalance(customer) {
+  return Math.max(0, Number(customer?.outstanding_balance || 0));
 }
 
-function computeCustomerDetail(customerId, allSales, allPayments, allReturns) {
-  const cid = String(customerId);
+function computeCustomerDetail(customer, allSales, allPayments, allReturns) {
+  const cid = String(customer.id);
   const sales = allSales
-    .filter((s) => String(s.customer_id) === cid && s.status !== 'cancelled' && s.status !== 'Cancelled')
+    .filter((s) => String(s.customer_id) === cid && !isCancelled(s))
     .sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
   const payments = allPayments
     .filter((p) => String(p.customer_id) === cid)
     .sort((a, b) => new Date(b.date_added || b.created_at || 0) - new Date(a.date_added || a.created_at || 0));
+  const saleIdSet = new Set(sales.map((s) => String(s.id)));
   const returns = allReturns
-    .filter((r) => String(r.customer_id) === cid || sales.some((s) => String(s.id) === String(r.sale_id)))
+    .filter((r) => saleIdSet.has(String(r.sale_id)))
     .sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
   const totalTaken = sales.reduce((a, s) => a + (Number(s.total) || 0), 0);
   const totalPaid  = payments.reduce((a, p) => a + (Number(p.amount) || 0), 0);
   const totalRet   = returns.reduce((a, r) => a + (Number(r.total_returned) || 0), 0);
-  return { sales, payments, returns, totalTaken, totalPaid, totalReturned: totalRet, balance: Math.max(0, totalTaken - totalPaid - totalRet) };
+  return { sales, payments, returns, totalTaken, totalPaid, totalReturned: totalRet, balance: computeCustomerBalance(customer) };
 }
 
 // ── KPI Card ─────────────────────────────────────────────────────────────────
@@ -78,11 +73,20 @@ function CustomerDetailPanel({ customer, detail, onClose, onPaymentRecorded }) {
     setSaving(true);
     try {
       const id = nextId();
-      await pushEntity('customer_payment', 'create', {
-        id, customer_id: customer.id, amount: amt,
-        notes: notes.trim() || `Payment from ${customer.name}`,
-        date_added: new Date().toISOString(),
-      });
+      const now = new Date().toISOString();
+      const { balance: _uiBalance, ...customerRow } = customer; // UI-only field must not reach the customers table
+      await pushEvents([
+        { entity_type: 'customer_payment', operation: 'create', local_id: id, payload: {
+          id, customer_id: customer.id, amount: amt,
+          notes: notes.trim() || `Payment from ${customer.name}`,
+          date_added: now,
+        } },
+        // Lower the balance with the payment, as every other payment screen does — otherwise
+        // the debt stays on the customer until the desktop happens to recompute it.
+        { entity_type: 'customer', operation: 'update', local_id: customer.id, payload: {
+          ...customerRow, outstanding_balance: Math.max(0, Number(customer.outstanding_balance || 0) - amt), updated_at: now,
+        } },
+      ]);
       onPaymentRecorded();
       setAmount(''); setNotes('');
     } finally { setSaving(false); }
@@ -300,7 +304,7 @@ export default function LoansPage() {
   // Precompute all customer balances
   const customerRows = useMemo(() => {
     return customers
-      .map(c => ({ ...c, balance: computeCustomerBalance(c.id, allSales, allPayments, allReturns) }))
+      .map(c => ({ ...c, balance: computeCustomerBalance(c) }))
       .filter(c => c.balance > 0.5)
       .sort((a, b) => b.balance - a.balance);
   }, [customers, allSales, allPayments, allReturns]);
@@ -326,7 +330,7 @@ export default function LoansPage() {
 
   const selectedCustomerDetail = useMemo(() => {
     if (!selectedCustomer) return null;
-    return computeCustomerDetail(selectedCustomer.id, allSales, allPayments, allReturns);
+    return computeCustomerDetail(selectedCustomer, allSales, allPayments, allReturns);
   }, [selectedCustomer, allSales, allPayments, allReturns]);
 
   const selectedVendorLedger = useMemo(() => {

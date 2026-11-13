@@ -16,6 +16,7 @@ import {
   getReceiptSettings, formatInvoiceId, printInvoice, openInvoiceInTab,
   downloadInvoicePdf, buildWhatsAppLink,
 } from '../../utils/receipt';
+import { isCancelled, isActiveSale, saleStatus, buildCancelSaleEvents, buildSaleRefundTxn } from '@/lib/ledger';
 
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(String(d).replace(' ', 'T')).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -44,7 +45,7 @@ function PayBadge({ label }) {
 }
 
 export default function TransactionsPage() {
-  const { list, pushBatch } = useDataStore();
+  const { list, pushBatch, nextId } = useDataStore();
   const { showToast } = useToast();
   const { user } = useAuth();
 
@@ -100,9 +101,15 @@ export default function TransactionsPage() {
       let paid = paidBySale.get(k) || 0;
       // Walk-in sales never create customer_payment rows — a completed non-credit
       // walk-in sale is fully paid by definition (same as the desktop).
-      if (!customer && s.status !== 'Cancelled' && (s.payment_method || 'cash') !== 'credit') paid = Number(s.total || 0);
-      const due = Math.max(0, Number(s.total || 0) - paid - returned);
-      const payLabel = s.status === 'Cancelled' ? null : due <= 0.5 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
+      if (!customer && !isCancelled(s)) paid = Number(s.total || 0);
+      // Desktop rules: walk-in = nothing owed; status 'paid' means settled (a unified smart-pay
+      // payment has no sale_id, so it can't be matched here); write-offs reduce what's owed.
+      // 'completed' is the DEFAULT status, not "paid".
+      const st = saleStatus(s);
+      const due = (isCancelled(s) || st === 'returned' || st === 'paid' || !customer)
+        ? 0
+        : Math.max(0, Number(s.total || 0) - paid - returned - Number(s.write_off_amount || 0));
+      const payLabel = isCancelled(s) ? null : due <= 0.5 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
       return {
         ...s, items, customer, paid, returned, due, payLabel,
         invoiceNo: formatInvoiceId(s.id, s.date_created),
@@ -142,10 +149,10 @@ export default function TransactionsPage() {
   const { paged, page, pageCount, setPage } = usePagination(filtered, 30);
 
   const stats = useMemo(() => ({
-    completed: filtered.filter((r) => r.status === 'Completed').length,
-    revenue: filtered.filter((r) => r.status !== 'Cancelled').reduce((s, r) => s + Number(r.total || 0), 0),
-    discounts: filtered.filter((r) => r.status !== 'Cancelled').reduce((s, r) => s + Number(r.discount || 0), 0),
-    pending: filtered.filter((r) => r.status !== 'Cancelled' && r.due > 0.5).length,
+    completed: filtered.filter((r) => isActiveSale(r)).length,
+    revenue: filtered.filter((r) => !isCancelled(r)).reduce((s, r) => s + Number(r.total || 0), 0),
+    discounts: filtered.filter((r) => !isCancelled(r)).reduce((s, r) => s + Number(r.discount || 0), 0),
+    pending: filtered.filter((r) => !isCancelled(r) && r.due > 0.5).length,
   }), [filtered]);
 
   const invoiceDataFor = (r) => {
@@ -169,36 +176,18 @@ export default function TransactionsPage() {
   // ── Cancel / restore a sale ──────────────────────────────────────────────────
   const setSaleStatus = async (r, newStatus) => {
     if (r.status === newStatus) { setStatusMenuId(null); return; }
+    // Desktop cancel-sale is final (it deletes the sale's payments) — un-cancelling here would
+    // re-deduct stock and re-bill without those payments.
+    if (isCancelled(r)) { showToast("A cancelled sale cannot be restored — create a new sale instead", 'error'); setStatusMenuId(null); return; }
+    if (newStatus !== 'Cancelled') { setStatusMenuId(null); return; }
     setBusy(true);
     try {
       const now = new Date().toISOString();
-      const events = [{ entityType: 'sale', operation: 'update', payload: { ...r, items: undefined, customer: undefined, status: newStatus, updated_at: now } }];
-      // strip helper fields from payload
-      const clean = { ...r };
-      ['items', 'customer', 'paid', 'returned', 'due', 'payLabel', 'invoiceNo', 'itemsSummary'].forEach((f) => delete clean[f]);
-      events[0].payload = { ...clean, status: newStatus, updated_at: now };
-
-      const dir = newStatus === 'Cancelled' ? 1 : -1; // cancel restocks, restore re-deducts
-      for (const it of r.items) {
-        if (!it.product_id) continue;
-        const product = products.find((p) => String(p.id) === String(it.product_id));
-        if (!product) continue;
-        events.push({
-          entityType: 'product', operation: 'update',
-          payload: { ...product, stock: Number(product.stock || 0) + dir * Number(it.quantity || 0), updated_at: now },
-        });
-      }
-      // Reverse (or re-apply) the credit this sale put on the customer
-      if (r.customer && r.due > 0.5) {
-        events.push({
-          entityType: 'customer', operation: 'update',
-          payload: {
-            ...r.customer,
-            outstanding_balance: Math.max(0, Number(r.customer.outstanding_balance || 0) - dir * r.due),
-            updated_at: now,
-          },
-        });
-      }
+      const events = buildCancelSaleEvents({
+        sale: r, items: r.items || [], customer: r.customer, products,
+        payments, returns: saleReturns, returnItems: list('sale_return_item'), now,
+      });
+      if (!events) { setStatusMenuId(null); return; }
       await pushBatch(events);
       showToast(newStatus === 'Cancelled' ? 'Sale cancelled — stock restored' : 'Sale restored to Completed');
     } catch (err) {
@@ -224,26 +213,45 @@ export default function TransactionsPage() {
     setBusy(true);
     try {
       const now = new Date().toISOString();
-      const totalRefund = picked.reduce((s, i) => s + Number(returnQty[i.id]) * Number(i.price || 0), 0);
-      const returnId = Date.now();
+      // Quantity already returned per line (older rows have no sale_item_id — fall back to product)
+      const priorReturnIds = new Set(saleReturns.filter((x) => String(x.sale_id) === String(r.id)).map((x) => String(x.id)));
+      const priorItems = list('sale_return_item').filter((ri) => priorReturnIds.has(String(ri.return_id)));
+      const alreadyReturned = (it) => priorItems
+        .filter((ri) => (ri.sale_item_id != null ? String(ri.sale_item_id) === String(it.id) : String(ri.product_id) === String(it.product_id)))
+        .reduce((a, ri) => a + Number(ri.quantity || 0), 0);
+      for (const it of picked) {
+        const left = Number(it.quantity || 0) - alreadyReturned(it);
+        if (Number(returnQty[it.id]) > left + 1e-9) {
+          showToast(`${it.product_name}: only ${Math.max(0, left)} left to return`, 'error');
+          return;
+        }
+      }
+      // Line prices ignore the invoice discount — never credit more than what's left of the bill.
+      const lineTotal = picked.reduce((s, i) => s + Number(returnQty[i.id]) * Number(i.price || 0), 0);
+      const totalRefund = Math.max(0, Math.min(lineTotal, Number(r.total || 0) - Number(r.returned || 0)));
+      // Part that comes off the customer's debt; the rest is handed back in cash (desktop rule).
+      const reduce = r.customer ? Math.min(Math.max(0, r.due), totalRefund) : 0;
+      const returnId = nextId();
+      const cashRefunded = Math.round((totalRefund - reduce) * 100) / 100;
+      const refund = buildSaleRefundTxn({ saleId: r.id, amount: cashRefunded, accounts: list('account'), accountTxns: list('account_txn'), now });
       const events = [{
         entityType: 'sale_return', operation: 'create',
-        payload: { id: returnId, sale_id: r.id, customer_id: r.customer_id ?? null, date_created: now, reason: returnReason || '', total_returned: totalRefund },
+        payload: { id: returnId, sale_id: r.id, customer_id: r.customer_id ?? null, date_created: now, reason: returnReason || '',
+          total_returned: totalRefund, cash_refunded: cashRefunded, refund_account_id: refund?.accountId ?? null },
       }];
+      if (refund) events.push(refund.event);
       for (const it of picked) {
         const qty = Number(returnQty[it.id]);
         events.push({
           entityType: 'sale_return_item', operation: 'create',
-          payload: { return_id: returnId, product_id: it.product_id, product_name: it.product_name, quantity: qty, price: it.price, date_created: now },
+          payload: { return_id: returnId, sale_item_id: it.id, product_id: it.product_id, product_name: it.product_name, quantity: qty, price: it.price, date_created: now },
         });
         const product = products.find((p) => String(p.id) === String(it.product_id));
         if (product) {
           events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: Number(product.stock || 0) + qty, updated_at: now } });
         }
       }
-      // Returning reduces what the customer still owes on this bill
-      if (r.customer && r.due > 0.5) {
-        const reduce = Math.min(r.due, totalRefund);
+      if (r.customer && reduce > 0.009) {
         events.push({
           entityType: 'customer', operation: 'update',
           payload: { ...r.customer, outstanding_balance: Math.max(0, Number(r.customer.outstanding_balance || 0) - reduce), updated_at: now },
@@ -429,9 +437,9 @@ export default function TransactionsPage() {
                           onClick={() => setStatusMenuId(statusMenuId === r.id ? null : r.id)}
                           disabled={busy}
                           className={cn('flex items-center gap-1.5 text-[11px] font-bold px-3.5 py-1.5 rounded-full text-white transition-transform hover:scale-[1.03]',
-                            r.status === 'Cancelled' ? 'bg-rose-600' : 'bg-emerald-600')}
+                            isCancelled(r) ? 'bg-rose-600' : 'bg-emerald-600')}
                         >
-                          {r.status === 'Cancelled' ? 'Cancelled' : 'Completed'} <ChevronDown size={11} />
+                          {isCancelled(r) ? 'Cancelled' : 'Completed'} <ChevronDown size={11} />
                         </button>
                         {statusMenuId === r.id && (
                           <div className="absolute top-full left-0 mt-1 w-40 bg-popover border border-border rounded-xl shadow-xl overflow-hidden z-50">
@@ -455,7 +463,7 @@ export default function TransactionsPage() {
                     {/* Total */}
                     <td className="py-4 text-right">
                       <p className="font-mono font-black text-sm text-primary">{fmtPKR(r.total)}</p>
-                      {r.due > 0.5 && r.status !== 'Cancelled' && <p className="text-[10px] font-bold text-rose-600 mt-0.5">Owed: {fmtPKR(r.due)}</p>}
+                      {r.due > 0.5 && !isCancelled(r) && <p className="text-[10px] font-bold text-rose-600 mt-0.5">Owed: {fmtPKR(r.due)}</p>}
                     </td>
                     {/* Actions */}
                     <td className="py-4 pr-5" onClick={(e) => e.stopPropagation()}>
@@ -466,7 +474,7 @@ export default function TransactionsPage() {
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-violet-600 hover:bg-violet-500/10 transition-colors"><Monitor size={14} /></button>
                         <button title="Download PDF" onClick={() => handleDownloadPdf(r)}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-600 hover:bg-emerald-500/10 transition-colors"><Download size={14} /></button>
-                        <button title="Return Items" onClick={() => openReturn(r)} disabled={r.status === 'Cancelled'}
+                        <button title="Return Items" onClick={() => openReturn(r)} disabled={isCancelled(r)}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-amber-600 hover:bg-amber-500/10 transition-colors disabled:opacity-30"><Undo2 size={14} /></button>
                         <div className="relative">
                           <button onClick={() => setActionMenuId(actionMenuId === r.id ? null : r.id)}
@@ -477,7 +485,7 @@ export default function TransactionsPage() {
                                 className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium">
                                 <Eye size={12} className="text-violet-500" /> View Details
                               </button>
-                              <button onClick={() => { setEditSale(r); setActionMenuId(null); }} disabled={r.status === 'Cancelled'}
+                              <button onClick={() => { setEditSale(r); setActionMenuId(null); }} disabled={isCancelled(r)}
                                 className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40 disabled:opacity-40">
                                 <Pencil size={12} className="text-blue-500" /> Edit Sale
                               </button>
@@ -487,13 +495,13 @@ export default function TransactionsPage() {
                                   <MessageCircle size={12} className="text-emerald-500" /> WhatsApp to Customer
                                 </button>
                               )}
-                              <button onClick={() => { openReturn(r); }} disabled={r.status === 'Cancelled'}
+                              <button onClick={() => { openReturn(r); }} disabled={isCancelled(r)}
                                 className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40 disabled:opacity-40">
                                 <Undo2 size={12} className="text-amber-500" /> Return Items
                               </button>
-                              <button onClick={() => { setActionMenuId(null); setSaleStatus(r, r.status === 'Cancelled' ? 'Completed' : 'Cancelled'); }}
+                              <button onClick={() => { setActionMenuId(null); setSaleStatus(r, isCancelled(r) ? 'Completed' : 'Cancelled'); }}
                                 className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40">
-                                {r.status === 'Cancelled'
+                                {isCancelled(r)
                                   ? <><CheckCircle2 size={12} className="text-emerald-600" /> Restore Sale</>
                                   : <><Ban size={12} className="text-rose-600" /> Cancel Sale</>}
                               </button>
@@ -590,7 +598,7 @@ export default function TransactionsPage() {
             <div className="px-6 py-4 border-t shrink-0 space-y-3">
               <div className="flex gap-3">
                 <button onClick={() => setDetailSale(null)} className="flex-1 h-10 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold">Close</button>
-                <button onClick={() => { openReturn(detailSale); setDetailSale(null); }} disabled={detailSale.status === 'Cancelled'}
+                <button onClick={() => { openReturn(detailSale); setDetailSale(null); }} disabled={isCancelled(detailSale)}
                   className="flex-1 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40">
                   <Undo2 size={14} /> Return Items
                 </button>

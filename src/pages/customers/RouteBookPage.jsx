@@ -9,6 +9,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
+import { isCancelled } from '@/lib/ledger';
 
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -138,7 +139,7 @@ export default function RouteBookPage() {
   const enriched = useMemo(() => {
     return customers.map((c) => {
       const cid = String(c.id);
-      const taken   = allSales.filter(s => String(s.customer_id) === cid && s.status !== 'Cancelled').reduce((a, s) => a + (Number(s.total) || 0), 0);
+      const taken   = allSales.filter(s => String(s.customer_id) === cid && !isCancelled(s)).reduce((a, s) => a + (Number(s.total) || 0), 0);
       const paid    = allPayments.filter(p => String(p.customer_id) === cid).reduce((a, p) => a + (Number(p.amount) || 0), 0);
       const ret     = allReturns.filter(r => String(r.customer_id) === cid).reduce((a, r) => a + (Number(r.total_returned) || 0), 0);
       const balance = Math.max(0, taken - paid - ret);

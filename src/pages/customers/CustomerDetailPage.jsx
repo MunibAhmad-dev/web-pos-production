@@ -14,6 +14,7 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { getReceiptSettings, printInvoice, buildWhatsAppLink, buildAccountStatementHtml, downloadStatementPdf, shareStatementViaWhatsApp } from '../../utils/receipt';
+import { isCancelled, saleStatus as saleStatusLc, buildCancelSaleEvents } from '@/lib/ledger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -25,7 +26,7 @@ const GRADIENTS = ['from-purple-500 to-indigo-500', 'from-pink-500 to-rose-500',
 const getGrad = (name = '') => GRADIENTS[name.charCodeAt(0) % GRADIENTS.length];
 
 function saleStatus(sale) {
-  if (sale.status === 'Cancelled') return { label: 'Cancelled', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
+  if (isCancelled(sale)) return { label: 'Cancelled', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
   if (sale.remaining <= 0.5) return { label: 'Paid', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' };
   if (sale.amountPaid <= 0) return { label: 'Unpaid', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400' };
   return { label: 'Partial', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' };
@@ -45,7 +46,7 @@ const SALES_PER_PAGE = 10;
 export default function CustomerDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { list, pushEntity, pushBatch } = useDataStore();
+  const { list, get, pushEntity, pushBatch } = useDataStore();
   const { showToast } = useToast();
   const { user } = useAuth();
   const [tab, setTab] = useState('invoices');
@@ -78,7 +79,7 @@ export default function CustomerDetailPage() {
     const custReturns = allReturns.filter((r) => saleIds.has(String(r.sale_id)))
       .sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0));
 
-    const totalTaken = custSales.filter((s) => s.status !== 'Cancelled').reduce((s, sale) => s + Number(sale.total || 0), 0);
+    const totalTaken = custSales.filter((s) => !isCancelled(s)).reduce((s, sale) => s + Number(sale.total || 0), 0);
     const totalPaid = custPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
     const totalReturned = custReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
     const balance = Math.max(0, totalTaken - totalPaid - totalReturned);
@@ -97,7 +98,10 @@ export default function CustomerDetailPage() {
       const linkedReturns = custReturns.filter((r) => String(r.sale_id) === String(sale.id));
       const amountPaid = linkedPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
       const amountReturned = linkedReturns.reduce((s, r) => s + Number(r.total_returned || 0), 0);
-      const remaining = Math.max(0, Number(sale.total || 0) - amountPaid - amountReturned);
+      // Desktop rules: 'paid' = settled (unified smart-pay rows carry no sale_id); 'completed' is just the default.
+      const st = saleStatusLc(sale);
+      const remaining = (isCancelled(sale) || st === 'paid' || st === 'returned')
+        ? 0 : Math.max(0, Number(sale.total || 0) - amountPaid - amountReturned - Number(sale.write_off_amount || 0));
       return { ...sale, items, linkedPayments, linkedReturns, amountPaid, amountReturned, remaining };
     });
 
@@ -146,26 +150,11 @@ export default function CustomerDetailPage() {
     const products = list('product');
     const now = new Date().toISOString();
     try {
-      const events = [{ entityType: 'sale', operation: 'update', payload: { ...sale, status: 'Cancelled', updated_at: now } }];
-
-      for (const item of (sale.items || [])) {
-        if (item.product_id == null) continue;
-        const product = products.find((p) => String(p.id) === String(item.product_id));
-        if (!product) continue;
-        const newStock = Number(product.stock || 0) + Number(item.quantity || 0);
-        events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: newStock, updated_at: now } });
-      }
-
-      const remaining = Number(sale.remaining ?? sale.due_amount ?? 0);
-      if (remaining > 0.01) {
-        const newBalance = Math.max(0, Number(customer.outstanding_balance || 0) - remaining);
-        events.push({ entityType: 'customer', operation: 'update', payload: { ...customer, outstanding_balance: newBalance, updated_at: now } });
-      }
-
-      for (const payment of (sale.linkedPayments || [])) {
-        events.push({ entityType: 'customer_payment', operation: 'delete', payload: { id: payment.id } });
-      }
-
+      const events = buildCancelSaleEvents({
+        sale: get('sale', sale.id) || sale, items: sale.items || [], customer, products,
+        payments: list('customer_payment'), returns: allReturns, returnItems: allReturnItems, now,
+      });
+      if (!events) { showToast('Invoice is already cancelled', 'error'); return; }
       await pushBatch(events);
       showToast('Invoice cancelled');
     } catch { showToast('Failed to cancel invoice', 'error'); }
@@ -228,7 +217,7 @@ export default function CustomerDetailPage() {
     if (!data) return [];
     const rows = [];
     for (const s of data.sales) {
-      if (s.status === 'Cancelled') continue;
+      if (isCancelled(s)) continue;
       rows.push({ date: new Date(s.date_created || 0), type: 'Sale', desc: `Invoice #${s.id}`, debit: Number(s.total || 0), credit: 0 });
     }
     for (const p of data.payments) {
@@ -308,8 +297,8 @@ export default function CustomerDetailPage() {
 
   const { sales, payments, returns, activity, totalTaken, totalPaid, totalReturned, balance, khataBalance, totalBalance } = data;
   const hasMoreSales = sales.length > salesPage * SALES_PER_PAGE;
-  const paidCount = sales.filter((s) => s.remaining <= 0.5 && s.status !== 'Cancelled').length;
-  const unpaidCount = sales.filter((s) => s.remaining > 0.5 && s.status !== 'Cancelled').length;
+  const paidCount = sales.filter((s) => s.remaining <= 0.5 && !isCancelled(s)).length;
+  const unpaidCount = sales.filter((s) => s.remaining > 0.5 && !isCancelled(s)).length;
 
   return (
     <div className="flex flex-col">
@@ -539,7 +528,7 @@ export default function CustomerDetailPage() {
 
                         {/* Action bar: Amount | Pay (green) | WA | Print | Cancel */}
                         <div className="flex items-center gap-1.5 px-4 pb-3 flex-wrap">
-                          {sale.remaining > 0.5 && sale.status !== 'Cancelled' && (
+                          {sale.remaining > 0.5 && !isCancelled(sale) && (
                             <>
                               <div className="relative">
                                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-bold pointer-events-none">PKR</span>
@@ -560,7 +549,7 @@ export default function CustomerDetailPage() {
                             </>
                           )}
                           <div className="flex items-center gap-1.5 ml-auto">
-                            {sale.status !== 'Cancelled' && (
+                            {!isCancelled(sale) && (
                               <button onClick={() => setEditSale(sale)} title="Edit invoice"
                                 className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/10 transition-colors shrink-0">
                                 <Pencil size={13} />
@@ -578,7 +567,7 @@ export default function CustomerDetailPage() {
                               className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
                               <Printer size={13} />
                             </button>
-                            {sale.status !== 'Cancelled' && (
+                            {!isCancelled(sale) && (
                               <button onClick={() => cancelSale(sale)} title="Cancel invoice"
                                 className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors shrink-0">
                                 <X size={13} />

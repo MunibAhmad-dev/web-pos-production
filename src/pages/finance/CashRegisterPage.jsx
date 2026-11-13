@@ -10,6 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
+import { isActiveSale } from '@/lib/ledger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
@@ -26,7 +27,7 @@ function computeCashMovement(session, sales, expenses, financialTxns) {
   const inWindow = (d) => d && new Date(d) >= start && new Date(d) <= end;
   let cashIn = 0, cashOut = 0;
   for (const s of sales) {
-    if ((s.payment_method === 'cash' || s.payment_method === 'Cash') && s.status === 'Completed' && inWindow(s.date_created)) cashIn += Number(s.total || 0);
+    if ((s.payment_method === 'cash' || s.payment_method === 'Cash') && isActiveSale(s) && inWindow(s.date_created)) cashIn += Number(s.total || 0);
   }
   for (const e of expenses) {
     if (inWindow(e.date_created || e.date_added)) cashOut += Number(e.amount || 0);

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FileText, ShoppingCart, Package, Search, SlidersHorizontal, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
+import { isCancelled } from '@/lib/ledger';
 
 const fmtPKR  = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -10,7 +11,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK', { day: 'numer
 const STATUS_OPTS = ['All', 'Completed', 'Partial', 'Unpaid', 'Cancelled'];
 
 function saleStatusLabel(sale) {
-  if (sale.status === 'Cancelled') return 'Cancelled';
+  if (isCancelled(sale)) return 'Cancelled';
   const rem = Number(sale.remaining ?? sale.due_amount ?? (Number(sale.total || 0) - Number(sale.amount_paid || sale.amountPaid || 0)));
   if (rem <= 0.5)  return 'Completed';
   if (Number(sale.amount_paid || sale.amountPaid || 0) > 0) return 'Partial';
