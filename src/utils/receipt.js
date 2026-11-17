@@ -29,19 +29,24 @@ export const fmtPKR = (n) => {
   return `PKR ${formatted}`;
 };
 
+/**
+ * Same invoice number the desktop app prints: INV-<year><day-of-year>-<last 6 digits of the id>.
+ * Desktop dates ("YYYY-MM-DD HH:MM:SS" or "DD/MM/YYYY") are read as local time.
+ */
 export function formatInvoiceId(id, dateString) {
-  const d = dateString ? new Date(dateString) : new Date();
-  const isValid = !isNaN(d.getTime());
-  const base = isValid ? d : new Date();
-  const datePart =
-    base.getFullYear().toString() +
-    String(base.getMonth() + 1).padStart(2, '0') +
-    String(base.getDate()).padStart(2, '0');
+  let d = null;
+  if (typeof dateString === 'string') {
+    const dmy = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    d = dmy ? new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1])) : new Date(dateString.replace(' ', 'T'));
+  } else if (dateString) {
+    d = new Date(dateString);
+  }
+  const base = d && !isNaN(d.getTime()) ? d : new Date();
+  const doy = Math.floor((new Date(base.getFullYear(), base.getMonth(), base.getDate()) - new Date(base.getFullYear(), 0, 0)) / 86400000);
   const numericId = Number(id);
-  const idPart = Number.isFinite(numericId)
-    ? String(Math.max(0, Math.trunc(numericId))).padStart(5, '0')
-    : String(id ?? '').trim();
-  return `INV-${datePart}-${idPart || '00000'}`;
+  const raw = Number.isFinite(numericId) ? String(Math.max(0, Math.trunc(numericId))) : String(id ?? '').trim();
+  const idPart = raw.length > 6 ? raw.slice(-6) : raw;
+  return `INV-${base.getFullYear()}${doy}-${idPart || '0'}`;
 }
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

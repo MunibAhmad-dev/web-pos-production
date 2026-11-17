@@ -10,7 +10,9 @@ import {
   Printer, FileText, Database, Download, Upload, FileSpreadsheet, FileJson,
   Eye, EyeOff, Building2, ShieldCheck, Puzzle, MessageSquare, Receipt,
   Store, Image, Trash2, Lock, Bell, CreditCard, Search, RotateCcw, RefreshCw,
+  ShoppingCart, List as ListIcon, LayoutGrid, Check,
 } from 'lucide-react';
+import { usePosView, setPosView } from '../../hooks/usePosView';
 import { useDataStore, clearDataCache } from '../../store/dataStore';
 import { useModuleSettings } from '../../hooks/useModuleSettings';
 import Badge from '@/components/ui/status-badge';
@@ -37,6 +39,7 @@ const getFbrSettings = () => { try { return JSON.parse(localStorage.getItem(FBR_
 const TABS = [
   { id: 'general',       label: 'General',         icon: Building2,     desc: 'Business & branding'       },
   { id: 'receipt',       label: 'Print & Receipt',  icon: Printer,       desc: 'Paper & invoice style'     },
+  { id: 'sales',         label: 'Sales Screen',     icon: ShoppingCart,  desc: 'How products are shown'    },
   { id: 'security',      label: 'Security',         icon: ShieldCheck,   desc: 'PIN & thresholds'          },
   { id: 'modules',       label: 'Modules',          icon: Puzzle,        desc: 'Optional features'         },
   { id: 'notifications', label: 'Notifications',    icon: MessageSquare, desc: 'WhatsApp templates'        },
@@ -168,6 +171,7 @@ function SectionCard({ icon: Icon, iconCls = 'text-primary', bgCls = 'bg-primary
 export default function SettingsPage() {
   const { user, refreshStatus } = useAuth();
   const { showToast } = useToast();
+  const posView = usePosView();
   const [activeTab, setActiveTab] = useState('general');
 
   // General
@@ -613,6 +617,28 @@ export default function SettingsPage() {
               Save Receipt Settings
             </button>
           </form>
+        </SectionCard>
+      )}
+
+      {/* ── SALES SCREEN ── */}
+      {activeTab === 'sales' && (
+        <SectionCard icon={ShoppingCart} title="Product display" subtitle="How products appear on the Sales screen">
+          <div className="grid gap-3 sm:grid-cols-2 max-w-2xl" role="radiogroup" aria-label="Product display">
+            {[
+              { key: 'list', icon: ListIcon, title: 'List', desc: 'One product per row with stock and price columns. Fast to scan through long product lists.' },
+              { key: 'cards', icon: LayoutGrid, title: 'Cards (like the desktop POS)', desc: 'Product cards in a grid, the same layout as the counter app. Easy to tap on a touch screen.' },
+            ].map((o) => (
+              <button key={o.key} type="button" role="radio" aria-checked={posView === o.key}
+                onClick={() => { setPosView(o.key); showToast(o.key === 'cards' ? 'Sales screen will show product cards' : 'Sales screen will show a list'); }}
+                className={`relative text-left rounded-xl border p-4 transition-all ${posView === o.key ? 'border-primary ring-1 ring-primary/30 bg-primary/[0.04]' : 'border-border hover:bg-muted/40'}`}>
+                {posView === o.key && <span className="absolute right-3 top-3 h-5 w-5 rounded-full bg-primary text-primary-foreground inline-flex items-center justify-center"><Check size={12} /></span>}
+                <o.icon size={18} className={posView === o.key ? 'text-primary' : 'text-muted-foreground'} />
+                <p className="mt-2 text-sm font-semibold text-foreground">{o.title}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{o.desc}</p>
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">Saved on this device. Takes effect on the Sales screen immediately.</p>
         </SectionCard>
       )}
 

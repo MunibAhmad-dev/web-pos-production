@@ -28,7 +28,9 @@ export default function ReceiptModal({ open, onClose, sale, businessName }) {
       items: (sale.items || []).map((i) => ({
         name: i.name,
         qty: i.qty,
-        price: i.price ?? (i.qty ? (i.lineTotal || 0) / i.qty : 0),
+        price: i.price ?? (Number(i.qty) ? (i.lineTotal || 0) / Number(i.qty) : 0),
+        // Weighed items pass qty as a label ("1.5 kg") with the line total precomputed.
+        lineTotal: i.lineTotal ?? (Number(i.price) || 0) * (Number(i.qty) || 0),
       })),
       subtotal: sale.subtotal,
       discount: sale.discount || 0,
@@ -94,7 +96,7 @@ export default function ReceiptModal({ open, onClose, sale, businessName }) {
                       <div className="font-semibold break-words">{item.name}</div>
                       <div className="text-[10px] text-foreground/70">@ {fmtPKR(item.price)}</div>
                     </td>
-                    <td className="text-right font-bold py-1.5 whitespace-nowrap">{fmtPKR(item.price * item.qty)}</td>
+                    <td className="text-right font-bold py-1.5 whitespace-nowrap">{fmtPKR(item.lineTotal)}</td>
                   </tr>
                 ))}
               </tbody>

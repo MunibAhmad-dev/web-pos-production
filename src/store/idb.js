@@ -13,7 +13,7 @@
  */
 
 const DB_NAME    = 'osatech_pos';
-const DB_VERSION = 4;
+const DB_VERSION = 5; // 5: adds settings + product_batch stores
 
 export const WINDOW_DAYS = 60;
 
@@ -42,6 +42,9 @@ export const ALL_IDB_TYPES = [
   'attendance',
   'godown_entry',
   'repair_job',
+  // Shop settings (module switches etc.) — without a store they were lost after the first reload.
+  'settings',
+  'product_batch',
 ];
 
 // ── DB lifecycle ──────────────────────────────────────────────────────────────
