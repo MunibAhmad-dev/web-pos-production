@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ManufacturingAuthProvider } from './context/ManufacturingAuthContext';
 import { DataStoreProvider } from './store/dataStore';
@@ -21,7 +21,6 @@ import WholesalePricelist from './pages/products/WholesalePricelist';
 import InventoryPage from './pages/inventory/InventoryPage';
 import GodownPage from './pages/inventory/GodownPage';
 import POSPage from './pages/sales/POSPage';
-import SalesHistoryPage from './pages/sales/SalesHistoryPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
 import RouteBookPage from './pages/customers/RouteBookPage';
@@ -126,7 +125,7 @@ export default function App() {
                 >
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/sales" element={<POSPage />} />
-                  <Route path="/sales/history" element={<SalesHistoryPage />} />
+                  <Route path="/sales/history" element={<Navigate to="/transactions" replace />} />
                   <Route path="/products" element={<ProductsPage />} />
                   <Route path="/wholesale" element={<WholesalePricelist />} />
                   <Route path="/inventory" element={<InventoryPage />} />

@@ -39,7 +39,6 @@ const titleMap = navGroups
   .flatMap((group) => group.items)
   .reduce((map, item) => ({ ...map, [item.to]: item.label }), {
     '/sales': 'Point of Sale',
-    '/sales/history': 'Sales History',
     '/route-book': 'Route Book',
     '/payment-reminders': 'Payment Reminders',
     '/godown': 'Godown',

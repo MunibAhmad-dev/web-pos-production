@@ -25,12 +25,10 @@ import {
   Info,
   Wrench,
   Warehouse,
-  Tags,
-  MapPinned,
-  BellRing,
-  FileBarChart,
 } from 'lucide-react';
 
+// Pages that live inside another screen (Wholesale price list → Products, Vendor reports → Vendors,
+// Route book and Payment reminders → Customers) are opened from there, like on the desktop.
 // Sidebar sections — same groups, order and names as the desktop app so staff who use both
 // find things in the same place. `when` hides an item/group unless that module or setting is on
 // (read from the shop's synced settings — see useStoreFeatures). `placement: 'footer'` groups are
@@ -41,7 +39,6 @@ export const navGroups = [
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid, end: true },
       { to: '/sales', label: 'Sales', icon: ShoppingCart, end: true, primary: true },
-      { to: '/sales/history', label: 'Sales History', icon: History },
       { to: '/invoices', label: 'Invoices', icon: FileText },
     ],
   },
@@ -55,7 +52,6 @@ export const navGroups = [
       { to: '/returns', label: 'Returns', icon: Undo2 },
       { to: '/warranty', label: 'Warranty Claims', icon: ShieldAlert },
       { to: '/godown', label: 'Godown', icon: Warehouse },
-      { to: '/wholesale', label: 'Wholesale Price List', icon: Tags, when: 'wholesale' },
     ],
   },
   {
@@ -71,8 +67,6 @@ export const navGroups = [
       { to: '/customers', label: 'Customers', icon: Users },
       { to: '/loans', label: 'Loans (AP/AR)', icon: Scale },
       { to: '/employees', label: 'Employees', icon: UserCog },
-      { to: '/route-book', label: 'Route Book', icon: MapPinned },
-      { to: '/payment-reminders', label: 'Payment Reminders', icon: BellRing },
     ],
   },
   {
@@ -92,8 +86,7 @@ export const navGroups = [
     items: [
       { to: '/reports', label: 'Reports', icon: BarChart3 },
       { to: '/balance-sheet', label: 'Balance Sheet', icon: TrendingUp },
-      { to: '/vendor-reports', label: 'Vendor Reports', icon: FileBarChart },
-      { to: '/fbr', label: 'FBR Invoicing', icon: Shield },
+      { to: '/fbr', label: 'FBR Invoicing', icon: Shield, when: 'fbr' },
     ],
   },
   {

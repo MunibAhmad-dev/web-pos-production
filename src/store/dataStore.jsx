@@ -4,8 +4,7 @@ import { pushEvents, nextId } from '../api/syncClient';
 import {
   openPosDB, idbPutMany, idbDeleteMany, idbReplaceAll, idbGetAll, idbGetSince, idbGetBefore, idbGetSaleItems,
   idbClearAll, getIdbMeta, setIdbMeta,
-  ALL_IDB_TYPES, WINDOWED_TYPES, WINDOW_DAYS,
-} from './idb';
+  ALL_IDB_TYPES, WINDOWED_TYPES, WINDOW_DAYS, idbGetSinceLoose } from './idb';
 
 const DataStoreContext = createContext(null);
 
@@ -144,10 +143,11 @@ export function DataStoreProvider({ children }) {
     const next   = emptyCollections();
     await Promise.all(
       Object.entries(PLURAL_TO_SINGULAR).map(async ([, singular]) => {
+        if (singular === 'sale_item') return; // loaded below, by the windowed sales' ids
         try {
-          const rows = WINDOWED_TYPES.has(singular)
-            ? await idbGetSince(db, singular, cutoff)
-            : await idbGetAll(db, singular);
+          const rows = !WINDOWED_TYPES.has(singular) ? await idbGetAll(db, singular)
+            : singular === 'sale' ? await idbGetSince(db, singular, cutoff)
+              : await idbGetSinceLoose(db, singular, cutoff);
           for (const row of rows) {
             if (row?.id == null) continue;
             next[singular].set(String(row.id), row);
@@ -155,6 +155,12 @@ export function DataStoreProvider({ children }) {
         } catch {} // skip store on error
       })
     );
+    // Items belong to their sale: desktop rows carry created_at (not date_created), so a date
+    // filter dropped them all after a reload — load every item of the sales in the window.
+    try {
+      const items = await idbGetSaleItems(db, new Set(next.sale.keys()));
+      for (const row of items) if (row?.id != null) next.sale_item.set(String(row.id), row);
+    } catch {} // skip on error
     setCollections(next);
   }, []);
 

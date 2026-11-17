@@ -7,6 +7,10 @@ import { useModuleSettings } from './useModuleSettings';
  * web sidebar shows the same module sections as the counter PC; the browser's own module
  * toggles (Settings → Modules on the web) can switch a module on as well.
  */
+function localFbrEnabled() {
+  try { return !!JSON.parse(localStorage.getItem('pos_fbr_settings') || '{}').fbr_enabled; } catch { return false; }
+}
+
 export function useStoreFeatures() {
   const { list } = useDataStore();
   const { modules } = useModuleSettings();
@@ -19,6 +23,7 @@ export function useStoreFeatures() {
       mobile: on('mobile_module_enabled'),
       pharmacy: on('pharmacy_module_enabled'),
       dms: on('dms_module_enabled'),
+      fbr: on('fbr_enabled') || localFbrEnabled(),
     };
   }, [list, modules]);
 }

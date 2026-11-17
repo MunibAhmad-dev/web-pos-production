@@ -598,7 +598,7 @@ export default function POSPage() {
               className="h-12 px-4 rounded-xl border border-border bg-card text-sm font-medium text-foreground inline-flex items-center gap-2 hover:bg-muted transition-colors">
               <Sparkles size={16} className="text-violet-500" /> Custom item
             </button>
-            <Link to="/sales/history" className="h-12 w-12 rounded-xl border border-border bg-card inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Sales history" aria-label="Sales history">
+            <Link to="/transactions" className="h-12 w-12 rounded-xl border border-border bg-card inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Transactions" aria-label="Transactions">
               <History size={17} />
             </Link>
           </div>

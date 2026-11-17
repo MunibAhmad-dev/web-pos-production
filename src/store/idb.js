@@ -194,20 +194,36 @@ export function idbGetBefore(db, type, before, limit = 100) {
 export function idbGetSaleItems(db, saleIds) {
   if (!saleIds.size) return Promise.resolve([]);
   return new Promise((resolve, reject) => {
-    const results = [];
+    const byId    = new Map();
     const tx      = db.transaction('sale_item', 'readonly');
     const index   = tx.objectStore('sale_item').index('by_sale_id');
-    let pending   = saleIds.size;
-
+    const keys    = [];
     for (const sid of saleIds) {
-      const req = index.getAll(String(sid));
+      keys.push(String(sid));
+      const n = Number(sid);
+      if (Number.isFinite(n) && String(n) === String(sid)) keys.push(n);
+    }
+    let pending = keys.length;
+    for (const key of keys) {
+      const req = index.getAll(key);
       req.onsuccess = () => {
-        results.push(...req.result);
-        if (--pending === 0) resolve(results);
+        for (const r of req.result) byId.set(String(r.id), r);
+        if (--pending === 0) resolve([...byId.values()]);
       };
       req.onerror = () => reject(req.error);
     }
   });
+}
+
+/**
+ * Windowed read for child rows that may not carry date_created (desktop sale items use
+ * created_at, purchase lines use date_added): keep rows inside the window or with no date.
+ */
+export function idbGetSinceLoose(db, type, since) {
+  return idbGetAll(db, type).then((rows) => rows.filter((r) => {
+    const d = r.date_created ?? r.created_at ?? r.date_added;
+    return d == null || d === '' || String(d) >= String(since);
+  }));
 }
 
 // ── Metadata ──────────────────────────────────────────────────────────────────

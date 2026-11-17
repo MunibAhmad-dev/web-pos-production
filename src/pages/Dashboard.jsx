@@ -528,7 +528,7 @@ export default function Dashboard() {
 
       {/* ── Recent activity ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card title="Latest sales" className="xl:col-span-2" action={<CardLink to="/sales/history">All sales</CardLink>}>
+        <Card title="Latest sales" className="xl:col-span-2" action={<CardLink to="/transactions">All sales</CardLink>}>
           {recentSales.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">No sales yet.</p>
           ) : (
