@@ -69,14 +69,14 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen overflow-hidden bg-background">
       <aside
-        style={{ width: sidebarCollapsed ? 72 : 240 }}
-        className="hidden shrink-0 border-r border-border/60 transition-[width] duration-200 ease-in-out lg:block"
+        style={{ width: sidebarCollapsed ? 72 : 248 }}
+        className="hidden shrink-0 transition-[width] duration-200 ease-in-out lg:block"
       >
-        <Sidebar className="fixed h-screen" collapsible collapsed={sidebarCollapsed} onToggleCollapsed={setSidebarCollapsed} />
+        <Sidebar className="fixed h-screen border-r border-border/70 transition-[width] duration-200 ease-in-out" collapsible collapsed={sidebarCollapsed} onToggleCollapsed={setSidebarCollapsed} />
       </aside>
 
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-64 p-0 sm:max-w-64">
+        <SheetContent side="left" className="w-[272px] p-0 sm:max-w-[272px]">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <Sidebar />
         </SheetContent>

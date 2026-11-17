@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Menu, LogOut, Settings, Search, Bell, Package, AlertTriangle, BellRing } from 'lucide-react';
+import { Menu, LogOut, Settings, Search, Bell, Package, AlertTriangle, BellRing, ChevronDown, Sun, Moon, Monitor, Info, Clock } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { Link } from 'react-router-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -14,7 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import ThemeToggle from './ThemeToggle';
 import { navGroups } from './navConfig';
 import { cn } from '@/lib/utils';
 
@@ -168,79 +168,148 @@ function NotificationBell({ udharCount = 0 }) {
 }
 
 const initials = (name = '') =>
-  name
-    .split(' ')
+  (name || '?')
+    .trim()
+    .split(/\s+/)
     .map((p) => p[0])
     .slice(0, 2)
     .join('')
     .toUpperCase();
 
-export default function Topbar({ onMenuClick, title, udharCount = 0 }) {
+function ThemeChoice() {
+  const { theme, setTheme } = useTheme();
+  const options = [['light', 'Light', Sun], ['dark', 'Dark', Moon], ['system', 'Auto', Monitor]];
+  return (
+    <div className="px-1.5 py-1.5">
+      <p className="px-1 pb-1.5 text-[11px] font-medium text-muted-foreground">Theme</p>
+      <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+        {options.map(([key, label, Icon]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTheme(key)}
+            className={cn(
+              'flex h-7 items-center justify-center gap-1 rounded-md text-xs font-medium transition-colors',
+              (theme || 'system') === key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Icon size={13} /> {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProfileMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const name = user?.owner_name || user?.store_name || 'Account';
+  const days = typeof user?.days_remaining === 'number' ? user.days_remaining : null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Account menu"
+            className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-1.5 transition-colors hover:bg-muted sm:pr-2.5"
+          >
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">{initials(name)}</AvatarFallback>
+            </Avatar>
+            <span className="hidden min-w-0 text-left xl:block">
+              <span className="block max-w-[140px] truncate text-[13px] font-semibold leading-tight text-foreground">{name}</span>
+              <span className="block max-w-[140px] truncate text-[11px] leading-tight text-muted-foreground">{user?.store_name || 'Owner'}</span>
+            </span>
+            <ChevronDown size={14} className="hidden text-muted-foreground sm:block" />
+          </button>
+        }
+      />
+      <DropdownMenuContent align="end" className="w-64 p-1">
+        <div className="flex items-center gap-3 px-2 py-2.5">
+          <Avatar className="h-10 w-10">
+            <AvatarFallback className="bg-primary/10 text-sm font-semibold text-primary">{initials(name)}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{name}</p>
+            <p className="truncate text-xs text-muted-foreground">{user?.store_name}</p>
+            {user?.mobile && <p className="truncate text-xs text-muted-foreground tabular-nums">{user.mobile}</p>}
+          </div>
+        </div>
+        {days !== null && (
+          <div className={cn(
+            'mx-1.5 mb-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs',
+            days <= 14 ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'bg-muted text-muted-foreground'
+          )}>
+            <Clock size={13} className="shrink-0" />
+            {days > 0 ? `Licence: ${days} day${days === 1 ? '' : 's'} left` : 'Licence expires today'}
+          </div>
+        )}
+        <DropdownMenuSeparator />
+        <ThemeChoice />
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate('/settings')} className="h-8 px-2">
+          <Settings /> Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate('/about')} className="h-8 px-2">
+          <Info /> About OsaTech
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={logout} variant="destructive" className="h-8 px-2">
+          <LogOut /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export default function Topbar({ onMenuClick, title, udharCount = 0 }) {
   const location = useLocation();
   const isMac = typeof navigator !== 'undefined' && navigator.platform?.toUpperCase().includes('MAC');
   const activeGroup = navGroups.find((g) => g.items.some((i) => i.to === location.pathname));
+  const openSearch = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true }));
 
   return (
-    <header className="relative z-20 flex h-16 shrink-0 items-center justify-between border-b border-border/60 bg-card px-4 sm:px-6 md:h-[68px] md:px-8">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" onClick={onMenuClick} className="h-9 w-9 rounded-lg lg:hidden">
-          <Menu size={18} />
-        </Button>
-        <div className="mx-1 hidden h-5 w-px bg-border/60 sm:block" />
-        <div>
-          <h1 className="max-w-[58vw] truncate text-base leading-none font-semibold tracking-tight text-foreground sm:max-w-none sm:text-lg">
-            {title}
-          </h1>
-          <p className="mt-0.5 hidden text-[10px] text-muted-foreground/60 sm:block">
-            {activeGroup ? `${activeGroup.emoji} ${activeGroup.label}` : '🏠 Core'}
-          </p>
-        </div>
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-card/90 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+      <button
+        type="button"
+        onClick={onMenuClick}
+        aria-label="Open menu"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-muted lg:hidden"
+      >
+        <Menu size={18} />
+      </button>
+
+      <div className="min-w-0 flex-1">
+        {activeGroup && activeGroup.placement !== 'footer' && (
+          <p className="hidden text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground sm:block">{activeGroup.label}</p>
+        )}
+        <h1 className="truncate text-base font-semibold leading-tight tracking-tight text-foreground sm:text-lg">{title}</h1>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          className="hidden w-56 justify-between text-muted-foreground sm:flex"
-          onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        <button
+          type="button"
+          onClick={openSearch}
+          className="hidden h-9 w-60 items-center justify-between rounded-lg border border-border bg-background px-3 text-sm text-muted-foreground transition-colors hover:border-foreground/20 md:flex"
         >
-          <span className="flex items-center gap-2">
-            <Search size={14} /> Search…
-          </span>
-          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-            {isMac ? '⌘K' : 'Ctrl K'}
-          </kbd>
-        </Button>
-
-        <ThemeToggle />
+          <span className="flex items-center gap-2"><Search size={15} /> Search pages…</span>
+          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-sans text-[10px] font-medium">{isMac ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
+        <button
+          type="button"
+          onClick={openSearch}
+          aria-label="Search"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+        >
+          <Search size={16} />
+        </button>
 
         <NotificationBell udharCount={udharCount} />
 
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button type="button" className="cursor-pointer rounded-full">
-                <Avatar>
-                  <AvatarFallback className="bg-primary/10 text-primary">{initials(user?.owner_name)}</AvatarFallback>
-                </Avatar>
-              </button>
-            }
-          />
-          <DropdownMenuContent align="end" className="w-56">
-            <div className="px-1.5 py-1.5">
-              <p className="text-sm font-medium text-foreground">{user?.store_name}</p>
-              <p className="text-xs font-normal text-muted-foreground">{user?.mobile}</p>
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/settings')}>
-              <Settings /> Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={logout} variant="destructive">
-              <LogOut /> Logout
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
+        <ProfileMenu />
       </div>
     </header>
   );
