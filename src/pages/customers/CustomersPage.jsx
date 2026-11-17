@@ -360,7 +360,7 @@ function CustomerAccount({ customer, onBack, onEdit, onDelete }) {
       <EntrySheet open={!!sheet} onClose={() => setEntry(null)} {...(sheet || {})}>{sheet?.body}</EntrySheet>
       <EditPaymentDialog payment={editPay} onClose={() => setEditPay(null)}
         groupTotal={editPay?.payment_group ? groupOf(editPay).reduce((s, r) => s + (Number(r.amount) || 0), 0) : undefined}
-        lockedReason={editPay?.payment_group && groupOf(editPay).length > 1 ? 'This Smart Pay is split across invoices — to change the amount, delete it and receive again. You can still change the note.' : null}
+        lockedReason={editPay?.payment_group ? (groupOf(editPay).length > 1 ? 'This Smart Pay is split across invoices — to change the amount, delete it and receive again. You can still change the note.' : 'A Smart Pay payment keeps its amount (same as the counter app) — delete it and receive again to change it. You can still change the note.') : null}
         onSave={(v) => savePaymentEdit(editPay, v)} />
       {returning && <ReturnDialog row={returning} onClose={() => setReturning(null)} />}
       <EditSaleModal open={!!editing} onClose={() => setEditing(null)} sale={editing?.raw} items={editing?.lines || []} products={list('product')} onSave={(v) => saveEdit(editing, v)} />
