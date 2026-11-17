@@ -24,7 +24,6 @@ import {
   Shield,
   Info,
   Wrench,
-  Warehouse,
 } from 'lucide-react';
 
 // Pages that live inside another screen (Wholesale price list → Products, Vendor reports → Vendors,
@@ -51,7 +50,6 @@ export const navGroups = [
       { to: '/purchases', label: 'Purchases / POs', icon: ClipboardList },
       { to: '/returns', label: 'Returns', icon: Undo2 },
       { to: '/warranty', label: 'Warranty Claims', icon: ShieldAlert },
-      { to: '/godown', label: 'Godown', icon: Warehouse },
     ],
   },
   {
