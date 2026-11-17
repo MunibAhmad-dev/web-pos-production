@@ -1,670 +1,502 @@
-import { useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import { useAuth } from '../context/AuthContext';
-import { useMediaQuery } from '../hooks/useMediaQuery';
 import {
-  Sun, Moon, Store, ArrowRight, TrendingUp,
-  AlertTriangle, Package, Scissors, Factory,
-  CheckCircle2, ShoppingBag, MessageCircle,
+  Sun, Moon, Store, ArrowRight, Factory, Scissors, MessageCircle, ScanBarcode,
+  BookOpen, Boxes, Pill, Wallet, Cloud, WifiOff, Receipt, Package, ChevronDown,
+  Check, Users, Laptop, Smartphone, RefreshCw, Printer, Menu, X, Mail,
 } from 'lucide-react';
 
 const WHATSAPP_NUMBER = '923298748232';
+const CONTACT_EMAIL = 'munibahmad4735@gmail.com';
+const waLink = (msg) => `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`;
 
-/* ── Inline theme toggle ──────────────────────────────── */
-function ThemeBtn() {
+/* ── Small building blocks ───────────────────────────────────────────────── */
+
+function Logo({ small = false }) {
+  return (
+    <span className="inline-flex items-center gap-2.5">
+      <span className={`${small ? 'w-7 h-7 rounded-lg' : 'w-9 h-9 rounded-xl'} bg-primary text-primary-foreground inline-flex items-center justify-center shadow-sm`}>
+        <Store size={small ? 14 : 17} strokeWidth={2.2} />
+      </span>
+      <span className={`font-display font-extrabold tracking-tight text-foreground ${small ? 'text-[15px]' : 'text-lg'}`}>OsaTech</span>
+    </span>
+  );
+}
+
+function ThemeButton() {
   const { resolvedTheme, setTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   return (
     <button
+      type="button"
       onClick={() => setTheme(dark ? 'light' : 'dark')}
-      aria-label="Toggle theme"
-      style={{
-        width: 38, height: 38, borderRadius: 10,
-        border: '1px solid rgba(0,0,0,0.1)',
-        background: 'rgba(255,255,255,0.75)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer', color: '#555', flexShrink: 0,
-      }}
+      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      className="w-9 h-9 rounded-lg border border-border bg-card/70 text-muted-foreground hover:text-foreground inline-flex items-center justify-center transition-colors"
     >
       {dark ? <Sun size={16} /> : <Moon size={16} />}
     </button>
   );
 }
 
-/* ── Floating hero cards ──────────────────────────────── */
-function SalesCard() {
+function SignInMenu() {
+  const [open, setOpen] = useState(false);
   return (
-    <div style={{
-      position: 'absolute', top: '4%', right: '10%',
-      background: 'white', borderRadius: 22, padding: '22px 24px',
-      boxShadow: '0 24px 64px rgba(0,0,0,0.10)',
-      transform: 'rotate(-5deg)', width: 228, zIndex: 3,
-    }}>
-      <p style={{ fontSize: 10, color: '#aaa', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10 }}>
-        Today's Revenue
-      </p>
-      <p style={{ fontSize: 26, fontWeight: 800, color: '#111', lineHeight: 1, marginBottom: 10 }}>
-        PKR 84,200
-      </p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-        <TrendingUp size={12} color="#10B981" />
-        <span style={{ fontSize: 11, color: '#10B981', fontWeight: 600 }}>+14% vs yesterday</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 32 }}>
-        {[38, 55, 42, 70, 58, 82, 72, 88, 76, 100].map((h, i) => (
-          <div key={i} style={{
-            flex: 1, height: `${h}%`,
-            background: i === 9 ? '#FF4E7D' : '#FFB3C8',
-            borderRadius: 3,
-          }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CartCard() {
-  return (
-    <div style={{
-      position: 'absolute', top: '40%', right: '0%',
-      background: 'white', borderRadius: 22, padding: '20px 22px',
-      boxShadow: '0 24px 64px rgba(0,0,0,0.09)',
-      transform: 'rotate(4deg)', width: 248, zIndex: 2,
-    }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: '#111', marginBottom: 14 }}>Quick Checkout</p>
-      {[['Almond Giri 500g', '×2', 'PKR 1,700'], ['Cashew Splits 1kg', '×1', 'PKR 1,450']].map(([n, q, p]) => (
-        <div key={n} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontSize: 11 }}>
-          <span style={{ color: '#666' }}>{n} <span style={{ color: '#bbb' }}>{q}</span></span>
-          <span style={{ fontWeight: 600, color: '#111' }}>{p}</span>
+    <div className="relative" onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="h-9 px-3.5 rounded-lg text-sm font-semibold text-foreground hover:bg-muted inline-flex items-center gap-1.5 transition-colors"
+      >
+        Sign in <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full pt-2 z-50">
+          <div className="w-64 rounded-xl border border-border bg-popover p-1.5 shadow-xl">
+            <Link to="/login" className="flex items-start gap-3 rounded-lg p-2.5 hover:bg-muted transition-colors">
+              <span className="mt-0.5 w-8 h-8 rounded-lg bg-primary/10 text-primary inline-flex items-center justify-center shrink-0"><Store size={15} /></span>
+              <span>
+                <span className="block text-sm font-semibold text-foreground">Retail POS</span>
+                <span className="block text-xs text-muted-foreground">Your shop's web dashboard</span>
+              </span>
+            </Link>
+            <Link to="/manufacturing/login" className="flex items-start gap-3 rounded-lg p-2.5 hover:bg-muted transition-colors">
+              <span className="mt-0.5 w-8 h-8 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 inline-flex items-center justify-center shrink-0"><Factory size={15} /></span>
+              <span>
+                <span className="block text-sm font-semibold text-foreground">Factory ERP</span>
+                <span className="block text-xs text-muted-foreground">Manufacturing &amp; parts</span>
+              </span>
+            </Link>
+          </div>
         </div>
-      ))}
-      <div style={{ borderTop: '1px solid #f2f2f2', paddingTop: 10, display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#111' }}>Total</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: '#111' }}>PKR 3,150</span>
-      </div>
-      <div style={{ background: '#FF4E7D', borderRadius: 12, padding: '10px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'white' }}>
-        Complete Sale  →
-      </div>
-    </div>
-  );
-}
-
-function StockCard() {
-  return (
-    <div style={{
-      position: 'absolute', bottom: '6%', right: '14%',
-      background: 'white', borderRadius: 22, padding: '18px 22px',
-      boxShadow: '0 24px 64px rgba(0,0,0,0.09)',
-      transform: 'rotate(-2deg)', width: 220, zIndex: 3,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14 }}>
-        <div style={{ width: 30, height: 30, borderRadius: 9, background: '#FFF3CD', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <AlertTriangle size={13} color="#F59E0B" />
-        </div>
-        <p style={{ fontSize: 12, fontWeight: 700, color: '#111' }}>Low Stock Alert</p>
-      </div>
-      {[['Dry Apricot 250g', '4 left', '#F59E0B'], ['Walnut Halves 1kg', '0 left', '#EF4444'], ['Pistachio Raw', '7 left', '#F59E0B']].map(([n, s, c]) => (
-        <div key={n} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 9, fontSize: 11 }}>
-          <span style={{ color: '#666' }}>{n}</span>
-          <span style={{ color: c, fontWeight: 700 }}>{s}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Product section card ─────────────────────────────── */
-function ProductCard({ eyebrow, icon: Icon, iconBg, name, desc, features, tags, cta }) {
-  return (
-    <div style={{
-      background: 'white', borderRadius: 24, padding: '36px',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.06)',
-      border: '1px solid rgba(0,0,0,0.05)',
-      display: 'flex', flexDirection: 'column', gap: 0,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 14, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Icon size={20} color="white" />
-        </div>
-        <div>
-          <p style={{ fontSize: 10, color: '#aaa', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>{eyebrow}</p>
-          <p style={{ fontSize: 17, fontWeight: 800, color: '#111' }}>{name}</p>
-        </div>
-      </div>
-
-      <p style={{ fontSize: 14, color: '#666', lineHeight: 1.7, marginBottom: 22 }}>{desc}</p>
-
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, marginBottom: 22, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {features.map(f => (
-          <li key={f} style={{ display: 'flex', gap: 10, fontSize: 13, color: '#444', alignItems: 'flex-start' }}>
-            <CheckCircle2 size={14} color="#FF4E7D" style={{ flexShrink: 0, marginTop: 2 }} />
-            {f}
-          </li>
-        ))}
-      </ul>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: cta ? 24 : 0 }}>
-        {tags.map(t => (
-          <span key={t} style={{ fontSize: 11, padding: '4px 11px', borderRadius: 50, background: '#F8F5FF', border: '1px solid #EDE0FF', color: '#7B5EA7' }}>
-            {t}
-          </span>
-        ))}
-      </div>
-
-      {cta && (
-        <Link to={cta.link || "/login"} style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          background: cta.bg || '#FF4E7D', color: 'white',
-          borderRadius: 12, padding: '12px 22px',
-          fontSize: 13, fontWeight: 700, textDecoration: 'none',
-          alignSelf: 'flex-start', boxShadow: `0 6px 20px ${cta.shadow || 'rgba(255,78,125,0.3)'}`,
-        }}>
-          {cta.icon ? <cta.icon size={14} /> : <Store size={14} />} {cta.text || 'Login to Web POS'}
-        </Link>
       )}
     </div>
   );
 }
 
-/* ── Canvas drawing (app mockups) ─────────────────────── */
-const D = { bg:'#0F1117', sf:'#161B22', sf2:'#1C2230', bd:'#2D3748', ac:'#FF4E7D', acl:'#FF7EA0', tx:'#E2E8F0', mu:'#718096', gr:'#10B981', rd:'#EF4444', bl:'#3B82F6', yw:'#F59E0B' };
-
-function rr(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=0.8;ctx.stroke();}}
-function tx(ctx,s,x,y,sz=10,col=D.tx,align='left'){ctx.fillStyle=col;ctx.font=`${sz}px Inter,system-ui,sans-serif`;ctx.textAlign=align;ctx.fillText(s,x,y);}
-function hl(ctx,y,x1,x2){ctx.strokeStyle=D.bd;ctx.lineWidth=0.6;ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();}
-function chrome(ctx,W,title){ctx.fillStyle=D.sf;ctx.fillRect(0,0,W,32);ctx.strokeStyle=D.bd;ctx.lineWidth=0.8;ctx.beginPath();ctx.moveTo(0,32);ctx.lineTo(W,32);ctx.stroke();[['#FF5F57',12],['#FEBC2E',28],['#28C840',44]].forEach(([c,x])=>{ctx.beginPath();ctx.arc(x,16,5,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();});tx(ctx,title,W/2,21,10,D.mu,'center');}
-
-function drawPOS(canvas){
-  const ctx=canvas.getContext('2d');const[W,H]=[560,360];
-  ctx.fillStyle=D.bg;ctx.fillRect(0,0,W,H);
-  chrome(ctx,W,'OsaTech POS  —  New Sale');
-  ctx.fillStyle=D.sf;ctx.fillRect(0,32,148,H-32);
-  ctx.strokeStyle=D.bd;ctx.lineWidth=0.6;ctx.beginPath();ctx.moveTo(148,32);ctx.lineTo(148,H);ctx.stroke();
-  ['Dashboard','Sales','Products','Customers','Vendors','Reports'].forEach((n,i)=>{
-    if(i===1){rr(ctx,6,44+i*34,136,28,4,'rgba(255,78,125,0.15)');ctx.fillStyle=D.ac;ctx.fillRect(4,48+i*34,2,20);}
-    tx(ctx,n,20,63+i*34,10.5,i===1?D.ac:D.mu);
-  });
-  rr(ctx,156,40,232,26,4,D.sf2,D.bd);tx(ctx,'🔍  Search products…',166,57,9.5,D.mu);
-  [['Almond Giri 500g','PKR 850',42,D.gr],['Cashew Splits 1kg','PKR 1,450',18,D.gr],['Dry Apricot 250g','PKR 320',4,D.yw],['Walnut Halves 1kg','PKR 1,200',0,D.rd],['Pistachio Roasted','PKR 1,800',22,D.gr]].forEach(([n,p,s,c],i)=>{
-    const ry=78+i*46,active=i===0;
-    rr(ctx,154,ry,238,40,4,active?'rgba(255,78,125,0.1)':D.sf2,active?D.ac:D.bd);
-    tx(ctx,n,164,ry+14,10,active?D.ac:D.tx);tx(ctx,p,164,ry+30,9,D.mu);tx(ctx,`${s} left`,382,ry+30,8.5,c,'right');
-  });
-  rr(ctx,400,40,152,312,5,D.sf2,D.bd);tx(ctx,'Cart',410,60,10,D.mu);
-  [['Almond Giri 500g','× 2','PKR 1,700'],['Cashew Splits 1kg','× 1','PKR 1,450']].forEach(([n,q,sub],i)=>{
-    tx(ctx,n,410,80+i*58,9.5,D.tx);tx(ctx,q,410,96+i*58,9,D.mu);tx(ctx,sub,540,96+i*58,9.5,D.tx,'right');hl(ctx,108+i*58,410,542);
-  });
-  hl(ctx,216,410,542);tx(ctx,'Total',410,234,11,D.tx);tx(ctx,'PKR 3,150',542,234,11,D.ac,'right');
-  rr(ctx,410,248,130,34,8,D.ac);tx(ctx,'Complete Sale  →',475,269,10.5,'#fff','center');
-  ['Cash','Credit','Online'].forEach((m,i)=>{rr(ctx,410+i*45,292,40,20,4,i===0?'rgba(16,185,129,0.2)':D.sf);tx(ctx,m,430+i*45,306,8,i===0?D.gr:D.mu,'center');});
+function Eyebrow({ children }) {
+  return <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">{children}</p>;
 }
 
-function drawERP(canvas){
-  const ctx=canvas.getContext('2d');const[W,H]=[560,360];
-  ctx.fillStyle=D.bg;ctx.fillRect(0,0,W,H);
-  chrome(ctx,W,'Factory ERP  —  Parts Inventory');
-  [['Total Parts','48 SKUs',D.bl],['Buildable Now','124 units',D.gr],['Open POs','3',D.yw],['Payables','PKR 56K',D.rd]].forEach(([l,v,c],i)=>{
-    rr(ctx,8+i*136,40,130,52,5,D.sf2,D.bd);tx(ctx,v,18+i*136,63,13,c);tx(ctx,l,18+i*136,80,9,D.mu);
-  });
-  rr(ctx,8,102,352,250,5,D.sf2,D.bd);
-  const cols=[18,196,262,340];['Part Name','Stock','Rsvd','Avail'].forEach((h,i)=>tx(ctx,h,cols[i],122,9,D.mu,i===0?'left':'right'));
-  hl(ctx,130,18,350);
-  [['Motor 18" 3-Speed',60,12,48,D.gr],['Hex Nut M6',800,200,600,D.gr],['Blade Set 24"',45,20,25,D.gr],['Water Pad 36"',30,30,0,D.rd],['Pump 0.5hp',22,8,14,D.gr],['Frame Sheet 18g',40,15,25,D.gr],['Mesh Guard 24"',55,10,45,D.gr]].forEach(([n,s,r,a,ac],i)=>{
-    const ry=146+i*28;if(i%2===0){ctx.fillStyle='rgba(255,255,255,0.015)';ctx.fillRect(18,ry-10,332,26);}
-    tx(ctx,n,18,ry+4,9.5,D.tx);tx(ctx,String(s),cols[1],ry+4,9.5,D.tx,'right');tx(ctx,String(r),cols[2],ry+4,9.5,D.mu,'right');tx(ctx,String(a),cols[3],ry+4,9.5,ac,'right');
-  });
-  rr(ctx,368,102,184,250,5,D.sf2,D.bd);tx(ctx,'Bill of Materials',378,122,10,D.mu);tx(ctx,'Air Cooler 24" Desert',378,142,10.5,D.ac);hl(ctx,150,378,540);
-  [['Motor 18"','1 pc'],['Blade Set 24"','1 set'],['Water Pad 36"','1 pc'],['Pump 0.5hp','1 pc'],['Frame Sheet','2 pcs'],['Hex Nut M6','16 pcs'],['Mesh Guard','1 pc']].forEach(([p,q],i)=>{
-    tx(ctx,p,378,168+i*24,9.5,D.tx);tx(ctx,q,540,168+i*24,9.5,D.mu,'right');
-  });
-  hl(ctx,322,378,540);tx(ctx,'Can Build:',378,338,9,D.mu);tx(ctx,'30 units',540,338,10.5,D.gr,'right');
+/* ── Product mock: the web dashboard, built in HTML so it stays sharp ───── */
+
+function DashboardMock() {
+  const bars = [42, 58, 47, 66, 54, 78, 61, 72, 69, 88, 74, 92];
+  return (
+    <div className="relative">
+      <div className="absolute -inset-6 rounded-[32px] bg-gradient-to-br from-primary/15 via-transparent to-emerald-500/10 blur-2xl" aria-hidden="true" />
+      <div className="relative rounded-2xl border border-border bg-card shadow-2xl shadow-slate-900/10 dark:shadow-black/40 overflow-hidden">
+        {/* window chrome */}
+        <div className="flex items-center gap-2 px-4 h-10 border-b border-border bg-muted/50">
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-400" />
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+          <span className="ml-3 h-6 flex-1 max-w-[260px] rounded-md bg-background border border-border text-[11px] text-muted-foreground flex items-center px-2.5">
+            OsaTech · Web dashboard
+          </span>
+        </div>
+
+        <div className="p-5 grid gap-4">
+          {/* KPI row */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ['Today’s sales', 'Rs. 84,200', '+14%'],
+              ['Gross profit', 'Rs. 21,950', '26% margin'],
+              ['Khata due', 'Rs. 1.2L', '38 customers'],
+            ].map(([label, value, note]) => (
+              <div key={label} className="rounded-xl border border-border p-3">
+                <p className="text-[10px] font-medium text-muted-foreground">{label}</p>
+                <p className="mt-1 text-[13px] sm:text-[15px] font-bold tabular-nums text-foreground whitespace-nowrap">{value}</p>
+                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">{note}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* chart + invoices */}
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+            <div className="sm:col-span-3 rounded-xl border border-border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold text-foreground">Sales, last 12 days</p>
+                <p className="text-[10px] text-muted-foreground">PKR</p>
+              </div>
+              <div className="mt-3 h-24 flex items-end gap-1.5">
+                {bars.map((h, i) => (
+                  <div key={i} className={`flex-1 rounded-t ${i === bars.length - 1 ? 'bg-primary' : 'bg-primary/25'}`} style={{ height: `${h}%` }} />
+                ))}
+              </div>
+            </div>
+            <div className="sm:col-span-2 rounded-xl border border-border p-3">
+              <p className="text-[11px] font-semibold text-foreground">Recent invoices</p>
+              <ul className="mt-2 space-y-2">
+                {[['Ali Traders', 'Rs. 12,400', 'Paid'], ['Walk-in', 'Rs. 1,850', 'Paid'], ['Rana Store', 'Rs. 32,000', 'Khata']].map(([n, a, s]) => (
+                  <li key={n} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-medium text-foreground truncate">{n}</span>
+                      <span className="block text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">{a}</span>
+                    </span>
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${s === 'Paid' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}`}>{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* floating receipt */}
+      <div className="hidden sm:block absolute -bottom-32 right-8 w-44 rotate-[3deg] rounded-xl border border-border bg-card shadow-xl p-3.5 font-mono">
+        <p className="text-center text-[10px] font-bold text-foreground tracking-wide">AL-MADINA STORE</p>
+        <p className="text-center text-[9px] text-muted-foreground">INV-2026320-1042</p>
+        <div className="my-2 border-t border-dashed border-border" />
+        {[['Basmati 5kg', '2,450'], ['Cooking oil 3L', '1,980'], ['Sugar 2kg', '360']].map(([n, p]) => (
+          <p key={n} className="flex justify-between text-[9px] text-muted-foreground"><span>{n}</span><span className="tabular-nums">{p}</span></p>
+        ))}
+        <div className="my-2 border-t border-dashed border-border" />
+        <p className="flex justify-between text-[10px] font-bold text-foreground"><span>TOTAL</span><span className="tabular-nums">Rs. 4,790</span></p>
+      </div>
+
+      {/* floating offline badge */}
+      <div className="hidden sm:flex absolute -top-4 -right-4 items-center gap-2 rounded-full border border-border bg-card shadow-lg px-3 py-1.5">
+        <span className="relative flex w-2 h-2"><span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" /><span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" /></span>
+        <span className="text-[11px] font-semibold text-foreground">Synced 2 min ago</span>
+      </div>
+    </div>
+  );
 }
 
-function drawTailor(canvas){
-  const ctx=canvas.getContext('2d');const[W,H]=[560,360];
-  ctx.fillStyle=D.bg;ctx.fillRect(0,0,W,H);
-  chrome(ctx,W,'Tailor App  —  Orders');
-  ['All (24)','In Work (8)','Ready (3)','Delivered'].forEach((tab,i)=>{
-    const active=i===1;rr(ctx,8+i*136,40,128,28,4,active?D.ac:D.sf2,active?D.ac:D.bd);tx(ctx,tab,72+i*136,58,10,active?'#fff':D.mu,'center');
-  });
-  rr(ctx,8,78,318,274,5,D.sf2,D.bd);
-  [['Ahmed Raza','2 Shirts, 1 Trouser','30 Jul','In Work',D.bl],['Tariq Mehmood','1 Sherwani','28 Jul','Ready',D.gr],['Bilal Hassan','3 Shalwar Kameez','2 Aug','In Work',D.bl],['Shahid Khan','1 Trouser','Overdue','Overdue',D.rd],['Imran Butt','2 Shirts','5 Aug','In Work',D.bl]].forEach(([n,it,d,st,c],i)=>{
-    const oy=90+i*52;if(i%2===0){ctx.fillStyle='rgba(255,255,255,0.015)';ctx.fillRect(18,oy,298,48);}
-    tx(ctx,n,18,oy+15,10.5,D.tx);tx(ctx,it,18,oy+31,9,D.mu);
-    rr(ctx,246,oy+5,62,18,3,c+'28');tx(ctx,st,277,oy+18,8,c,'center');
-    tx(ctx,d,248,oy+41,8,d==='Overdue'?D.rd:D.mu);
-  });
-  rr(ctx,334,78,218,274,5,D.sf2,D.bd);
-  tx(ctx,'Ahmed Raza',344,98,11.5,D.ac);tx(ctx,'Customer since Jan 2024',344,114,9,D.mu);hl(ctx,122,344,540);
-  tx(ctx,'Saved Measurements',344,140,9.5,D.mu);
-  [['Chest','40"'],['Shoulder','17"'],['Shirt Length','30"'],['Sleeve','24"'],['Trouser','38"'],['Waist','34"']].forEach(([l,v],i)=>{
-    tx(ctx,l,344,158+i*22,9.5,D.mu);tx(ctx,v,540,158+i*22,9.5,D.tx,'right');
-  });
-  hl(ctx,300,344,540);tx(ctx,'Total',344,316,9.5,D.mu);tx(ctx,'PKR 3,600',540,316,9.5,D.tx,'right');
-  tx(ctx,'Advance Paid',344,334,9.5,D.mu);tx(ctx,'PKR 2,000',540,334,9.5,D.gr,'right');
-  tx(ctx,'Balance Due',344,354,10,D.tx);tx(ctx,'PKR 1,600',540,354,10.5,D.rd,'right');
+/* ── Khata mock for the feature section ─────────────────────────────────── */
+
+function KhataMock() {
+  const rows = [
+    ['12 Nov', 'Invoice 1031', '18,500', '', '18,500'],
+    ['14 Nov', 'Cash paid', '', '10,000', '8,500'],
+    ['15 Nov', 'Invoice 1038', '6,200', '', '14,700'],
+    ['17 Nov', 'Return', '', '1,700', '13,000'],
+  ];
+  return (
+    <div className="rounded-xl border border-border bg-background/60 overflow-hidden text-[11px]">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <span className="font-semibold text-foreground">Rana General Store</span>
+        <span className="text-muted-foreground">Statement · Nov</span>
+      </div>
+      <div className="grid grid-cols-[40px_minmax(0,1fr)_46px_46px_50px] gap-x-2 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border">
+        <span>Date</span><span>Detail</span><span className="text-right">Debit</span><span className="text-right">Credit</span><span className="text-right">Bal.</span>
+      </div>
+      {rows.map(([d, t, dr, cr, bal]) => (
+        <div key={d + t} className="grid grid-cols-[40px_minmax(0,1fr)_46px_46px_50px] gap-x-2 px-3 py-1.5 border-b border-border/60 last:border-0 tabular-nums">
+          <span className="text-muted-foreground">{d}</span>
+          <span className="text-foreground truncate">{t}</span>
+          <span className="text-right text-foreground">{dr}</span>
+          <span className="text-right text-emerald-600 dark:text-emerald-400">{cr}</span>
+          <span className="text-right font-semibold text-foreground">{bal}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
-/* ─────────────────────────────────────────────────────── */
+/* ── Page ────────────────────────────────────────────────────────────────── */
+
+const FEATURES = [
+  { icon: ScanBarcode, title: 'Fast counter checkout', body: 'Scan a barcode or search by name, take cash, card or credit, and print a thermal receipt in seconds.' },
+  { icon: Boxes, title: 'Wholesale in cartons', body: 'Sell by carton and loose box with the right price for each. Stock stays correct either way.' },
+  { icon: Pill, title: 'Pharmacy batches & expiry', body: 'Pick the batch at sale time, see what expires soon, and keep each batch’s own price.' },
+  { icon: Package, title: 'Purchases & stock', body: 'Record vendor bills, returns and stock adjustments. Low-stock alerts before shelves go empty.' },
+  { icon: Wallet, title: 'Cash, bank & daily close', body: 'Every sale, expense and payment lands in the right account. Close the register with a one-page report.' },
+  { icon: Users, title: 'Staff, payroll & partners', body: 'Salaries, advances (udhar), attendance, and each partner’s share of the profit and drawings.' },
+];
+
+const BUSINESS_TYPES = ['General store', 'Wholesale', 'Pharmacy', 'Bakery', 'Dry fruits', 'Hardware', 'Grocery', 'Stationery'];
+
 export default function HomePage() {
   const { user } = useAuth();
-  const isDesktop = useMediaQuery('(min-width: 768px)');
-  const posRef = useRef();
-  const erpRef = useRef();
-  const tailorRef = useRef();
-
-  useEffect(() => {
-    if (posRef.current) drawPOS(posRef.current);
-    if (erpRef.current) drawERP(erpRef.current);
-    if (tailorRef.current) drawTailor(tailorRef.current);
-  }, [isDesktop]);
+  const [mobileNav, setMobileNav] = useState(false);
 
   if (user?.approval_status === 'approved' && !user?.cloud_blocked) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  const GRAD = 'linear-gradient(130deg, #FFCCE0 0%, #EDD9FF 30%, #D5EDFF 65%, #B8F2DA 100%)';
-  const PX = isDesktop ? '52px' : '20px';
-  const SECTION_PY = isDesktop ? '100px' : '60px';
+  const year = new Date().getFullYear();
 
   return (
-    <div style={{ fontFamily: 'Inter, system-ui, sans-serif', overflowX: 'hidden' }}>
-
-      {/* ══ HERO ══════════════════════════════════════════ */}
-      <section style={{ background: GRAD, minHeight: '100vh', position: 'relative', overflow: 'hidden' }}>
-
-        {/* Bokeh blobs */}
-        {[
-          { top: '4%', left: '10%', size: 240 },
-          { top: '55%', left: '3%', size: 180 },
-          { top: '10%', right: '6%', size: 150 },
-          { bottom: '4%', right: '4%', size: 200 },
-          { top: '40%', left: '40%', size: 120 },
-        ].map((b, i) => (
-          <div key={i} style={{
-            position: 'absolute', borderRadius: '50%',
-            background: 'rgba(255,255,255,0.6)', filter: 'blur(55px)',
-            width: b.size, height: b.size,
-            top: b.top, left: b.left, right: b.right, bottom: b.bottom,
-            pointerEvents: 'none',
-          }} />
-        ))}
-
-        {/* Nav */}
-        <nav style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: `0 ${PX}`, height: 64, position: 'relative', zIndex: 20,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: '#FF4E7D', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Store size={15} color="white" />
-            </div>
-            <span style={{ fontWeight: 800, fontSize: 17, color: '#111', letterSpacing: '-0.01em' }}>OsaTech</span>
+    <div className="min-h-full bg-background text-foreground overflow-x-hidden">
+      {/* ── Nav ─────────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
+        <nav className="mx-auto max-w-6xl px-5 sm:px-8 h-16 flex items-center justify-between gap-4">
+          <Link to="/" aria-label="OsaTech home"><Logo /></Link>
+          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
+            <a href="#features" className="hover:text-foreground transition-colors">Features</a>
+            <a href="#how" className="hover:text-foreground transition-colors">How it works</a>
+            <a href="#apps" className="hover:text-foreground transition-colors">Apps</a>
+            <a href="#contact" className="hover:text-foreground transition-colors">Contact</a>
           </div>
-
-          {isDesktop && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 36 }}>
-              {[['#pos', 'Retail POS'], ['#erp', 'Factory ERP'], ['#tailor', 'Tailor App'], ['#about', 'About']].map(([href, label]) => (
-                <a key={href} href={href} style={{ fontSize: 14, color: '#444', textDecoration: 'none', fontWeight: 500 }}>
-                  {label}
-                </a>
-              ))}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ThemeBtn />
-            {isDesktop && (
-              <Link to="/manufacturing/login" style={{
-                background: 'rgba(124,58,237,0.1)', color: '#7C3AED', borderRadius: 50,
-                padding: '10px 20px', fontSize: 13, fontWeight: 700,
-                textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6,
-                border: '1px solid rgba(124,58,237,0.25)',
-              }}>
-                <Factory size={13} /> Manufacturing
-              </Link>
-            )}
-            <Link to="/login" style={{
-              background: '#FF4E7D', color: 'white', borderRadius: 50,
-              padding: isDesktop ? '10px 26px' : '9px 18px', fontSize: 13, fontWeight: 700,
-              textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 7,
-              boxShadow: '0 6px 20px rgba(255,78,125,0.35)',
-            }}>
-              Login {isDesktop && <ArrowRight size={13} />}
+          <div className="flex items-center gap-2">
+            <ThemeButton />
+            <div className="hidden sm:block"><SignInMenu /></div>
+            <Link to="/register" className="hidden sm:inline-flex h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold items-center gap-1.5 hover:opacity-90 transition-opacity shadow-sm">
+              Register your store
             </Link>
+            <button type="button" className="sm:hidden w-9 h-9 rounded-lg border border-border inline-flex items-center justify-center text-foreground"
+              onClick={() => setMobileNav(v => !v)} aria-label="Menu" aria-expanded={mobileNav}>
+              {mobileNav ? <X size={17} /> : <Menu size={17} />}
+            </button>
           </div>
         </nav>
-
-        {/* Hero body */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr',
-          alignItems: 'center',
-          minHeight: 'calc(100vh - 64px)',
-          padding: isDesktop ? '0 52px 72px' : '32px 20px 56px',
-          position: 'relative', zIndex: 10, gap: 32,
-        }}>
-          {/* Left text */}
-          <div>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              background: 'rgba(255,255,255,0.75)', borderRadius: 50,
-              padding: '8px 20px', fontSize: 12, color: '#555', marginBottom: 28,
-              backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.6)',
-            }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#FF4E7D', display: 'inline-block' }} />
-              Cloud business software · Works worldwide
+        {mobileNav && (
+          <div className="sm:hidden border-t border-border bg-background px-5 py-4 grid gap-1 text-sm">
+            {[['#features', 'Features'], ['#how', 'How it works'], ['#apps', 'Apps'], ['#contact', 'Contact']].map(([h, l]) => (
+              <a key={h} href={h} onClick={() => setMobileNav(false)} className="py-2 text-muted-foreground">{l}</a>
+            ))}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Link to="/login" className="h-10 rounded-lg border border-border inline-flex items-center justify-center font-semibold">Sign in</Link>
+              <Link to="/register" className="h-10 rounded-lg bg-primary text-primary-foreground inline-flex items-center justify-center font-semibold">Register</Link>
             </div>
+            <Link to="/manufacturing/login" className="mt-1 py-2 text-xs text-muted-foreground">Factory ERP sign in →</Link>
+          </div>
+        )}
+      </header>
 
-            <h1 style={{
-              fontSize: isDesktop ? 'clamp(2.4rem, 4.2vw, 3.8rem)' : 'clamp(2rem, 8vw, 2.6rem)',
-              fontWeight: 900, lineHeight: 1.1,
-              color: '#111', marginBottom: 20, letterSpacing: '-0.025em',
-            }}>
-              Complete business<br />
-              software for every<br />
-              <span style={{ color: '#FF4E7D' }}>shop worldwide.</span>
+      {/* ── Hero ────────────────────────────────────────────────────────── */}
+      <section className="relative">
+        <div className="absolute inset-0 -z-0 pointer-events-none [background:radial-gradient(60%_50%_at_75%_10%,color-mix(in_oklab,var(--primary)_14%,transparent),transparent_70%)]" aria-hidden="true" />
+        <div className="relative mx-auto max-w-6xl px-5 sm:px-8 pt-14 pb-24 sm:pt-20 lg:pt-24 grid gap-14 lg:grid-cols-[1.05fr_1fr] lg:items-center">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground">
+              <WifiOff size={13} className="text-primary" /> Works offline at the counter · syncs when online
+            </span>
+            <h1 className="mt-6 font-display text-[40px] leading-[1.05] sm:text-6xl font-extrabold tracking-tight text-balance">
+              Run your shop.<br />
+              <span className="text-primary">Check it from anywhere.</span>
             </h1>
-
-            <p style={{ fontSize: isDesktop ? 16 : 15, color: '#555', lineHeight: 1.8, maxWidth: '44ch', marginBottom: 32 }}>
-              Three purpose-built applications — retail POS, manufacturing ERP, and tailor
-              management. Offline-first. Multi-currency. Designed for how real businesses actually work.
+            <p className="mt-6 text-lg leading-relaxed text-muted-foreground max-w-[34rem] text-pretty">
+              OsaTech is point-of-sale and bookkeeping for shops in Pakistan. Billing, khata, stock and cash run on
+              the counter PC, even when the internet doesn’t. You see every sale and balance live on the web.
             </p>
-
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <Link to="/login" style={{
-                background: '#FF4E7D', color: 'white', borderRadius: 16,
-                padding: '13px 28px', fontSize: 14, fontWeight: 700,
-                textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 9,
-                boxShadow: '0 10px 30px rgba(255,78,125,0.38)',
-              }}>
-                <Store size={16} /> Login to Web POS
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link to="/register" className="h-12 px-6 rounded-xl bg-primary text-primary-foreground font-semibold inline-flex items-center gap-2 shadow-lg shadow-primary/25 hover:opacity-95 transition-opacity">
+                Register your store <ArrowRight size={17} />
               </Link>
-              <Link to="/manufacturing/login" style={{
-                background: '#7C3AED', color: 'white', borderRadius: 16,
-                padding: '13px 28px', fontSize: 14, fontWeight: 700,
-                textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 9,
-                boxShadow: '0 10px 30px rgba(124,58,237,0.35)',
-              }}>
-                <Factory size={16} /> Login to Manufacturing
-              </Link>
-              <Link to="/register" style={{
-                background: 'rgba(255,255,255,0.8)', color: '#333',
-                borderRadius: 16, padding: '13px 28px', fontSize: 14, fontWeight: 600,
-                textDecoration: 'none', border: '1px solid rgba(255,255,255,0.6)',
-                backdropFilter: 'blur(8px)',
-              }}>
-                Register store
+              <Link to="/login" className="h-12 px-6 rounded-xl border border-border bg-card font-semibold text-foreground inline-flex items-center gap-2 hover:bg-muted transition-colors">
+                Sign in to Web POS
               </Link>
             </div>
-
-            <div style={{ display: 'flex', gap: isDesktop ? 40 : 28, marginTop: 40, paddingTop: 32, borderTop: '1px solid rgba(0,0,0,0.08)' }}>
-              {[['3', 'Applications'], ['10+', 'Business types'], ['Cloud', 'Sync anywhere']].map(([v, l]) => (
-                <div key={l}>
-                  <div style={{ fontSize: 24, fontWeight: 900, color: '#111' }}>{v}</div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>{l}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Right — floating cards (desktop only) */}
-          {isDesktop && (
-            <div style={{ position: 'relative', height: 520 }}>
-              <SalesCard />
-              <CartCard />
-              <StockCard />
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ══ PRODUCTS ══════════════════════════════════════ */}
-      <section id="pos" style={{ background: '#FAFAFA', padding: `${SECTION_PY} ${PX}` }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <p style={{ fontSize: 11, color: '#FF4E7D', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 12 }}>
-              Our Applications
-            </p>
-            <h2 style={{ fontSize: 'clamp(1.6rem,3vw,2.4rem)', fontWeight: 900, color: '#111', letterSpacing: '-0.02em' }}>
-              Three apps, every business covered
-            </h2>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, 1fr)' : '1fr', gap: 24 }}>
-            <ProductCard
-              eyebrow="Web Application"
-              icon={ShoppingBag}
-              iconBg="#FF4E7D"
-              name="OsaTech POS"
-              desc="Full retail management in your browser — POS, inventory, customers, vendors, reports, and cloud sync. Works for bakery, dry fruit, medical, wholesale, and more."
-              features={[
-                'Barcode scanning with live stock tracking',
-                'Customer ledger with credit and payment history',
-                'Vendor management and purchase orders',
-                'Multi-period P&L and balance sheet reports',
-                'Cash register with daily closing reports',
-              ]}
-              tags={['Retailer', 'Bakery', 'Dry Fruit', 'Medical', 'Wholesale', 'Grocery']}
-              cta
-            />
-            <ProductCard
-              eyebrow="Desktop Application"
-              icon={Factory}
-              iconBg="#7C3AED"
-              name="Factory ERP"
-              desc="Manufacturing ERP for assemble-on-order businesses. Bill of materials consumed on each sale, parts inventory with reserved tracking, and full vendor-customer ledger."
-              features={[
-                'Bill of materials auto-consumed on sale',
-                'Parts inventory with reserved-stock view',
-                'Vendor POs, goods receipts, payable ledger',
-                'Customer invoicing with PDF printing',
-                'Dashboard: buildable stock & open payables',
-              ]}
-              tags={['Air Cooler Assembly', 'Light Manufacturing', 'Workshop', 'Made-to-Order']}
-              cta={{ link: '/manufacturing/login', bg: '#7C3AED', shadow: 'rgba(124,58,237,0.3)', text: 'Login to Factory ERP', icon: Factory }}
-            />
-            <ProductCard
-              eyebrow="Desktop Application"
-              icon={Scissors}
-              iconBg="#0891B2"
-              name="Tailor App"
-              desc="Order tracking and measurement profiles for tailor shops. Permanent per-customer measurements, delivery tracking, advance payments, and order slip printing."
-              features={[
-                'Permanent customer measurement profiles',
-                'Order lifecycle: Received → Ready → Delivered',
-                'Overdue order alerts at a glance',
-                'Advance payment and balance due receipts',
-                'Print order slip with measurements',
-              ]}
-              tags={['Tailor Shop', 'Boutique', 'Sherwani House', 'Uniform Maker']}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ══ PRODUCT DETAIL: POS ═══════════════════════════ */}
-      <section style={{ background: 'white', padding: `${SECTION_PY} ${PX}` }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: isDesktop ? 72 : 40, alignItems: 'center' }}>
-          <div>
-            <p style={{ fontSize: 11, color: '#FF4E7D', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 14 }}>Retail POS · Web App</p>
-            <h2 style={{ fontSize: 'clamp(1.6rem,2.5vw,2.2rem)', fontWeight: 900, color: '#111', letterSpacing: '-0.02em', marginBottom: 18 }}>OsaTech POS</h2>
-            <p style={{ fontSize: 15, color: '#555', lineHeight: 1.8, marginBottom: 28 }}>
-              A complete retail management system accessible from any browser. Your desktop app syncs every sale, purchase, and adjustment to the cloud — log in from anywhere and see the live picture of your store.
-            </p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 32px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {['Point-of-sale with barcode scanning and multiple payment methods', 'Customer credit ledger — track balances, record payments, view history', 'Vendor management with POs, goods receipts, and payable tracking', 'Sales and purchase returns with automatic stock correction', 'Cash register open/close with shift-end daily report', 'Cloud sync — one account works across desktop and web'].map(f => (
-                <li key={f} style={{ display: 'flex', gap: 12, fontSize: 14, color: '#444' }}>
-                  <CheckCircle2 size={15} color="#FF4E7D" style={{ flexShrink: 0, marginTop: 2 }} />{f}
+            <ul className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+              {[
+                [Receipt, 'Thermal & A4 receipts'],
+                [BookOpen, 'Customer & vendor khata'],
+                [RefreshCw, 'Desktop + web, one account'],
+              ].map(([Icon, label]) => (
+                <li key={label} className="flex items-center gap-2 text-muted-foreground">
+                  <Icon size={15} className="text-primary shrink-0" /> {label}
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 32 }}>
-              {['Retailer', 'Bakery', 'Dry Fruit & Nuts', 'Medical / Pharmacy', 'Wholesale', 'Grocery', 'Hardware', 'Stationery'].map(t => (
-                <span key={t} style={{ fontSize: 11, padding: '5px 13px', borderRadius: 50, background: '#FFF0F4', border: '1px solid #FFD0DC', color: '#CC3063' }}>{t}</span>
-              ))}
-            </div>
-            <Link to="/login" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#FF4E7D', color: 'white', borderRadius: 14, padding: '13px 26px', fontSize: 14, fontWeight: 700, textDecoration: 'none', boxShadow: '0 8px 24px rgba(255,78,125,0.32)' }}>
-              <Store size={15} /> Login to Web POS
-            </Link>
           </div>
-          <div style={{ borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.12)', border: '1px solid rgba(0,0,0,0.06)' }}>
-            <canvas ref={posRef} width={560} height={360} style={{ display: 'block', width: '100%' }} />
+          <div className="lg:pl-4 sm:pb-20">
+            <DashboardMock />
           </div>
         </div>
       </section>
 
-      {/* ══ PRODUCT DETAIL: ERP ═══════════════════════════ */}
-      <section id="erp" style={{ background: '#F7F4FF', padding: `${SECTION_PY} ${PX}` }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: isDesktop ? 72 : 40, alignItems: 'center' }}>
-          {isDesktop && (
-            <div style={{ borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.06)' }}>
-              <canvas ref={erpRef} width={560} height={360} style={{ display: 'block', width: '100%' }} />
+      {/* ── Built for ───────────────────────────────────────────────────── */}
+      <section className="border-y border-border bg-card/50">
+        <div className="mx-auto max-w-6xl px-5 sm:px-8 py-7 flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
+          <p className="text-sm font-medium text-muted-foreground shrink-0">Set up for</p>
+          <ul className="flex flex-wrap gap-2">
+            {BUSINESS_TYPES.map(t => (
+              <li key={t} className="rounded-full border border-border bg-background px-3 py-1 text-sm text-foreground">{t}</li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* ── Features ────────────────────────────────────────────────────── */}
+      <section id="features" className="mx-auto max-w-6xl px-5 sm:px-8 py-20 sm:py-28">
+        <div className="max-w-2xl">
+          <Eyebrow>Features</Eyebrow>
+          <h2 className="mt-3 font-display text-3xl sm:text-4xl font-extrabold tracking-tight text-balance">Everything the counter needs, and the books behind it</h2>
+          <p className="mt-4 text-muted-foreground leading-relaxed">Built with shopkeepers, for how a Pakistani shop actually runs: credit customers, carton prices, the day’s cash, and the owner checking in from home.</p>
+        </div>
+
+        <div className="mt-12 grid gap-4 lg:grid-cols-3">
+          {/* khata, wide */}
+          <article className="lg:col-span-2 rounded-2xl border border-border bg-card p-6 sm:p-7 grid gap-6 md:grid-cols-[1fr_1.15fr] md:items-center">
+            <div>
+              <span className="w-10 h-10 rounded-xl bg-primary/10 text-primary inline-flex items-center justify-center"><BookOpen size={19} /></span>
+              <h3 className="mt-4 text-lg font-bold text-foreground">Khata that keeps itself</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Credit sales, payments and returns post to each customer’s ledger automatically. Share a statement on
+                WhatsApp for any week, month or custom dates.
+              </p>
+              <ul className="mt-4 grid gap-1.5 text-sm text-foreground">
+                {['Running balance per customer and vendor', 'Partial payments and advances', 'Statement as PDF or image'].map(f => (
+                  <li key={f} className="flex items-center gap-2"><Check size={15} className="text-primary shrink-0" />{f}</li>
+                ))}
+              </ul>
             </div>
-          )}
-          <div>
-            <p style={{ fontSize: 11, color: '#7C3AED', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 14 }}>Manufacturing · Desktop App</p>
-            <h2 style={{ fontSize: 'clamp(1.6rem,2.5vw,2.2rem)', fontWeight: 900, color: '#111', letterSpacing: '-0.02em', marginBottom: 18 }}>Factory ERP</h2>
-            <p style={{ fontSize: 15, color: '#555', lineHeight: 1.8, marginBottom: 28 }}>
-              Built for air cooler assembly and any assemble-on-order manufacturer. When a sale is confirmed, the bill of materials is consumed from parts inventory automatically — no manual stock adjustments needed.
+            <KhataMock />
+          </article>
+
+          {/* offline */}
+          <article className="rounded-2xl bg-sky-700 dark:bg-sky-800 text-white p-6 sm:p-7 flex flex-col">
+            <span className="w-10 h-10 rounded-xl bg-white/15 inline-flex items-center justify-center"><WifiOff size={19} /></span>
+            <h3 className="mt-4 text-lg font-bold">No internet? Keep selling.</h3>
+            <p className="mt-2 text-sm leading-relaxed text-white/85">
+              The counter app runs on your own PC. Sales are saved locally and uploaded as soon as the connection is back.
             </p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 32px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {['Bill of materials — parts consumed automatically on every sale', 'Parts inventory shows stock, reserved, and available quantities separately', 'Vendor POs, goods receipts, and payable reconciliation', 'Customer invoicing with PKR invoice printing (PDF)', 'Khata-style receivables and payables per account', 'Dashboard: buildable stock, open payables, top parts used'].map(f => (
-                <li key={f} style={{ display: 'flex', gap: 12, fontSize: 14, color: '#444' }}>
-                  <CheckCircle2 size={15} color="#7C3AED" style={{ flexShrink: 0, marginTop: 2 }} />{f}
-                </li>
-              ))}
-            </ul>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 32 }}>
-              {['Air Cooler Assembly', 'Light Manufacturing', 'Workshop', 'Made-to-Order'].map(t => (
-                <span key={t} style={{ fontSize: 11, padding: '5px 13px', borderRadius: 50, background: '#F3EEFF', border: '1px solid #DDD0FF', color: '#6D28D9' }}>{t}</span>
-              ))}
+            <div className="mt-auto pt-6 grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl bg-white/10 p-3"><p className="text-white/70 text-xs">Counter</p><p className="font-semibold">Always on</p></div>
+              <div className="rounded-xl bg-white/10 p-3"><p className="text-white/70 text-xs">Cloud</p><p className="font-semibold">Auto-sync</p></div>
             </div>
-            <Link to="/manufacturing/login" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#7C3AED', color: 'white', borderRadius: 14, padding: '13px 26px', fontSize: 14, fontWeight: 700, textDecoration: 'none', boxShadow: '0 8px 24px rgba(124,58,237,0.32)' }}>
-              <Factory size={15} /> Login to Factory ERP
-            </Link>
-          </div>
-          {!isDesktop && (
-            <div style={{ borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.06)' }}>
-              <canvas ref={erpRef} width={560} height={360} style={{ display: 'block', width: '100%' }} />
-            </div>
-          )}
-        </div>
-      </section>
+          </article>
 
-      {/* ══ PRODUCT DETAIL: TAILOR ════════════════════════ */}
-      <section id="tailor" style={{ background: 'white', padding: `${SECTION_PY} ${PX}` }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: isDesktop ? 72 : 40, alignItems: 'center' }}>
-          <div>
-            <p style={{ fontSize: 11, color: '#0891B2', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 14 }}>Tailoring · Desktop App</p>
-            <h2 style={{ fontSize: 'clamp(1.6rem,2.5vw,2.2rem)', fontWeight: 900, color: '#111', letterSpacing: '-0.02em', marginBottom: 18 }}>Tailor App</h2>
-            <p style={{ fontSize: 15, color: '#555', lineHeight: 1.8, marginBottom: 28 }}>
-              Every customer's measurements are stored permanently — repeat orders take seconds. Track orders from received to delivered, log advances and balances, and print an order slip for the customer.
-            </p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 32px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {['Permanent per-customer measurement profiles (chest, shoulder, sleeve, waist…)', 'Order lifecycle: Received → In Work → Ready → Delivered', 'Overdue delivery alerts on the main order list', 'Advance payment and balance due tracking per order', 'Per-garment pricing with fabric and style notes', 'Print order slip with full measurements and delivery date'].map(f => (
-                <li key={f} style={{ display: 'flex', gap: 12, fontSize: 14, color: '#444' }}>
-                  <CheckCircle2 size={15} color="#0891B2" style={{ flexShrink: 0, marginTop: 2 }} />{f}
-                </li>
-              ))}
-            </ul>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {['Darzi / Tailor Shop', 'Boutique', 'Sherwani House', 'School Uniform Maker'].map(t => (
-                <span key={t} style={{ fontSize: 11, padding: '5px 13px', borderRadius: 50, background: '#ECFEFF', border: '1px solid #CFFAFE', color: '#0E7490' }}>{t}</span>
-              ))}
-            </div>
-          </div>
-          <div style={{ borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.06)' }}>
-            <canvas ref={tailorRef} width={560} height={360} style={{ display: 'block', width: '100%' }} />
-          </div>
-        </div>
-      </section>
-
-      {/* ══ ABOUT ═════════════════════════════════════════ */}
-      <section id="about" style={{ background: GRAD, padding: `${SECTION_PY} ${PX}`, position: 'relative' }}>
-        <div style={{ position: 'absolute', pointerEvents: 'none', inset: 0, overflow: 'hidden' }}>
-          {[{ top: '20%', left: '5%', size: 160 }, { bottom: '10%', right: '8%', size: 200 }].map((b, i) => (
-            <div key={i} style={{ position: 'absolute', borderRadius: '50%', background: 'rgba(255,255,255,0.5)', filter: 'blur(50px)', width: b.size, height: b.size, top: b.top, left: b.left, right: b.right, bottom: b.bottom }} />
+          {FEATURES.map(({ icon: Icon, title, body }) => (
+            <article key={title} className="rounded-2xl border border-border bg-card p-6 sm:p-7">
+              <span className="w-10 h-10 rounded-xl bg-muted text-foreground inline-flex items-center justify-center"><Icon size={19} /></span>
+              <h3 className="mt-4 text-base font-bold text-foreground">{title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
+            </article>
           ))}
         </div>
-        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: isDesktop ? 80 : 48, position: 'relative', zIndex: 2 }}>
-          <div>
-            <p style={{ fontSize: 11, color: '#FF4E7D', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 14 }}>About</p>
-            <h2 style={{ fontSize: 'clamp(1.6rem,2.5vw,2.2rem)', fontWeight: 900, color: '#111', letterSpacing: '-0.02em', marginBottom: 22 }}>Built for businesses worldwide</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {[
-                'These applications are designed with hands-on experience in retail and manufacturing businesses. Every flow reflects how real shops and factories actually operate — not textbook theory.',
-                'All three applications are built with Electron and React, targeting Windows — the platform most SMEs already run. No complex server setup, no IT department required.',
-                'Offline-first is a core requirement. A business cannot afford software that stops when the internet does — every app continues working without a connection.',
-              ].map((p, i) => (
-                <p key={i} style={{ fontSize: 15, color: '#444', lineHeight: 1.8 }}>{p}</p>
-              ))}
-            </div>
+      </section>
+
+      {/* ── How it works ────────────────────────────────────────────────── */}
+      <section id="how" className="border-t border-border bg-card/40">
+        <div className="mx-auto max-w-6xl px-5 sm:px-8 py-20 sm:py-28">
+          <div className="max-w-2xl">
+            <Eyebrow>How it works</Eyebrow>
+            <h2 className="mt-3 font-display text-3xl sm:text-4xl font-extrabold tracking-tight text-balance">Counter PC in the shop. Your phone in your pocket.</h2>
           </div>
-          <div>
-            <p style={{ fontSize: 11, color: '#6B7280', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 22 }}>Get in touch</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {[['Email', 'munibahmad4735@gmail.com'], ['Available', 'Worldwide'], ['Stack', 'Electron · React · SQLite · Node.js · Tailwind CSS']].map(([l, v]) => (
-                <div key={l} style={{ display: 'flex', gap: 20, paddingBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-                  <span style={{ width: 72, flexShrink: 0, fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', paddingTop: 2 }}>{l}</span>
-                  <span style={{ fontSize: 14, color: '#333' }}>{v}</span>
+          <ol className="mt-12 grid gap-4 md:grid-cols-3">
+            {[
+              [Laptop, 'Bill at the counter', 'Install OsaTech POS on the shop PC. Add your products and start billing on the first day, with or without internet.'],
+              [Cloud, 'It syncs to your account', 'Sales, payments, stock and expenses upload to your private cloud account in the background.'],
+              [Smartphone, 'Check from anywhere', 'Open the web dashboard from any phone or laptop: today’s sales, profit, khata and stock, live.'],
+            ].map(([Icon, title, body], i) => (
+              <li key={title} className="relative rounded-2xl border border-border bg-background p-6 sm:p-7">
+                <div className="flex items-center justify-between">
+                  <span className="w-10 h-10 rounded-xl bg-primary/10 text-primary inline-flex items-center justify-center"><Icon size={19} /></span>
+                  <span className="font-display text-4xl font-extrabold text-muted-foreground/25 tabular-nums">0{i + 1}</span>
+                </div>
+                <h3 className="mt-4 text-base font-bold text-foreground">{title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* ── Apps ────────────────────────────────────────────────────────── */}
+      <section id="apps" className="mx-auto max-w-6xl px-5 sm:px-8 py-20 sm:py-28">
+        <div className="max-w-2xl">
+          <Eyebrow>Apps</Eyebrow>
+          <h2 className="mt-3 font-display text-3xl sm:text-4xl font-extrabold tracking-tight">One company, three tools</h2>
+          <p className="mt-4 text-muted-foreground leading-relaxed">Pick the one built for your trade.</p>
+        </div>
+        <div className="mt-12 grid gap-4 md:grid-cols-3">
+          {[
+            {
+              icon: Store, tone: 'bg-primary/10 text-primary', name: 'Retail POS', kind: 'Desktop + web',
+              body: 'Billing, khata, stock, purchases, accounts and reports for shops, wholesalers and pharmacies.',
+              cta: { to: '/login', label: 'Sign in' }, primary: true,
+            },
+            {
+              icon: Factory, tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', name: 'Factory ERP', kind: 'Desktop + web',
+              body: 'For assemble-to-order makers: bills of materials used up on every sale, parts stock and vendor payables.',
+              cta: { to: '/manufacturing/login', label: 'Sign in' },
+            },
+            {
+              icon: Scissors, tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400', name: 'Tailor App', kind: 'Desktop',
+              body: 'Saved measurements for every customer, orders from received to delivered, advances and balance due.',
+              cta: { href: waLink('Hi, I’d like to know more about the OsaTech Tailor App.'), label: 'Ask on WhatsApp' },
+            },
+          ].map(app => (
+            <article key={app.name} className={`rounded-2xl border bg-card p-6 sm:p-7 flex flex-col ${app.primary ? 'border-primary/40 ring-1 ring-primary/20' : 'border-border'}`}>
+              <div className="flex items-center justify-between">
+                <span className={`w-10 h-10 rounded-xl inline-flex items-center justify-center ${app.tone}`}><app.icon size={19} /></span>
+                <span className="text-[11px] font-medium text-muted-foreground rounded-full border border-border px-2 py-0.5">{app.kind}</span>
+              </div>
+              <h3 className="mt-4 text-lg font-bold text-foreground">{app.name}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground flex-1">{app.body}</p>
+              {app.cta.to ? (
+                <Link to={app.cta.to} className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:gap-2.5 transition-all">
+                  {app.cta.label} <ArrowRight size={15} />
+                </Link>
+              ) : (
+                <a href={app.cta.href} target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:gap-2.5 transition-all">
+                  {app.cta.label} <ArrowRight size={15} />
+                </a>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* ── CTA + contact ───────────────────────────────────────────────── */}
+      <section id="contact" className="mx-auto max-w-6xl px-5 sm:px-8 pb-20 sm:pb-28">
+        <div className="relative overflow-hidden rounded-3xl bg-slate-900 dark:bg-card dark:border dark:border-border px-6 py-12 sm:px-12 sm:py-16">
+          <div className="absolute -right-24 -top-24 w-80 h-80 rounded-full bg-primary/30 blur-3xl pointer-events-none" aria-hidden="true" />
+          <div className="relative grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:items-center">
+            <div>
+              <h2 className="font-display text-3xl sm:text-4xl font-extrabold tracking-tight text-white text-balance">Put your shop on OsaTech this week.</h2>
+              <p className="mt-4 text-slate-300 leading-relaxed max-w-xl">
+                Register your store, and we’ll help you set up products, opening stock and khata balances.
+                Questions first? Message us. A real person replies.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link to="/register" className="h-12 px-6 rounded-xl bg-primary text-primary-foreground font-semibold inline-flex items-center gap-2 hover:opacity-95 transition-opacity">
+                  Register your store <ArrowRight size={17} />
+                </Link>
+                <a href={waLink('Hi, I’m interested in OsaTech POS for my shop.')} target="_blank" rel="noopener noreferrer"
+                  className="h-12 px-6 rounded-xl bg-white/10 text-white font-semibold inline-flex items-center gap-2 hover:bg-white/15 transition-colors">
+                  <MessageCircle size={17} /> Chat on WhatsApp
+                </a>
+              </div>
+            </div>
+            <dl className="grid gap-4 text-sm">
+              {[
+                [MessageCircle, 'WhatsApp', `+${WHATSAPP_NUMBER.slice(0, 2)} ${WHATSAPP_NUMBER.slice(2, 5)} ${WHATSAPP_NUMBER.slice(5)}`],
+                [Mail, 'Email', CONTACT_EMAIL],
+                [Printer, 'Works with', 'Thermal 58/80 mm, A4 printers & barcode scanners'],
+              ].map(([Icon, label, value]) => (
+                <div key={label} className="flex items-start gap-3 rounded-xl bg-white/5 border border-white/10 p-4">
+                  <Icon size={16} className="text-primary mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <dt className="text-xs text-slate-400">{label}</dt>
+                    <dd className="text-white font-medium break-words select-all">{value}</dd>
+                  </div>
                 </div>
               ))}
-            </div>
-            <div style={{ marginTop: 32, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <Link to="/register" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.85)', color: '#333', borderRadius: 14, padding: '13px 26px', fontSize: 14, fontWeight: 700, textDecoration: 'none', border: '1px solid rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)' }}>
-                Register a store
-              </Link>
-              <Link to="/login" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#FF4E7D', color: 'white', borderRadius: 14, padding: '13px 26px', fontSize: 14, fontWeight: 700, textDecoration: 'none', boxShadow: '0 8px 24px rgba(255,78,125,0.32)' }}>
-                Login <ArrowRight size={14} />
-              </Link>
-            </div>
+            </dl>
           </div>
         </div>
       </section>
 
-      {/* ══ FOOTER ════════════════════════════════════════ */}
-      <footer style={{
-        background: '#111', padding: isDesktop ? '28px 52px' : '24px 20px',
-        display: 'flex', flexDirection: isDesktop ? 'row' : 'column',
-        alignItems: 'center', justifyContent: 'space-between', gap: 16,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 24, height: 24, borderRadius: 7, background: '#FF4E7D', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Store size={11} color="white" />
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
+      <footer className="border-t border-border">
+        <div className="mx-auto max-w-6xl px-5 sm:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <Logo small />
+          <p className="text-xs text-muted-foreground">© {year} OsaTech. Point of sale and bookkeeping for shops.</p>
+          <div className="flex items-center gap-5 text-sm">
+            <Link to="/register" className="text-muted-foreground hover:text-foreground transition-colors">Register</Link>
+            <Link to="/login" className="text-muted-foreground hover:text-foreground transition-colors">Sign in</Link>
+            <Link to="/manufacturing/login" className="text-muted-foreground hover:text-foreground transition-colors">Factory ERP</Link>
           </div>
-          <span style={{ fontSize: 13, color: '#666' }}>OsaTech · 2025</span>
-        </div>
-        {isDesktop && <span style={{ fontSize: 12, color: '#444', fontStyle: 'italic' }}>Designed for real businesses. Works worldwide.</span>}
-        <div style={{ display: 'flex', gap: 20 }}>
-          <Link to="/register" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Register store</Link>
-          <Link to="/login" style={{ fontSize: 12, color: '#FF4E7D', textDecoration: 'none', fontWeight: 600 }}>Login →</Link>
         </div>
       </footer>
 
-      {/* ══ WHATSAPP FLOATING BUTTON ══════════════════════ */}
+      {/* ── WhatsApp ────────────────────────────────────────────────────── */}
       <a
-        href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hi, I\'m interested in OsaTech POS.')}`}
+        href={waLink('Hi, I’m interested in OsaTech POS.')}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Chat on WhatsApp"
-        style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 999,
-          width: 56, height: 56, borderRadius: '50%',
-          background: '#25D366',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 6px 24px rgba(37,211,102,0.45)',
-          textDecoration: 'none', color: 'white',
-          transition: 'transform 0.2s, box-shadow 0.2s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(37,211,102,0.55)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(37,211,102,0.45)'; }}
+        aria-label="Chat with us on WhatsApp"
+        className="fixed bottom-5 right-5 z-50 w-13 h-13 w-[52px] h-[52px] rounded-full bg-[#25D366] text-white inline-flex items-center justify-center shadow-lg shadow-emerald-600/30 hover:scale-105 transition-transform"
       >
-        <MessageCircle size={26} fill="white" color="white" />
+        <MessageCircle size={24} fill="currentColor" />
       </a>
-
     </div>
   );
 }
