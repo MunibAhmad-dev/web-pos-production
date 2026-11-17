@@ -10,7 +10,8 @@ import {
   CommandItem,
   CommandShortcut,
 } from '@/components/ui/command';
-import { navGroups } from './navConfig';
+import { visibleNavGroups } from './navConfig';
+import { useStoreFeatures } from '@/hooks/useStoreFeatures';
 import { LogOut, Moon, Sun, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/context/AuthContext';
@@ -18,6 +19,7 @@ import { useAuth } from '@/context/AuthContext';
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const features = useStoreFeatures();
   const { setTheme, theme } = useTheme();
   const { logout } = useAuth();
 
@@ -44,7 +46,7 @@ export default function CommandPalette() {
         <CommandInput placeholder="Jump to a page or run a command…" />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
-          {navGroups.map((group) => (
+          {visibleNavGroups(features).map((group) => (
             <CommandGroup key={group.label} heading={group.label}>
               {group.items.map(({ to, label, icon: Icon }) => (
                 <CommandItem key={to} onSelect={() => run(() => navigate(to))}>

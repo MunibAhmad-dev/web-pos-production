@@ -42,6 +42,12 @@ const PLURAL_TO_SINGULAR = {
   attendances:            'attendance',
   godown_entries:         'godown_entry',
   repair_jobs:            'repair_job',
+  // Shop settings synced from the desktop (module switches, store name…) — pages read list('settings').
+  settings:               'settings',
+  // Names used by the newer cloud export (desktop table names).
+  customer_khata:         'customer_khata',
+  vendor_khata:           'vendor_khata',
+  product_batches:        'product_batch',
 };
 const ENTITY_TYPES = Object.values(PLURAL_TO_SINGULAR);
 

@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { Store, ChevronDown, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react';
-import { navGroups } from './navConfig';
+import { visibleNavGroups } from './navConfig';
+import { useStoreFeatures } from '@/hooks/useStoreFeatures';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 
-const mainGroups = navGroups.filter((g) => g.placement !== 'footer');
-const footerItems = navGroups.filter((g) => g.placement === 'footer').flatMap((g) => g.items);
 
 function readSet(key, fallback) {
   try {
@@ -42,6 +41,10 @@ function NavItem({ to, label, icon: Icon, end, collapsed, active }) {
 export default function SidebarNav({ className = '', collapsible = false, collapsed: collapsedProp, onToggleCollapsed }) {
   const location = useLocation();
   const { user } = useAuth();
+  const features = useStoreFeatures();
+  const groups = visibleNavGroups(features);
+  const mainGroups = groups.filter((g) => g.placement !== 'footer');
+  const footerItems = groups.filter((g) => g.placement === 'footer').flatMap((g) => g.items);
   const isCollapsed = collapsible && !!collapsedProp;
 
   const toggleSidebar = () => {

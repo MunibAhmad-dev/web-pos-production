@@ -1,931 +1,585 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTheme } from 'next-themes';
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  ComposedChart, Bar, Line,
-  PieChart, Pie, Cell,
+  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
-import { motion } from 'framer-motion';
 import {
-  DollarSign, TrendingUp, TrendingDown, Activity, Zap, Boxes, Wallet, AlertTriangle, PiggyBank,
-  ShoppingCart, Package, Truck, Users, CreditCard, BarChart3, ClipboardList,
-  ArrowUpRight, Banknote, RefreshCw,
+  Plus, RefreshCw, ArrowUpRight, ArrowDownRight, Wallet, Users, Truck, Boxes, AlertTriangle,
+  ChevronRight, Receipt,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { isActiveSale, isCancelled, vendorBalances, khataBalances } from '@/lib/ledger';
-import cloudApi from '../api/cloudClient';
+import { isActiveSale, vendorBalances, khataBalances } from '@/lib/ledger';
 import { useAuth } from '../context/AuthContext';
 import { useDataStore } from '../store/dataStore';
 import { useLowStockThreshold } from '../hooks/useLowStockThreshold';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmtPKR  = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
-const fmtShort = (n) => {
-  const v = Math.abs(Number(n) || 0);
-  if (v >= 1_000_000) return (Number(n) / 1_000_000).toFixed(1) + 'M';
-  if (v >= 1_000)     return (Number(n) / 1_000).toFixed(0) + 'k';
-  return String(Math.round(Number(n) || 0));
-};
-const fmtDay = (k) => new Date(k).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' });
-const fmtDT  = (d) => d ? new Date(d).toLocaleString('en-PK', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+/* ══════════════════════════════════════════════════════════════════════════
+   Numbers follow the desktop app's dashboard exactly:
+   - revenue = active sales in the period − returns on those sales
+   - cost of goods = (qty sold − qty returned) × cost recorded on the sale line
+     (no fallback to today's product cost, no cap at the selling price)
+   - stock value: positive stock only; gram stock ÷ 1000; wholesale box stock ÷ carton qty
+   - customer credit = invoice balance + open custom bills, per customer, when they owe
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const greeting = () => {
-  const h = new Date().getHours();
-  if (h < 12) return { text: 'Good morning',   emoji: '☀️' };
-  if (h < 17) return { text: 'Good afternoon', emoji: '🌤️' };
-  return              { text: 'Good evening',   emoji: '🌙' };
+const fmtPKR = (n) => 'Rs. ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
+const fmtCompact = (n) => {
+  const v = Number(n) || 0;
+  const a = Math.abs(v);
+  if (a >= 10_000_000) return (v / 10_000_000).toFixed(1).replace(/\.0$/, '') + ' Cr';
+  if (a >= 100_000) return (v / 100_000).toFixed(1).replace(/\.0$/, '') + ' L';
+  if (a >= 1_000) return (v / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(Math.round(v));
 };
+const parseDate = (raw) => (raw ? new Date(String(raw).replace(' ', 'T')) : null);
+const dayKey = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
 
-function rangeForPeriod(period, from, to) {
+const PERIODS = [['today', 'Today'], ['week', '7 days'], ['month', 'This month'], ['year', 'This year']];
+
+function rangeFor(period) {
   const now = new Date();
-  const end = new Date(now);
-  let start = new Date(now);
-  if      (period === 'today')  start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  else if (period === 'week')   start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-  else if (period === 'month')  start = new Date(now.getFullYear(), now.getMonth(), 1);
-  else if (period === 'year')   start = new Date(now.getFullYear(), 0, 1);
-  else if (period === 'custom' && from && to)
-    return { date_from: new Date(from).toISOString(), date_to: new Date(to).toISOString() };
-  return { date_from: start.toISOString(), date_to: end.toISOString() };
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let start = startOfDay;
+  if (period === 'week') start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+  if (period === 'month') start = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (period === 'year') start = new Date(now.getFullYear(), 0, 1);
+  const end = now;
+  // Previous window of the same length, for the "vs before" comparison.
+  const span = end - start;
+  return { start, end, prevStart: new Date(start - span), prevEnd: new Date(start - 1) };
 }
 
-// For gram-unit products: stock is in grams, purchase_price is per-kg.
-// Matches the Electron desktop's COGS cap:
-//   MIN(si.purchase_price, COALESCE(NULLIF(si.price, 0), 500000))
-// i.e. cap purchase_price at the sale-line price, using 500K as a fallback
-// when the line price is 0/null. We use item.price (sale-time price) not
-// product.price so that price changes after the sale don't distort history.
-function gramCorrectedCost(qty, purchasePrice, unitType, itemPrice) {
-  const cap = (Number(itemPrice) > 0) ? Number(itemPrice) : 500_000;
-  const pp  = Math.min(Number(purchasePrice) || 0, cap);
-  return unitType === 'gram'
-    ? (Number(qty) / 1000) * pp
-    : Number(qty) * pp;
-}
+/** Revenue, cost, profit and the per-day series for one window. */
+function computeWindow({ start, end, sales, itemsBySale, returnsBySale, returnedQtyByItem, expenses, byHour }) {
+  let revenue = 0; let cogs = 0; let count = 0; let expenseTotal = 0;
+  const buckets = new Map();
+  const bucketOf = (d) => (byHour ? String(d.getHours()).padStart(2, '0') : dayKey(d));
+  const bump = (key, field, v) => {
+    const b = buckets.get(key) || { key, revenue: 0, cogs: 0, count: 0 };
+    b[field] += v; buckets.set(key, b);
+  };
+  const productSales = new Map();
+  const methods = new Map();
 
-function buildPnl(analyticsData, saleItems, sales, productById = {}, saleReturnItems = [], saleReturns = []) {
-  const dayOf = {};
-  // Cancelled sales are excluded from COGS too — matches the Electron dashboard,
-  // whose COGS join filters status IN ('completed','paid','partial').
   for (const s of sales) {
-    if (s.date_created && isActiveSale(s)) dayOf[String(s.id)] = String(s.date_created).slice(0, 10);
+    if (!isActiveSale(s)) continue;
+    const d = parseDate(s.date_created);
+    if (!d || isNaN(d) || d < start || d > end) continue;
+    const sid = String(s.id);
+    const ret = returnsBySale.get(sid) || 0;
+    const net = (Number(s.total) || 0) - ret;
+    const key = bucketOf(d);
+    revenue += net; count++;
+    bump(key, 'revenue', net);
+    bump(key, 'count', 1);
+
+    const m = String(s.payment_method || 'cash').trim().toLowerCase() || 'cash';
+    const me = methods.get(m) || { method: m, total: 0, count: 0 };
+    me.total += Number(s.total) || 0; me.count++; methods.set(m, me);
+
+    for (const it of itemsBySale.get(sid) || []) {
+      const qty = Math.max(0, (Number(it.quantity) || 0) - (returnedQtyByItem.get(String(it.id)) || 0));
+      const pp = Number(it.purchase_price) > 0 ? Math.min(Number(it.purchase_price), 1_000_000) : 0;
+      const lineCost = qty * pp;
+      cogs += lineCost;
+      bump(key, 'cogs', lineCost);
+      if (qty > 0) {
+        const pk = String(it.product_id ?? it.product_name);
+        const p = productSales.get(pk) || { name: it.product_name || 'Item', qty: 0, revenue: 0 };
+        p.qty += qty; p.revenue += qty * (Number(it.price) || 0); productSales.set(pk, p);
+      }
+    }
   }
-  const cogsByDay = {};
-  // Map saleId:productId → purchase cost info (first line wins for the rare duplicate-product case)
-  const saleItemInfo = {};
-  for (const item of saleItems) {
-    const day = dayOf[String(item.sale_id)];
-    if (!day) continue;
-    const product = productById[String(item.product_id ?? '')];
-    // Fall back to product's own purchase_price when the sale_item stored 0
-    // (happens for records created before the Electron batch-cost bug was fixed).
-    const pp = Number(item.purchase_price) > 0 ? item.purchase_price : (product?.purchase_price ?? 0);
-    // Pass item.price as the cap denominator — matches desktop's si.price column
-    const cogs = gramCorrectedCost(item.quantity ?? 0, pp, product?.unit_type, item.price);
-    cogsByDay[day] = (cogsByDay[day] || 0) + cogs;
-    const k = `${item.sale_id}:${item.product_id}`;
-    if (!saleItemInfo[k]) saleItemInfo[k] = { pp, unitType: product?.unit_type, itemPrice: item.price };
+  for (const e of expenses) {
+    const d = parseDate(e.date_added ?? e.date_created ?? e.date);
+    if (!d || isNaN(d) || d < start || d > end) continue;
+    expenseTotal += Number(e.amount) || 0;
   }
-  // Subtract COGS of returned items on the return date (mirrors how revenue is
-  // reduced on the return date). Join: sale_return_item → sale_return → sale_id
-  // → sale_item to get the original purchase_price.
-  const returnSaleId = {};
-  for (const r of saleReturns) returnSaleId[String(r.id)] = String(r.sale_id);
-  for (const ri of saleReturnItems) {
-    if (!ri.date_created) continue;
-    const day = String(ri.date_created).slice(0, 10);
-    if (!day) continue;
-    const saleId = returnSaleId[String(ri.return_id)];
-    if (!saleId) continue;
-    const info = saleItemInfo[`${saleId}:${ri.product_id}`];
-    if (!info) continue;
-    const returnedCogs = gramCorrectedCost(Number(ri.quantity) || 0, info.pp, info.unitType, info.itemPrice);
-    cogsByDay[day] = (cogsByDay[day] || 0) - returnedCogs;
-  }
-  const revenueByDay = {};
-  for (const d of analyticsData?.salesByDay || []) revenueByDay[d.day] = d.revenue;
-  const expensesByDay = {};
-  for (const d of analyticsData?.expensesByDay || []) expensesByDay[d.day] = d.amount;
-  // Use server-period days as the anchor — never expand into all-time COGS days.
-  // revenueByDay and expensesByDay come from the server's period-filtered analytics,
-  // so including cogsByDay (all history) would add phantom days with 0 revenue but
-  // non-zero COGS, making net profit deeply negative when period is "Today".
-  const days = Array.from(new Set([
-    ...Object.keys(revenueByDay), ...Object.keys(expensesByDay)
-  ])).sort();
-  const series = days.map((date) => {
-    const revenue  = revenueByDay[date]  || 0;
-    const cogs     = cogsByDay[date]     || 0;
-    const expenses = expensesByDay[date] || 0;
-    return { date, revenue, cogs, expenses, gross: revenue - cogs, net: revenue - cogs - expenses };
-  });
-  const totals = series.reduce(
-    (acc, d) => ({ revenue: acc.revenue + d.revenue, cogs: acc.cogs + d.cogs, expenses: acc.expenses + d.expenses, gross: acc.gross + d.gross, net: acc.net + d.net }),
-    { revenue: 0, cogs: 0, expenses: 0, gross: 0, net: 0 }
-  );
-  return { series, totals };
+  return {
+    revenue, cogs, count, expenses: expenseTotal,
+    gross: revenue - cogs, net: revenue - cogs - expenseTotal,
+    buckets, productSales, methods,
+  };
 }
 
-const fadeUp = {
-  hidden:  { opacity: 0, y: 18 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.38, delay: Math.min(i, 5) * 0.06, ease: [0.22, 1, 0.36, 1] } }),
-};
+/* ── Small pieces ─────────────────────────────────────────────────────────── */
 
-const PERIOD_OPTS = [['today', 'Today'], ['week', '7 Days'], ['month', 'Month'], ['year', 'Year'], ['custom', 'Custom']];
-
-const QUICK = [
-  { to: '/sales',          label: 'New Sale',   icon: ShoppingCart  },
-  { to: '/products',       label: 'Products',   icon: Package       },
-  { to: '/purchases',      label: 'Purchases',  icon: ClipboardList },
-  { to: '/inventory',      label: 'Inventory',  icon: Boxes         },
-  { to: '/customers',      label: 'Customers',  icon: Users         },
-  { to: '/vendors',        label: 'Vendors',    icon: Truck         },
-  { to: '/payment-ledger', label: 'Ledger',     icon: CreditCard    },
-  { to: '/reports',        label: 'Reports',    icon: BarChart3     },
-];
-
-// ─── Sparkline (mini area chart) ──────────────────────────────────────────────
-function Sparkline({ data = [], dataKey = 'value', color = '#3b82f6' }) {
-  if (!data.length) return null;
+function Delta({ now, before, invert = false }) {
+  if (!before || Math.abs(before) < 1) return <span className="text-xs text-muted-foreground">No earlier data</span>;
+  const pct = ((now - before) / Math.abs(before)) * 100;
+  const up = pct >= 0;
+  const good = invert ? !up : up;
   return (
-    <div className="h-10 -mx-1 mt-2">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-          <defs>
-            <linearGradient id={`spk-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor={color} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={color} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.5}
-            fill={`url(#spk-${color.replace('#', '')})`} dot={false} isAnimationActive={false} />
-        </AreaChart>
-      </ResponsiveContainer>
+    <span className={cn('inline-flex items-center gap-0.5 text-xs font-medium tabular-nums',
+      good ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+      {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+      {Math.abs(pct).toFixed(Math.abs(pct) < 10 ? 1 : 0)}%
+      <span className="ml-1 font-normal text-muted-foreground">vs previous</span>
+    </span>
+  );
+}
+
+function Spark({ values, positive = true }) {
+  if (!values || values.length < 2) return <div className="h-9" />;
+  const w = 120; const h = 36;
+  const min = Math.min(...values, 0); const max = Math.max(...values, 1);
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - ((v - min) / (max - min || 1)) * (h - 4) - 2]);
+  const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className={cn('h-9 w-full', positive ? 'text-primary' : 'text-rose-500')} preserveAspectRatio="none" aria-hidden="true">
+      <path d={`${line} L${w},${h} L0,${h} Z`} fill="currentColor" opacity="0.09" />
+      <path d={line} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function Metric({ label, value, sub, delta, spark, tone = 'default' }) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-card p-5 flex flex-col">
+      <p className="text-[13px] font-medium text-muted-foreground">{label}</p>
+      <p className={cn('mt-2 text-[26px] leading-none font-bold tabular-nums tracking-tight',
+        tone === 'negative' ? 'text-rose-600 dark:text-rose-400' : 'text-foreground')}>{value}</p>
+      <div className="mt-2 min-h-[18px]">{delta}</div>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      <div className="mt-auto pt-3">{spark}</div>
     </div>
   );
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ icon: Icon, label, value, sublabel, accent, valueClass, sparkData, sparkKey, sparkColor }) {
+function Card({ title, action, children, className }) {
   return (
-    <div className={cn('rounded-2xl border bg-card p-5 flex flex-col', accent ? 'border-border/50 border-l-4' : 'border-border/50')} style={accent ? { borderLeftColor: accent } : {}}>
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-muted/60 text-muted-foreground">
-        <Icon size={16} />
+    <section className={cn('rounded-2xl border border-border/70 bg-card flex flex-col min-w-0', className)}>
+      <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3">
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {action}
       </div>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-3">{label}</p>
-      <p className={cn('text-2xl font-black font-mono mt-0.5 tabular-nums', valueClass)}>{value}</p>
-      {sublabel && <p className="text-xs text-muted-foreground mt-0.5">{sublabel}</p>}
-      {sparkData?.length > 1 && <Sparkline data={sparkData} dataKey={sparkKey || 'value'} color={sparkColor || '#3b82f6'} />}
-    </div>
+      <div className="px-5 pb-5 flex-1 min-w-0">{children}</div>
+    </section>
   );
 }
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-function Skeleton() {
+function CardLink({ to, children }) {
   return (
-    <div className="flex flex-col gap-6 animate-pulse">
-      <div className="h-8 w-64 bg-muted rounded-xl" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{Array(8).fill(0).map((_, i) => <div key={i} className="h-36 rounded-2xl bg-muted" />)}</div>
-      <div className="h-64 rounded-2xl bg-muted" />
-    </div>
+    <Link to={to} className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+      {children} <ChevronRight size={13} />
+    </Link>
   );
 }
 
-// ─── Custom P&L Tooltip ───────────────────────────────────────────────────────
-function PlTooltip({ active, payload, label }) {
+function useChartColors() {
+  const { resolvedTheme } = useTheme();
+  return useMemo(() => {
+    const css = typeof window !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+    const read = (v, fb) => (css?.getPropertyValue(v).trim() || fb);
+    return {
+      primary: read('--primary', '#1478c8'),
+      grid: read('--border', '#e5e7eb'),
+      muted: read('--muted-foreground', '#6b7280'),
+      profit: resolvedTheme === 'dark' ? '#34d399' : '#059669',
+    };
+  }, [resolvedTheme]);
+}
+
+function ChartTooltip({ active, payload, label, byHour }) {
   if (!active || !payload?.length) return null;
-  const rows = [
-    { key: 'revenue',  label: 'Revenue',      color: '#3b82f6' },
-    { key: 'cogs',     label: 'COGS',         color: '#f59e0b' },
-    { key: 'expenses', label: 'Expenses',     color: '#f43f5e' },
-    { key: 'gross',    label: 'Gross Profit', color: '#10b981' },
-    { key: 'net',      label: 'Net Profit',   color: '#8b5cf6' },
-  ];
+  const row = payload[0].payload;
+  const title = byHour ? `${label}:00 – ${label}:59` : new Date(`${label}T00:00:00`).toLocaleDateString('en-PK', { weekday: 'short', day: 'numeric', month: 'short' });
   return (
-    <div className="rounded-xl border border-border/50 bg-card shadow-lg text-xs p-3 min-w-[160px]">
-      <p className="font-bold mb-2 text-muted-foreground">{fmtDay(label)}</p>
-      {rows.map(({ key, label: lbl, color }) => {
-        const entry = payload.find((p) => p.dataKey === key);
-        if (!entry) return null;
-        return (
-          <div key={key} className="flex justify-between gap-4 py-0.5">
-            <span style={{ color }} className="font-semibold">{lbl}</span>
-            <span className="font-mono font-bold">{fmtShort(entry.value)}</span>
-          </div>
-        );
-      })}
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-lg">
+      <p className="font-medium text-foreground mb-1">{title}</p>
+      <p className="flex justify-between gap-6"><span className="text-muted-foreground">Sales</span><span className="font-semibold tabular-nums text-foreground">{fmtPKR(row.revenue)}</span></p>
+      <p className="flex justify-between gap-6"><span className="text-muted-foreground">Gross profit</span><span className="font-semibold tabular-nums text-foreground">{fmtPKR(row.gross)}</span></p>
     </div>
   );
 }
 
-// ─── Donut label ──────────────────────────────────────────────────────────────
-function DonutLabel({ cx, cy, value, total }) {
-  return (
-    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
-      <tspan x={cx} dy="-0.4em" className="text-2xl font-black" fill="currentColor" fontSize={22} fontWeight={900}>{value}</tspan>
-      <tspan x={cx} dy="1.4em" fontSize={11} fill="#94a3b8">of {total}</tspan>
-    </text>
-  );
-}
+const METHOD_COLORS = ['bg-primary', 'bg-emerald-500', 'bg-amber-500', 'bg-violet-500', 'bg-sky-400', 'bg-slate-400'];
+const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
-// ─── Dashboard ────────────────────────────────────────────────────────────────
+/* ══════════════════════════════════════════════════════════════════════════ */
+
 export default function Dashboard() {
   const { user } = useAuth();
-  const { list } = useDataStore();
-  const LOW_STOCK_THRESHOLD = useLowStockThreshold();
+  const { list, refresh, loading } = useDataStore();
+  const threshold = useLowStockThreshold();
+  const colors = useChartColors();
+  const [period, setPeriod] = useState('week');
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [period, setPeriod]   = useState('week');
-  const [from, setFrom]       = useState('');
-  const [to, setTo]           = useState('');
-  const [overview, setOverview]   = useState(null);
-  const [analytics, setAnalytics] = useState(null);
-  const [loading, setLoading]     = useState(true);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const range = rangeForPeriod(period, from, to);
-      const [dashRes, analyticsRes] = await Promise.all([
-        cloudApi.get('/instances/dashboard'),
-        cloudApi.get('/instances/analytics', { params: range }),
-      ]);
-      setOverview(dashRes.data.data);
-      setAnalytics(analyticsRes.data.data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (period !== 'custom' || (from && to)) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, from, to]);
-
-  const products    = list('product');
-  const saleItems   = list('sale_item');
-  const sales       = list('sale');
-  const customers   = list('customer');
-  const vendors     = list('vendor');
-  const purchases   = list('purchase');
-  const vendorPayments   = list('vendor_payment');
-  const purchaseReturns  = list('purchase_return');
-  const accounts    = list('account');
+  const sales = list('sale');
+  const saleItems = list('sale_item');
+  const saleReturns = list('sale_return');
+  const saleReturnItems = list('sale_return_item');
+  const expenses = list('expense');
+  const products = list('product');
+  const customers = list('customer');
+  const vendors = list('vendor');
+  const purchases = list('purchase');
+  const vendorPayments = list('vendor_payment');
+  const purchaseReturns = list('purchase_return');
+  const accounts = list('account');
   const accountTxns = list('account_txn');
-  const allKhatas        = list('customer_khata');
-  const allKhataPayments = list('customer_khata_payment');
+  const khatas = list('customer_khata');
+  const khataPayments = list('customer_khata_payment');
 
-  // productById for unit_type lookup in COGS and stock value calculations
-  const productById = useMemo(() => {
-    const m = {};
-    for (const p of products) m[String(p.id)] = p;
-    return m;
-  }, [products]);
-
-  // Stock stats + donut
-  const stockStats = useMemo(() => {
-    let stockValue = 0, retailStockValue = 0;
-    let inStockCount = 0, lowStockCount = 0, outOfStockCount = 0;
-    const lowStockProducts = [];
-    for (const p of products) {
-      const stock = Number(p.stock || 0);
-      // gram products: stock is in grams, price is per-kg — divide by 1000
-      const isGram = p.unit_type === 'gram';
-      // guard against astronomically wrong stock counts from cloud (pre-migration)
-      const cappedStock = Math.min(Math.max(0, stock), isGram ? 100_000_000 : 1_000_000);
-      const qty = isGram ? cappedStock / 1000 : cappedStock;
-      // Match desktop SQL exactly:
-      //   cost_value:   SUM(MIN(qty * MIN(purchase_price, 50M), 50M))
-      //   retail_value: SUM(qty * price)  — no per-product cap on retail side
-      const retailPrice = Number(p.price || 0);
-      const pp = Math.min(Number(p.purchase_price || 0), 50_000_000);
-      stockValue       += Math.min(qty * pp, 50_000_000);
-      retailStockValue += qty * retailPrice;
-      if (stock <= 0)                           { outOfStockCount++; }
-      else if (stock <= LOW_STOCK_THRESHOLD)    { lowStockCount++;   lowStockProducts.push(p); }
-      else                                       { inStockCount++; }
+  // Lookups built once per data change
+  const lookups = useMemo(() => {
+    const itemsBySale = new Map();
+    for (const it of saleItems) {
+      const k = String(it.sale_id);
+      if (!itemsBySale.has(k)) itemsBySale.set(k, []);
+      itemsBySale.get(k).push(it);
     }
-    lowStockProducts.sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0));
-    return {
-      stockValue, retailStockValue,
-      retailProfit: retailStockValue - stockValue,
-      lowStockCount, totalItems: products.length,
-      inStockCount, outOfStockCount,
-      lowStockProducts: lowStockProducts.slice(0, 10),
-      donut: [
-        { name: 'In Stock',     value: inStockCount,    color: '#10b981' },
-        { name: 'Low Stock',    value: lowStockCount,   color: '#f59e0b' },
-        { name: 'Out of Stock', value: outOfStockCount, color: '#f43f5e' },
-      ].filter((s) => s.value > 0),
-    };
-  }, [products, LOW_STOCK_THRESHOLD]);
+    const returnsBySale = new Map();
+    for (const r of saleReturns) {
+      const k = String(r.sale_id);
+      returnsBySale.set(k, (returnsBySale.get(k) || 0) + (Number(r.total_returned) || 0));
+    }
+    const returnedQtyByItem = new Map();
+    for (const ri of saleReturnItems) {
+      const k = String(ri.sale_item_id ?? '');
+      if (k) returnedQtyByItem.set(k, (returnedQtyByItem.get(k) || 0) + (Number(ri.quantity) || 0));
+    }
+    return { itemsBySale, returnsBySale, returnedQtyByItem };
+  }, [saleItems, saleReturns, saleReturnItems]);
 
-  // Customer AR — outstanding_balance (invoice credit) + khata net balance
-  const customerAR = useMemo(() => {
-    const khataByC = khataBalances(allKhatas, allKhataPayments, 'customer_id');
-    const withBalance = customers.map((c) => {
-      const invoiceBal = Math.max(0, Number(c.outstanding_balance || 0));
-      return { ...c, balance: invoiceBal + (khataByC.get(String(c.id)) || 0) };
-    }).filter((c) => c.balance > 0.01).sort((a, b) => b.balance - a.balance);
-    return { totalAR: withBalance.reduce((s, c) => s + c.balance, 0), debtors: withBalance };
-  }, [customers, allKhatas, allKhataPayments]);
+  const byHour = period === 'today';
+  const range = useMemo(() => rangeFor(period), [period]);
+  const cur = useMemo(() => computeWindow({ ...range, sales, expenses, byHour, ...lookups }), [range, sales, expenses, byHour, lookups]);
+  const prev = useMemo(() => computeWindow({ start: range.prevStart, end: range.prevEnd, sales, expenses, byHour, ...lookups }), [range, sales, expenses, byHour, lookups]);
+  const today = useMemo(() => {
+    const r = rangeFor('today');
+    return computeWindow({ start: r.start, end: r.end, sales, expenses, byHour: true, ...lookups });
+  }, [sales, expenses, lookups]);
 
-  const payableVendors = useMemo(() => {
-    const balByV = vendorBalances({ purchases, vendorPayments, purchaseReturns });
-    return vendors.map((v) => ({ ...v, balance: Math.max(0, balByV.get(String(v.id)) || 0) }))
-      .filter((v) => v.balance > 0.01).sort((a, b) => b.balance - a.balance);
+  // Chart series with every day/hour present (gaps shown as zero)
+  const series = useMemo(() => {
+    const keys = [];
+    if (byHour) {
+      const lastHour = new Date().getHours();
+      for (let h = 0; h <= lastHour; h++) keys.push(String(h).padStart(2, '0'));
+    } else {
+      const d = new Date(range.start);
+      while (d <= range.end && keys.length < 400) { keys.push(dayKey(d)); d.setDate(d.getDate() + 1); }
+    }
+    return keys.map((k) => {
+      const b = cur.buckets.get(k) || { revenue: 0, cogs: 0, count: 0 };
+      return { key: k, revenue: Math.round(b.revenue), gross: Math.round(b.revenue - b.cogs), count: b.count };
+    });
+  }, [cur, byHour, range]);
+
+  const topProducts = useMemo(() => [...cur.productSales.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 6), [cur]);
+  const methodRows = useMemo(() => {
+    const rows = [...cur.methods.values()].sort((a, b) => b.total - a.total);
+    const total = rows.reduce((s, r) => s + r.total, 0) || 1;
+    return rows.map((r, i) => ({ ...r, share: r.total / total, color: METHOD_COLORS[i % METHOD_COLORS.length] }));
+  }, [cur]);
+
+  const stock = useMemo(() => {
+    let cost = 0; let retail = 0; let out = 0; const low = [];
+    for (const p of products) {
+      const s = Number(p.stock) || 0;
+      if (s <= threshold) { low.push(p); if (s <= 0) out++; }
+      if (s <= 0) continue;
+      const units = p.unit_type === 'gram' ? s / 1000 : (Number(p.carton_qty) > 0 ? s / Number(p.carton_qty) : s);
+      cost += Math.min(units * Math.min(Number(p.purchase_price) || 0, 50_000_000), 50_000_000);
+      retail += Math.min(units * (Number(p.price) || 0), 50_000_000);
+    }
+    low.sort((a, b) => (Number(a.stock) || 0) - (Number(b.stock) || 0));
+    return { cost, retail, low, out };
+  }, [products, threshold]);
+
+  const receivables = useMemo(() => {
+    const kb = khataBalances(khatas, khataPayments, 'customer_id');
+    const rows = customers
+      .map((c) => ({ ...c, balance: (Number(c.outstanding_balance) || 0) + (kb.get(String(c.id)) || 0) }))
+      .filter((c) => c.balance > 0.5)
+      .sort((a, b) => b.balance - a.balance);
+    return { total: rows.reduce((s, c) => s + c.balance, 0), rows };
+  }, [customers, khatas, khataPayments]);
+
+  const payables = useMemo(() => {
+    const vb = vendorBalances({ purchases, vendorPayments, purchaseReturns });
+    const rows = vendors.map((v) => ({ ...v, balance: vb.get(String(v.id)) || 0 })).filter((v) => v.balance > 0.5);
+    return { total: rows.reduce((s, v) => s + v.balance, 0), count: rows.length };
   }, [vendors, purchases, vendorPayments, purchaseReturns]);
 
-  // Period analytics computed locally from synced data — the cloud analytics
-  // endpoint includes Cancelled sales in salesByDay/totals (and can't be
-  // changed), which inflated Period Revenue and Transactions vs the desktop.
-  // Local calculation excludes cancelled and uses local-timezone day keys,
-  // matching the Electron dashboard exactly.
-  const expensesList = list('expense');
-  const saleReturnsAll = list('sale_return');
-  const saleReturnItemsAll = list('sale_return_item');
-  const localAnalytics = useMemo(() => {
-    const range = rangeForPeriod(period, from, to);
-    const start = new Date(range.date_from);
-    const end   = new Date(range.date_to);
-    const dayKey = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD, local tz
-    const salesByDayMap = {};
-    let count = 0, revenue = 0;
-    const activeSaleIds = new Set(sales.filter(isActiveSale).map((s) => String(s.id)));
-    for (const s of sales) {
-      if (!isActiveSale(s) || !s.date_created) continue;
-      const d = new Date(String(s.date_created).replace(' ', 'T'));
-      if (isNaN(d) || d < start || d > end) continue;
-      const day = dayKey(d);
-      salesByDayMap[day] = (salesByDayMap[day] || 0) + Number(s.total || 0);
-      count++;
-      revenue += Number(s.total || 0);
+  const funds = useMemo(() => {
+    const delta = new Map();
+    for (const t of accountTxns) {
+      const k = String(t.account_id);
+      delta.set(k, (delta.get(k) || 0) + (t.type === 'in' ? 1 : -1) * (Number(t.amount) || 0));
     }
-    // Deduct sale returns from revenue — refunded money isn't revenue.
-    // Mirrors the Electron dashboard's returns deduction.
-    for (const r of saleReturnsAll) {
-      // Returns on cancelled/fully-returned sales were never in revenue — subtracting them double-counts.
-      if (!r.date_created || !activeSaleIds.has(String(r.sale_id))) continue;
-      const d = new Date(String(r.date_created).replace(' ', 'T'));
-      if (isNaN(d) || d < start || d > end) continue;
-      const amt = Number(r.total_returned || 0);
-      const day = dayKey(d);
-      salesByDayMap[day] = (salesByDayMap[day] || 0) - amt;
-      revenue -= amt;
+    let cash = 0; let bank = 0;
+    for (const a of accounts) {
+      const bal = (Number(a.opening_balance) || 0) + (delta.get(String(a.id)) || 0);
+      if (a.type === 'bank') bank += bal; else cash += bal;
     }
-    const expByDayMap = {};
-    let expTotal = 0;
-    for (const e of expensesList) {
-      const raw = e.date_created ?? e.date_added ?? e.date ?? e.created_at;
-      if (!raw) continue;
-      const d = new Date(String(raw).replace(' ', 'T'));
-      if (isNaN(d) || d < start || d > end) continue;
-      const amt = Number(e.amount || 0);
-      expByDayMap[dayKey(d)] = (expByDayMap[dayKey(d)] || 0) + amt;
-      expTotal += amt;
-    }
-    return {
-      salesByDay: Object.entries(salesByDayMap).map(([day, rev]) => ({ day, revenue: rev })),
-      expensesByDay: Object.entries(expByDayMap).map(([day, amount]) => ({ day, amount })),
-      totals: { sales: count, revenue, expenses: expTotal },
-    };
-  }, [sales, saleReturnsAll, expensesList, period, from, to]);
-
-  const pnl = useMemo(() => buildPnl(localAnalytics, saleItems, sales, productById, saleReturnItemsAll, saleReturnsAll), [localAnalytics, saleItems, sales, productById, saleReturnItemsAll, saleReturnsAll]);
-
-  // Payment method breakdown from local sales filtered by period
-  const paymentBreakdown = useMemo(() => {
-    const range = rangeForPeriod(period, from, to);
-    const rangeFrom = new Date(range.date_from);
-    const rangeTo   = new Date(range.date_to);
-    const inRange = sales.filter((s) => {
-      if (!isActiveSale(s)) return false;
-      if (!s.date_created) return true;
-      const d = new Date(String(s.date_created).replace(' ', 'T'));
-      return d >= rangeFrom && d <= rangeTo;
-    });
-    const map = new Map();
-    for (const s of inRange) {
-      const method = (s.payment_method || 'cash').toLowerCase();
-      const entry  = map.get(method) || { name: method, count: 0, revenue: 0 };
-      entry.count++;
-      entry.revenue += Number(s.total || 0);
-      map.set(method, entry);
-    }
-    const COLORS = { cash: '#10b981', online: '#3b82f6', credit: '#f59e0b', udhaar: '#8b5cf6', card: '#06b6d4', other: '#94a3b8' };
-    return Array.from(map.values())
-      .sort((a, b) => b.revenue - a.revenue)
-      .map((m) => ({ ...m, color: COLORS[m.name] || COLORS.other, label: m.name.charAt(0).toUpperCase() + m.name.slice(1) }));
-  }, [sales, period, from, to]);
-
-  const recentSales = useMemo(() =>
-    sales.filter((s) => !isCancelled(s)).slice().sort((a, b) => new Date(b.date_created || 0) - new Date(a.date_created || 0)).slice(0, 10),
-  [sales]);
-
-  // Today's revenue computed locally from synced sales. The cloud endpoint
-  // compares date_created as a STRING against an ISO timestamp, but Electron
-  // stores dates as "YYYY-MM-DD HH:MM:SS" (space < 'T'), so every desktop sale
-  // is excluded server-side and the cloud figure reads 0. Local calculation is
-  // also timezone-correct (local midnight, not server midnight).
-  const todayRevenue = useMemo(() => {
-    const midnight = new Date();
-    midnight.setHours(0, 0, 0, 0);
-    const activeIds = new Set();
-    const gross = sales.reduce((sum, s) => {
-      if (!isActiveSale(s) || !s.date_created) return sum;
-      activeIds.add(String(s.id));
-      const d = new Date(String(s.date_created).replace(' ', 'T'));
-      return d >= midnight ? sum + Number(s.total || 0) : sum;
-    }, 0);
-    // Net of today's returns — same as the Electron dashboard
-    const returnedToday = saleReturnsAll.reduce((sum, r) => {
-      if (!r.date_created || !activeIds.has(String(r.sale_id))) return sum;
-      const d = new Date(String(r.date_created).replace(' ', 'T'));
-      return d >= midnight ? sum + Number(r.total_returned || 0) : sum;
-    }, 0);
-    return gross - returnedToday;
-  }, [sales, saleReturnsAll]);
-
-  const accountsSummary = useMemo(() => {
-    const withBalance = accounts.map((a) => {
-      const delta = accountTxns.filter((t) => String(t.account_id) === String(a.id))
-        .reduce((s, t) => s + (t.type === 'in' ? Number(t.amount || 0) : -Number(t.amount || 0)), 0);
-      return { ...a, balance: Number(a.opening_balance || 0) + delta };
-    });
-    return {
-      accounts: withBalance,
-      cashTotal: withBalance.filter((a) => a.type === 'cash').reduce((s, a) => s + a.balance, 0),
-      bankTotal: withBalance.filter((a) => a.type === 'bank').reduce((s, a) => s + a.balance, 0),
-      netTotal:  withBalance.reduce((s, a) => s + a.balance, 0),
-    };
+    return { cash, bank, total: cash + bank };
   }, [accounts, accountTxns]);
 
-  const topProducts  = analytics?.topProducts || [];
-  const periodLabel  = { today: 'today', week: 'last 7 days', month: 'this month', year: 'this year', custom: 'selected period' }[period];
-  const greet        = greeting();
+  const recentSales = useMemo(() => {
+    const custName = new Map(customers.map((c) => [String(c.id), c.name]));
+    return sales
+      .filter((s) => isActiveSale(s) && s.date_created)
+      .sort((a, b) => parseDate(b.date_created) - parseDate(a.date_created))
+      .slice(0, 7)
+      .map((s) => ({ ...s, customer: s.customer_id ? custName.get(String(s.customer_id)) || 'Customer' : 'Walk-in', items: (lookups.itemsBySale.get(String(s.id)) || []).length }));
+  }, [sales, customers, lookups]);
 
-  // Sparkline data
-  const revSparkline  = pnl.series.slice(-10).map((d) => ({ date: d.date, value: d.revenue }));
-  const netSparkline  = pnl.series.slice(-10).map((d) => ({ date: d.date, value: Math.max(0, d.gross) }));
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try { await refresh(); } catch { /* offline — keep showing cached data */ } finally { setRefreshing(false); }
+  };
 
-  if (loading && !overview) return <Skeleton />;
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const firstName = (user?.owner_name || '').trim().split(/\s+/)[0];
+  const periodWord = { today: 'today', week: 'in the last 7 days', month: 'this month', year: 'this year' }[period];
+  const margin = cur.revenue > 0 ? (cur.gross / cur.revenue) * 100 : 0;
+  const avgTicket = cur.count ? cur.revenue / cur.count : 0;
+  const sparkOf = (field) => series.map((r) => r[field]);
 
   return (
-    <div className="flex flex-col gap-6">
-
-      {/* ── Header ── */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {greet.emoji} {greet.text}, <span className="text-primary">{user?.owner_name || user?.store_name}</span>
-            </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Here's what's happening with your store.</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex rounded-xl bg-muted/40 border border-border/30 p-0.5 gap-0.5">
-              {PERIOD_OPTS.map(([val, lbl]) => (
-                <button key={val} onClick={() => setPeriod(val)}
-                  className={cn('px-3 h-8 rounded-lg text-sm font-semibold transition-all', period === val ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-            {period === 'custom' && (
-              <div className="flex items-center gap-2">
-                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 px-2.5 rounded-lg border border-border bg-background text-xs" />
-                <span className="text-muted-foreground text-xs">—</span>
-                <input type="date" value={to}   onChange={(e) => setTo(e.target.value)}   className="h-9 px-2.5 rounded-lg border border-border bg-background text-xs" />
-              </div>
-            )}
-            <button onClick={load} className="w-9 h-9 rounded-xl border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            </button>
-          </div>
+    <div className="flex flex-col gap-6 pb-6">
+      {/* ── Header ───────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm text-muted-foreground">
+            {new Date().toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+          <h1 className="mt-1 font-display text-[28px] leading-tight font-extrabold tracking-tight text-foreground">
+            {greet}{firstName ? `, ${firstName}` : ''}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Today so far: <span className="font-semibold text-foreground tabular-nums">{fmtPKR(today.revenue)}</span> from {today.count} sale{today.count === 1 ? '' : 's'}
+          </p>
         </div>
-      </motion.div>
-
-      {/* ── Period KPIs (Revenue / Gross Profit / Net Profit / Transactions / Today) ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={1} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
-        <KpiCard icon={DollarSign}   label="Period Revenue"  value={fmtPKR(pnl.totals.revenue)}  sublabel={periodLabel}                            accent="var(--color-primary)"  valueClass="text-primary"                                                         sparkData={revSparkline} sparkKey="value" sparkColor="#3b82f6" />
-        <KpiCard icon={TrendingUp}   label="Gross Profit"    value={fmtPKR(pnl.totals.gross)}    sublabel={`COGS: ${fmtPKR(pnl.totals.cogs)}`}                                   valueClass="text-emerald-600 dark:text-emerald-400"                               sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: Math.max(0, d.gross) }))} sparkKey="value" sparkColor="#10b981" />
-        <KpiCard icon={TrendingDown} label="Net Profit"      value={fmtPKR(pnl.totals.net)}      sublabel={`Exp: ${fmtPKR(pnl.totals.expenses)}`}                                 valueClass={pnl.totals.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'} sparkData={pnl.series.slice(-10).map(d => ({ date: d.date, value: d.net }))} sparkKey="value" sparkColor="#8b5cf6" />
-        <KpiCard icon={Activity}     label="Transactions"    value={localAnalytics.totals.sales} sublabel={periodLabel} />
-        <KpiCard icon={Zap}          label="Today's Revenue" value={fmtPKR(todayRevenue)}         sublabel="local midnight" />
-      </motion.div>
-
-      {/* ── Store KPIs (Stock / AR / AP / Low Stock) ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
-        <KpiCard icon={Boxes}         label="Stock Value"     value={fmtPKR(stockStats.stockValue)}       sublabel="Inventory at cost" />
-        <KpiCard icon={PiggyBank}     label="Retail Stock"    value={fmtPKR(stockStats.retailStockValue)} sublabel={`Uplift: ${fmtPKR(stockStats.retailProfit)}`} />
-        <KpiCard icon={Wallet}        label="Customer Credit" value={fmtPKR(customerAR.totalAR)}          sublabel={`${customerAR.debtors.length} debtors (incl. khata)`}
-          valueClass={customerAR.totalAR > 0 ? 'text-rose-600 dark:text-rose-400' : undefined}
-          accent={customerAR.totalAR > 0 ? '#f43f5e' : undefined} />
-        <KpiCard icon={Truck}         label="Vendor Payable"  value={fmtPKR(payableVendors.reduce((s, v) => s + v.balance, 0))} sublabel={`${payableVendors.length} vendors`}
-          valueClass={payableVendors.length > 0 ? 'text-orange-600 dark:text-orange-400' : undefined}
-          accent={payableVendors.length > 0 ? '#f97316' : undefined} />
-        <KpiCard icon={AlertTriangle} label="Low Stock"       value={stockStats.lowStockCount}            sublabel="Below threshold"
-          valueClass={stockStats.lowStockCount > 0 ? 'text-amber-600 dark:text-amber-400' : undefined}
-          accent={stockStats.lowStockCount > 0 ? '#f59e0b' : undefined} />
-      </motion.div>
-
-      {/* ── Accounts summary ── */}
-      {accounts.length > 0 && (
-        <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={3}>
-          <div className="rounded-2xl bg-card relative overflow-hidden"
-            style={{ border: '1px solid rgba(16,185,129,0.2)', boxShadow: '0 4px 24px -4px rgba(16,185,129,0.10), 0 1px 4px rgba(0,0,0,0.05)' }}>
-            {/* Top accent bar */}
-            <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-400" />
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                  <Wallet size={15} className="text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold">Accounts & Cash</h3>
-                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">Live balances across all accounts</p>
-                </div>
-              </div>
-              <Link to="/accounts" className="h-8 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground rounded-xl px-2 transition-colors">
-                View All <ArrowUpRight size={12} />
-              </Link>
-            </div>
-            <div className="px-5 pb-5">
-              {/* Summary totals */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                {[
-                  { label: 'Cash in Hand', value: accountsSummary.cashTotal, borderCls: 'border-emerald-500/20 bg-emerald-500/5', valCls: 'text-emerald-600 dark:text-emerald-400' },
-                  { label: 'Bank Total',   value: accountsSummary.bankTotal, borderCls: 'border-blue-500/20 bg-blue-500/5',       valCls: 'text-blue-600 dark:text-blue-400' },
-                  { label: 'Net Funds',    value: accountsSummary.netTotal,  borderCls: accountsSummary.netTotal >= 0 ? 'border-violet-500/20 bg-violet-500/5' : 'border-red-400/20 bg-red-500/5', valCls: accountsSummary.netTotal >= 0 ? 'text-violet-600 dark:text-violet-400' : 'text-red-600 dark:text-red-400' },
-                ].map(({ label, value, borderCls, valCls }) => (
-                  <div key={label} className={cn('rounded-xl border px-3 py-2.5', borderCls)}>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{label}</p>
-                    <p className={cn('text-sm font-black mt-0.5 truncate', valCls)}>{fmtPKR(value)}</p>
-                  </div>
-                ))}
-              </div>
-              {/* Per-account cards */}
-              {accountsSummary.accounts.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {accountsSummary.accounts.map((acc) => (
-                    <div key={acc.id} className={cn(
-                      'flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-colors',
-                      acc.type === 'cash'
-                        ? 'bg-emerald-500/5 border-emerald-500/10 hover:border-emerald-500/25'
-                        : 'bg-blue-500/5 border-blue-500/10 hover:border-blue-500/25'
-                    )}>
-                      <div className={cn('w-2 h-2 rounded-full flex-shrink-0', acc.type === 'cash' ? 'bg-emerald-500' : 'bg-blue-500')} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-semibold truncate text-foreground">{acc.name}</p>
-                        {acc.bank_name && <p className="text-[9px] text-muted-foreground/60 truncate">{acc.bank_name}</p>}
-                        <p className={cn('text-[11px] font-black truncate', acc.type === 'cash' ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400')}>
-                          {fmtPKR(acc.balance)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-border/70 bg-muted/50 p-1" role="tablist" aria-label="Period">
+            {PERIODS.map(([key, label]) => (
+              <button key={key} type="button" role="tab" aria-selected={period === key} onClick={() => setPeriod(key)}
+                className={cn('h-8 px-3 rounded-lg text-[13px] font-medium transition-all',
+                  period === key ? 'bg-card text-foreground shadow-sm ring-1 ring-border/70' : 'text-muted-foreground hover:text-foreground')}>
+                {label}
+              </button>
+            ))}
           </div>
-        </motion.div>
-      )}
-
-      {/* ── Revenue chart + Stock donut ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={3} className="grid md:grid-cols-3 gap-6">
-
-        {/* Revenue area chart */}
-        <div className="md:col-span-2 rounded-2xl border border-border/50 bg-card overflow-hidden">
-          <div className="px-5 pt-5 pb-4 border-b bg-muted/5">
-            <h2 className="text-sm font-bold">Revenue Trend</h2>
-            <p className="text-xs text-muted-foreground">Daily sales — {periodLabel}</p>
-          </div>
-          {pnl.series.length > 0 ? (
-            <div className="h-44 p-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={pnl.series} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="revG" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}   />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border,#e5e7eb)" opacity={0.4} />
-                  <XAxis dataKey="date" tickFormatter={fmtDay} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={fmtShort} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={44} />
-                  <Tooltip formatter={(v) => [fmtPKR(v), 'Revenue']} labelFormatter={fmtDay} contentStyle={{ borderRadius: 12, border: '1px solid var(--border,#e5e7eb)', fontSize: 12, padding: '8px 12px' }} />
-                  <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} fill="url(#revG)" dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-44 flex items-center justify-center text-sm text-muted-foreground">No data for {periodLabel}</div>
-          )}
+          <button type="button" onClick={doRefresh} aria-label="Refresh data" title="Fetch the latest from your counter PC"
+            className="h-10 w-10 rounded-xl border border-border bg-card inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+            <RefreshCw size={15} className={cn((refreshing || loading) && 'animate-spin')} />
+          </button>
+          {/* The sidebar already has "New sale" on large screens */}
+          <Link to="/sales" className="lg:hidden h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-1.5 shadow-sm hover:opacity-95">
+            <Plus size={16} /> New sale
+          </Link>
         </div>
+      </div>
 
-        {/* Stock donut */}
-        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-          <div className="px-5 pt-5 pb-4 border-b bg-muted/5 flex items-center justify-between">
-            <h2 className="text-sm font-bold">Stock Summary</h2>
-            <Link to="/inventory" className="text-xs font-semibold text-primary hover:underline">View</Link>
-          </div>
-          <div className="flex flex-col items-center pt-3 pb-2">
-            {stockStats.donut.length > 0 ? (
-              <div className="relative">
-                <PieChart width={140} height={140}>
-                  <Pie
-                    data={stockStats.donut}
-                    cx={66} cy={66}
-                    innerRadius={44} outerRadius={62}
-                    paddingAngle={3}
-                    dataKey="value"
-                    startAngle={90} endAngle={-270}
-                    strokeWidth={0}
-                  >
-                    {stockStats.donut.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
-                  </Pie>
-                </PieChart>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-2xl font-black">{stockStats.totalItems}</span>
-                  <span className="text-[10px] text-muted-foreground">products</span>
-                </div>
+      {/* ── Headline numbers ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Sales" value={fmtPKR(cur.revenue)} sub={`After returns, ${periodWord}`}
+          delta={<Delta now={cur.revenue} before={prev.revenue} />} spark={<Spark values={sparkOf('revenue')} />} />
+        <Metric label="Gross profit" value={fmtPKR(cur.gross)} sub={`${margin.toFixed(1)}% margin · cost ${fmtPKR(cur.cogs)}`}
+          delta={<Delta now={cur.gross} before={prev.gross} />} spark={<Spark values={sparkOf('gross')} positive={cur.gross >= 0} />}
+          tone={cur.gross < 0 ? 'negative' : 'default'} />
+        <Metric label="Net profit" value={fmtPKR(cur.net)} sub={`After ${fmtPKR(cur.expenses)} expenses`}
+          delta={<Delta now={cur.net} before={prev.net} />} tone={cur.net < 0 ? 'negative' : 'default'}
+          spark={<div className="h-9 flex items-end"><div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div className={cn('h-full rounded-full', cur.net >= 0 ? 'bg-emerald-500' : 'bg-rose-500')} style={{ width: `${cur.revenue > 0 ? Math.min(100, Math.abs(cur.net) / cur.revenue * 100) : 0}%` }} />
+          </div></div>} />
+        <Metric label="Number of sales" value={cur.count.toLocaleString('en-PK')} sub={`Average bill ${fmtPKR(avgTicket)}`}
+          delta={<Delta now={cur.count} before={prev.count} />} spark={<Spark values={sparkOf('count')} />} />
+      </div>
+
+      {/* ── Trend + payment methods ──────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card title={byHour ? 'Sales by hour, today' : 'Sales and gross profit'} className="xl:col-span-2"
+          action={<div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: colors.primary }} />Sales</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 rounded" style={{ background: colors.profit }} />Gross profit</span>
+          </div>}>
+          <div className="h-[280px] -ml-2">
+            {cur.count === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                <Receipt size={22} className="mb-2 opacity-50" /> No sales {periodWord} yet.
               </div>
             ) : (
-              <div className="h-[140px] flex items-center justify-center text-xs text-muted-foreground">No products</div>
-            )}
-            <div className="w-full px-4 pb-3 space-y-2 mt-1">
-              {[
-                { label: 'In Stock',     count: stockStats.inStockCount,     color: '#10b981' },
-                { label: 'Low Stock',    count: stockStats.lowStockCount,    color: '#f59e0b' },
-                { label: 'Out of Stock', count: stockStats.outOfStockCount,  color: '#f43f5e' },
-              ].map(({ label, count, color }) => (
-                <div key={label} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
-                    <span className="text-muted-foreground">{label}</span>
-                  </div>
-                  <span className="font-bold">{count}</span>
-                </div>
-              ))}
-              <div className="pt-1 border-t border-border/30 flex justify-between text-xs">
-                <span className="text-muted-foreground">Cost Value</span>
-                <span className="font-bold font-mono text-blue-600">{fmtShort(stockStats.stockValue)}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Retail Value</span>
-                <span className="font-bold font-mono text-emerald-600">{fmtShort(stockStats.retailStockValue)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* ── P&L ComposedChart (5 series) ── */}
-      {pnl.series.length > 0 && (
-        <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={4}>
-          <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-            <div className="px-5 pt-5 pb-4 border-b bg-muted/5 flex items-start justify-between">
-              <div>
-                <h2 className="text-sm font-bold">Profit & Loss</h2>
-                <p className="text-xs text-muted-foreground">Revenue · COGS · Expenses · Gross · Net — {periodLabel}</p>
-              </div>
-              {/* Legend */}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-semibold">
-                {[['Revenue','#3b82f6'],['COGS','#f59e0b'],['Expenses','#f43f5e'],['Gross','#10b981'],['Net','#8b5cf6']].map(([lbl, clr]) => (
-                  <span key={lbl} className="flex items-center gap-1 text-muted-foreground">
-                    <span className="w-2.5 h-2.5 rounded-sm inline-block shrink-0" style={{ background: clr }} />{lbl}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="h-56 p-4">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={pnl.series} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="pGross" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#10b981" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}    />
-                    </linearGradient>
-                    <linearGradient id="pNet" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}    />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border,#e5e7eb)" opacity={0.35} />
-                  <XAxis dataKey="date" tickFormatter={fmtDay} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={fmtShort} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={44} />
-                  <Tooltip content={<PlTooltip />} />
-                  <Bar    dataKey="revenue"  fill="#3b82f6" fillOpacity={0.18} radius={[3,3,0,0]} />
-                  <Line  dataKey="cogs"     stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
-                  <Line  dataKey="expenses" stroke="#f43f5e" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
-                  <Area  dataKey="gross"    stroke="#10b981" strokeWidth={2}   dot={false} fill="url(#pGross)" />
-                  <Area  dataKey="net"      stroke="#8b5cf6" strokeWidth={2}   dot={false} fill="url(#pNet)" />
+                <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke={colors.grid} strokeDasharray="3 3" />
+                  <XAxis dataKey="key" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: colors.muted }} minTickGap={16}
+                    tickFormatter={(k) => (byHour ? `${Number(k)}h` : new Date(`${k}T00:00:00`).toLocaleDateString('en-PK', period === 'year' ? { month: 'short' } : { day: 'numeric', month: 'short' }))} />
+                  <YAxis tickLine={false} axisLine={false} width={52} tick={{ fontSize: 11, fill: colors.muted }} tickFormatter={fmtCompact} />
+                  <Tooltip cursor={{ fill: colors.grid, opacity: 0.35 }} content={<ChartTooltip byHour={byHour} />} />
+                  <Bar dataKey="revenue" fill={colors.primary} radius={[4, 4, 0, 0]} maxBarSize={36} />
+                  <Line dataKey="gross" type="monotone" stroke={colors.profit} strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
-            </div>
-            {/* Totals strip */}
-            <div className="grid grid-cols-5 divide-x divide-border/30 border-t border-border/30">
-              {[
-                ['Revenue',  pnl.totals.revenue,  'text-blue-600'],
-                ['COGS',     pnl.totals.cogs,     'text-amber-600'],
-                ['Expenses', pnl.totals.expenses, 'text-rose-600'],
-                ['Gross',    pnl.totals.gross,    'text-emerald-600'],
-                ['Net',      pnl.totals.net,      'text-violet-600'],
-              ].map(([lbl, val, cls]) => (
-                <div key={lbl} className="flex flex-col items-center py-3 gap-0.5 bg-muted/5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{lbl}</p>
-                  <p className={cn('text-sm font-black font-mono', cls)}>{fmtPKR(val)}</p>
-                </div>
-              ))}
-            </div>
+            )}
           </div>
-        </motion.div>
-      )}
+        </Card>
 
-      {/* ── Payment method breakdown ── */}
-      {paymentBreakdown.length > 0 && (
-        <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={5}>
-          <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-            <div className="px-5 py-4 border-b bg-muted/10">
-              <h2 className="text-base font-bold">Payment Methods</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Breakdown by payment type — {periodLabel}</p>
-            </div>
-            <div className="flex flex-col sm:flex-row items-center gap-4 p-5">
-              {/* Donut */}
-              <div className="relative shrink-0">
-                <PieChart width={160} height={160}>
-                  <Pie
-                    data={paymentBreakdown}
-                    cx={76} cy={76}
-                    innerRadius={50} outerRadius={70}
-                    paddingAngle={3}
-                    dataKey="revenue"
-                    startAngle={90} endAngle={-270}
-                    strokeWidth={0}
-                  >
-                    {paymentBreakdown.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
-                  </Pie>
-                </PieChart>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-xl font-black">{paymentBreakdown.reduce((s, m) => s + m.count, 0)}</span>
-                  <span className="text-[10px] text-muted-foreground">sales</span>
-                </div>
+        <Card title="How customers paid" action={<span className="text-xs text-muted-foreground">{periodWord}</span>}>
+          {methodRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">No payments yet.</p>
+          ) : (
+            <>
+              <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
+                {methodRows.map((m) => <div key={m.method} className={m.color} style={{ width: `${m.share * 100}%` }} title={titleCase(m.method)} />)}
               </div>
-              {/* Legend + stats */}
-              <div className="flex-1 min-w-0 space-y-2.5 w-full">
-                {paymentBreakdown.map((m) => {
-                  const total = paymentBreakdown.reduce((s, x) => s + x.revenue, 0);
-                  const pct   = total > 0 ? Math.round((m.revenue / total) * 100) : 0;
-                  return (
-                    <div key={m.name}>
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: m.color }} />
-                          <span className="font-semibold">{m.label}</span>
-                          <span className="text-muted-foreground">({m.count} sale{m.count !== 1 ? 's' : ''})</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold">{fmtShort(m.revenue)}</span>
-                          <span className="text-muted-foreground w-8 text-right">{pct}%</span>
-                        </div>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: m.color }} />
-                      </div>
+              <ul className="mt-5 grid gap-3">
+                {methodRows.map((m) => (
+                  <li key={m.method} className="flex items-center gap-3 text-sm">
+                    <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', m.color)} />
+                    <span className="flex-1 min-w-0 truncate text-foreground">{titleCase(m.method)}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{m.count} · {Math.round(m.share * 100)}%</span>
+                    <span className="w-28 text-right font-semibold tabular-nums text-foreground">{fmtPKR(m.total)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Card>
+      </div>
+
+      {/* ── Financial position ───────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { to: '/accounts', icon: Wallet, tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Cash & bank', value: funds.total,
+            sub: `Cash ${fmtPKR(funds.cash)} · Bank ${fmtPKR(funds.bank)}`, negative: funds.total < 0 },
+          { to: '/loans', icon: Users, tone: 'bg-sky-500/10 text-sky-600 dark:text-sky-400', label: 'Customers owe you', value: receivables.total,
+            sub: `${receivables.rows.length} customer${receivables.rows.length === 1 ? '' : 's'}, incl. custom bills` },
+          { to: '/vendors', icon: Truck, tone: 'bg-amber-500/10 text-amber-700 dark:text-amber-400', label: 'You owe vendors', value: payables.total,
+            sub: `${payables.count} vendor${payables.count === 1 ? '' : 's'}` },
+          { to: '/inventory', icon: Boxes, tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', label: 'Stock at cost', value: stock.cost,
+            sub: `Sells for ${fmtPKR(stock.retail)}` },
+        ].map((t) => (
+          <Link key={t.label} to={t.to} className="group rounded-2xl border border-border/70 bg-card p-5 flex items-start gap-4 hover:border-foreground/20 transition-colors">
+            <span className={cn('h-10 w-10 rounded-xl inline-flex items-center justify-center shrink-0', t.tone)}><t.icon size={18} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium text-muted-foreground">{t.label}</p>
+              <p className={cn('mt-1 text-xl font-bold tabular-nums tracking-tight', t.negative ? 'text-rose-600 dark:text-rose-400' : 'text-foreground')}>{fmtPKR(t.value)}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground truncate">{t.sub}</p>
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground/50 group-hover:text-foreground transition-colors mt-1" />
+          </Link>
+        ))}
+      </div>
+
+      {/* ── Products ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card title="Best sellers" className="xl:col-span-2" action={<CardLink to="/reports">Reports</CardLink>}>
+          {topProducts.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">Nothing sold {periodWord} yet.</p>
+          ) : (
+            <ul className="grid gap-3.5">
+              {topProducts.map((p, i) => (
+                <li key={p.name + i} className="grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3">
+                  <span className="text-xs font-semibold text-muted-foreground tabular-nums">{i + 1}</span>
+                  <div className="min-w-0">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
+                      <p className="text-xs text-muted-foreground tabular-nums shrink-0">{Number(p.qty.toFixed(2)).toLocaleString('en-PK')} sold</p>
                     </div>
+                    <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${(p.revenue / (topProducts[0].revenue || 1)) * 100}%` }} />
+                    </div>
+                  </div>
+                  <span className="w-28 text-right text-sm font-semibold tabular-nums text-foreground">{fmtPKR(p.revenue)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Running low" action={<CardLink to="/inventory">Inventory</CardLink>}>
+          {stock.low.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm font-medium text-foreground">Stock looks healthy</p>
+              <p className="text-xs text-muted-foreground mt-1">Nothing at or below {threshold} units.</p>
+            </div>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-muted-foreground">
+                {stock.low.length} product{stock.low.length === 1 ? '' : 's'} at or below {threshold}
+                {stock.out > 0 && <> · <span className="font-medium text-rose-600 dark:text-rose-400">{stock.out} out of stock</span></>}
+              </p>
+              <ul className="divide-y divide-border/60">
+                {stock.low.slice(0, 6).map((p) => {
+                  const s = Number(p.stock) || 0;
+                  return (
+                    <li key={p.id} className="flex items-center gap-3 py-2.5">
+                      <AlertTriangle size={14} className={cn('shrink-0', s <= 0 ? 'text-rose-500' : 'text-amber-500')} />
+                      <span className="flex-1 min-w-0 truncate text-sm text-foreground">{p.name}</span>
+                      <span className={cn('text-xs font-semibold tabular-nums rounded-md px-1.5 py-0.5',
+                        s <= 0 ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400')}>
+                        {s <= 0 ? 'Out' : `${s} left`}
+                      </span>
+                    </li>
                   );
                 })}
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
+              </ul>
+            </>
+          )}
+        </Card>
+      </div>
 
-      {/* ── Quick actions ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={6}>
-        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-          <div className="px-5 py-4 border-b bg-muted/10"><h2 className="text-base font-bold">Quick Actions</h2></div>
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-3 p-5">
-            {QUICK.map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border/50 p-3 text-center hover:border-primary/40 hover:bg-primary/5 hover:-translate-y-0.5 transition-all duration-150">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-muted/70 text-muted-foreground"><Icon size={16} /></div>
-                <span className="text-[10px] font-semibold text-muted-foreground">{label}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </motion.div>
+      {/* ── Recent activity ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card title="Latest sales" className="xl:col-span-2" action={<CardLink to="/sales/history">All sales</CardLink>}>
+          {recentSales.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">No sales yet.</p>
+          ) : (
+            <ul className="divide-y divide-border/60 -mx-1">
+              {recentSales.map((s) => {
+                const d = parseDate(s.date_created);
+                const credit = /credit|udhar|khata/i.test(String(s.payment_method || ''));
+                return (
+                  <li key={s.id} className="flex items-center gap-3 px-1 py-2.5">
+                    <span className="h-8 w-8 rounded-full bg-muted inline-flex items-center justify-center text-[11px] font-semibold text-muted-foreground shrink-0">
+                      {s.customer === 'Walk-in' ? 'W' : s.customer.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">{s.customer}</p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {d ? d.toLocaleString('en-PK', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}
+                        {s.items ? ` · ${s.items} item${s.items === 1 ? '' : 's'}` : ''}
+                      </p>
+                    </div>
+                    <span className={cn('text-[11px] font-medium rounded-md px-1.5 py-0.5',
+                      credit ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'bg-muted text-muted-foreground')}>
+                      {titleCase(String(s.payment_method || 'cash'))}
+                    </span>
+                    <span className="w-28 text-right text-sm font-semibold tabular-nums text-foreground">{fmtPKR(s.total)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
 
-      {/* ── Low stock alerts ── */}
-      {stockStats.lowStockProducts.length > 0 && (
-        <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={7}>
-          <div className="rounded-2xl border border-rose-400/30 bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b bg-rose-500/5">
-              <div className="flex items-center gap-2.5">
-                <AlertTriangle size={15} className="text-rose-500" />
-                <h2 className="text-base font-bold">Low Stock Alerts</h2>
-                <span className="text-xs bg-rose-500/10 text-rose-600 px-2 py-0.5 rounded-full font-bold">{stockStats.lowStockCount}</span>
-              </div>
-              <Link to="/inventory" className="text-xs font-semibold text-primary hover:underline">View All</Link>
-            </div>
-            <div className="divide-y divide-border/20">
-              {stockStats.lowStockProducts.map((p) => (
-                <div key={p.id} className="flex items-center justify-between px-5 py-3">
-                  <div><p className="text-sm font-semibold">{p.name}</p><p className="text-xs text-muted-foreground">{p.category || 'Uncategorized'}</p></div>
-                  <span className={cn('text-xs font-bold px-2.5 py-1 rounded-full border', Number(p.stock) <= 0 ? 'bg-rose-500/10 text-rose-700 border-rose-400/20' : 'bg-amber-500/10 text-amber-700 border-amber-400/20')}>
-                    {Number(p.stock) <= 0 ? 'Out of Stock' : `${p.stock} left`}
-                  </span>
-                </div>
+        <Card title="Who owes you most" action={<CardLink to="/loans">Receivables</CardLink>}>
+          {receivables.rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">No customer owes you anything.</p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {receivables.rows.slice(0, 6).map((c) => (
+                <li key={c.id}>
+                  <Link to={`/customers/${c.id}`} className="flex items-center gap-3 py-2.5 group">
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium text-foreground truncate group-hover:underline">{c.name}</span>
+                      {c.phone && <span className="block text-xs text-muted-foreground tabular-nums">{c.phone}</span>}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums text-foreground">{fmtPKR(c.balance)}</span>
+                  </Link>
+                </li>
               ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── AR / AP ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={8} className="grid md:grid-cols-2 gap-6">
-        {/* Receivables */}
-        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/10">
-            <div className="flex items-center gap-2.5"><Users size={14} className="text-muted-foreground" /><h2 className="text-sm font-bold">Receivable (AR)</h2></div>
-            <Link to="/payment-ledger" className="text-xs font-semibold text-primary hover:underline">View All</Link>
-          </div>
-          <div className="divide-y divide-border/20">
-            {customerAR.debtors.slice(0, 5).map((c) => (
-              <div key={c.id} className="flex items-center justify-between px-5 py-3">
-                <div><p className="text-sm font-semibold">{c.name}</p><p className="text-xs text-muted-foreground">{c.phone || '—'}</p></div>
-                <span className="font-mono font-bold text-sm text-emerald-600">{fmtPKR(c.balance)}</span>
-              </div>
-            ))}
-            {customerAR.debtors.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No outstanding receivables</p>}
-          </div>
-        </div>
-
-        {/* Payables */}
-        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/10">
-            <div className="flex items-center gap-2.5"><Truck size={14} className="text-muted-foreground" /><h2 className="text-sm font-bold">Payable (AP)</h2></div>
-            <Link to="/payment-ledger" className="text-xs font-semibold text-primary hover:underline">View All</Link>
-          </div>
-          <div className="divide-y divide-border/20">
-            {payableVendors.slice(0, 5).map((v) => (
-              <div key={v.id} className="flex items-center justify-between px-5 py-3">
-                <div><p className="text-sm font-semibold">{v.name}</p><p className="text-xs text-muted-foreground">{v.phone || '—'}</p></div>
-                <span className="font-mono font-bold text-sm text-amber-600">{fmtPKR(v.balance)}</span>
-              </div>
-            ))}
-            {payableVendors.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No outstanding payables</p>}
-          </div>
-        </div>
-      </motion.div>
-
-      {/* ── Top products + Recent sales ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={9} className="grid md:grid-cols-2 gap-6">
-        {topProducts.length > 0 && (
-          <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-            <div className="px-5 py-4 border-b bg-muted/10 flex items-center justify-between">
-              <h2 className="text-sm font-bold">Top Products</h2>
-              <span className="text-xs text-muted-foreground">{periodLabel}</span>
-            </div>
-            <div className="divide-y divide-border/20">
-              {topProducts.slice(0, 5).map((p, idx) => (
-                <div key={p.product_id || idx} className="flex items-center gap-3 px-5 py-3">
-                  <span className="w-5 h-5 rounded-full bg-muted text-[10px] font-black text-muted-foreground flex items-center justify-center">{idx + 1}</span>
-                  <span className="text-sm font-semibold flex-1 truncate">{p.name}</span>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-mono font-bold text-blue-600">{fmtPKR(p.revenue)}</p>
-                    <p className="text-[10px] text-muted-foreground">{p.quantity} sold</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/10">
-            <h2 className="text-sm font-bold">Recent Sales</h2>
-            <Link to="/sales/history" className="text-xs font-semibold text-primary hover:underline">View All</Link>
-          </div>
-          <div className="divide-y divide-border/20">
-            {recentSales.map((s) => (
-              <div key={s.id} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <p className="font-mono text-xs font-bold text-muted-foreground">INV-{String(s.id).slice(-6)}</p>
-                  <p className="text-xs text-muted-foreground">{fmtDT(s.date_created)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-mono font-bold text-emerald-600">{fmtPKR(s.total)}</p>
-                  <p className="text-[10px] text-muted-foreground capitalize">{s.payment_method}</p>
-                </div>
-              </div>
-            ))}
-            {recentSales.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No sales yet</p>}
-          </div>
-        </div>
-      </motion.div>
-
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
