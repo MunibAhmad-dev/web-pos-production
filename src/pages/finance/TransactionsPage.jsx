@@ -1,690 +1,361 @@
-import { useMemo, useState } from 'react';
-import { usePagination } from '../../hooks/usePagination';
-import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
+import { useEffect, useMemo, useState, Fragment } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  ReceiptText, TrendingUp, Tag, AlertCircle, Search, X, ChevronDown,
-  Printer, Monitor, Download, Undo2, MoreVertical, Eye, Ban, CheckCircle2,
-  RefreshCw, User, MessageCircle, Pencil,
+  Search, X, Printer, FileDown, Undo2, MoreHorizontal, PencilLine, Ban, MessageCircle, ChevronRight,
+  Receipt, History, FileText, UserRound, Lock,
 } from 'lucide-react';
-import EditSaleModal from '../../components/sales/EditSaleModal';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
+import EditSaleModal from '../../components/sales/EditSaleModal';
 import {
-  getReceiptSettings, formatInvoiceId, printInvoice, openInvoiceInTab,
-  downloadInvoicePdf, buildWhatsAppLink,
-} from '../../utils/receipt';
-import { isCancelled, isActiveSale, saleStatus, buildCancelSaleEvents, buildSaleRefundTxn } from '@/lib/ledger';
+  useSaleRows, useSaleActions, ReturnDialog, CancelSaleDialog, rs, fmtDay, fmtTime, qtyFmt,
+} from '../../components/sales/saleActions';
+import { parseDate } from '@/lib/customerAccount';
+import { getReceiptSettings, printInvoice, downloadInvoicePdf, buildWhatsAppLink } from '../../utils/receipt';
 
-const fmtPKR = (n) => 'PKR ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
-const fmtDate = (d) => d ? new Date(String(d).replace(' ', 'T')).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-const fmtTime = (d) => d ? new Date(String(d).replace(' ', 'T')).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' }) : '';
+const PERIODS = [['today', 'Today'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom']];
+function range(period, from, to) {
+  const n = new Date();
+  const sod = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  if (period === 'today') return [sod, null];
+  if (period === 'weekly') return [new Date(sod.getTime() - 6 * 864e5), null];
+  if (period === 'monthly') return [new Date(n.getFullYear(), n.getMonth(), 1), null];
+  return [from ? new Date(`${from}T00:00:00`) : null, to ? new Date(`${to}T23:59:59`) : null];
+}
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 18 },
-  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: Math.min(i, 5) * 0.055, ease: [0.23, 1, 0.32, 1] } }),
+const isCheque = (m) => /che(q|ck)/i.test(String(m || ''));
+const methodTone = (m) => {
+  const k = String(m || '').toLowerCase();
+  if (isCheque(k)) return 'bg-violet-500/10 text-violet-700 dark:text-violet-300';
+  if (/online|bank|card|jazz|easy/.test(k)) return 'bg-sky-500/10 text-sky-700 dark:text-sky-300';
+  if (/credit|udhaar|loan/.test(k)) return 'bg-amber-500/12 text-amber-800 dark:text-amber-300';
+  return 'bg-muted text-foreground/80';
 };
 
-const METHOD_STYLE = {
-  cash:   'bg-slate-700 text-white',
-  online: 'bg-blue-600 text-white',
-  credit: 'bg-violet-600 text-white',
-  udhaar: 'bg-violet-600 text-white',
-  card:   'bg-cyan-600 text-white',
+// Desktop: walk-in sales show no payment badge — they're paid at the counter
+const BADGE = {
+  paid: ['Paid', 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'],
+  partial: ['Part paid', 'bg-amber-500/12 text-amber-800 dark:text-amber-400'],
+  unpaid: ['Unpaid', 'bg-rose-500/10 text-rose-700 dark:text-rose-400'],
+  returned: ['Returned', 'bg-muted text-muted-foreground'],
+  cancelled: ['Cancelled', 'bg-muted text-muted-foreground'],
 };
+const badgeFor = (r) => (!r.customer && (r.state === 'paid')) ? ['Completed', 'bg-muted text-foreground/70'] : BADGE[r.state];
 
-function PayBadge({ label }) {
-  const cls = label === 'Paid'
-    ? 'bg-emerald-500 text-white'
-    : label === 'Partial'
-      ? 'bg-amber-500 text-white'
-      : 'bg-rose-500 text-white';
-  return <span className={cn('inline-block text-[10px] font-bold px-3 py-0.5 rounded-full', cls)}>{label}</span>;
+const STATUS_FILTERS = [['all', 'All'], ['paid', 'Paid'], ['partial', 'Part paid'], ['unpaid', 'Unpaid'], ['returned', 'Returned'], ['cancelled', 'Cancelled']];
+
+function IconBtn({ label, onClick, disabled, children, tone }) {
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick(); }} disabled={disabled} title={label} aria-label={label}
+      className={cn('h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35 disabled:pointer-events-none', tone)}>
+      {children}
+    </button>
+  );
+}
+
+function RowMenu({ r, canEdit, onEdit, onCancel, onWhatsApp, navigate }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={
+        <button type="button" className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`More actions for ${r.no}`}>
+          <MoreHorizontal size={16} />
+        </button>
+      } />
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem disabled={!canEdit} onClick={onEdit} className="h-8 px-2">
+          {r.returned > 0 ? <Lock /> : <PencilLine />} Edit sale items
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate('/invoices')} className="h-8 px-2"><FileText /> Open in Invoices</DropdownMenuItem>
+        {r.customer && <DropdownMenuItem onClick={() => navigate(`/customers/${r.customer.id}`)} className="h-8 px-2"><UserRound /> Customer account</DropdownMenuItem>}
+        {r.phone && <DropdownMenuItem onClick={onWhatsApp} className="h-8 px-2"><MessageCircle /> Send on WhatsApp</DropdownMenuItem>}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" disabled={r.state === 'cancelled'} onClick={onCancel} className="h-8 px-2"><Ban /> Cancel sale</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function Detail({ r }) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-background">
+      <ul className="divide-y divide-border/50 text-sm">
+        {r.lines.length === 0 && <li className="px-4 py-3 text-xs text-muted-foreground">Item lines for this sale haven’t synced to the web yet.</li>}
+        {r.lines.map((it) => (
+          <li key={it.id} className="flex items-center gap-3 px-4 py-2">
+            <span className="min-w-0 flex-1 text-foreground">
+              {it.product_name}
+              {it.returnedQty > 0 && <span className="ml-2 rounded bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground tabular-nums">{qtyFmt(it.returnedQty)} returned</span>}
+              <span className="block sm:hidden text-xs text-muted-foreground tabular-nums">{it.view.qty} × {it.view.rate}</span>
+            </span>
+            <span className="hidden sm:inline text-xs text-muted-foreground tabular-nums whitespace-nowrap">{it.view.qty} × {it.view.rate}</span>
+            <span className="shrink-0 sm:w-24 text-right font-medium tabular-nums text-foreground">{rs(it.view.amount)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-border/70 px-4 py-2.5 text-xs text-muted-foreground tabular-nums">
+        <span>{r.party}{r.phone ? ` · ${r.phone}` : ''}</span>
+        <span className="flex flex-wrap gap-x-4">
+          <span>Paid <b className="font-semibold text-foreground">{rs(r.paid)}</b></span>
+          {r.returned > 0 && <span>Returned <b className="font-semibold text-foreground">{rs(r.returned)}</b></span>}
+          {r.writeOff > 0 && <span>Written off <b className="font-semibold text-foreground">{rs(r.writeOff)}</b></span>}
+          {r.remaining > 0.5 && <span className="text-amber-700 dark:text-amber-400">Due <b className="font-semibold">{rs(r.remaining)}</b></span>}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export default function TransactionsPage() {
-  const { list, pushBatch, nextId } = useDataStore();
+  const navigate = useNavigate();
+  const { list } = useDataStore();
   const { showToast } = useToast();
   const { user } = useAuth();
+  const rows = useSaleRows();
+  const { cancelSale, saveEdit } = useSaleActions();
 
-  const [search, setSearch] = useState('');
-  const [period, setPeriod] = useState('today'); // today | weekly | monthly | custom
+  const [period, setPeriod] = useState('today');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [statusMenuId, setStatusMenuId] = useState(null);
-  const [actionMenuId, setActionMenuId] = useState(null);
-  const [detailSale, setDetailSale] = useState(null);
-  const [editSale, setEditSale] = useState(null);
-  const [returnSale, setReturnSale] = useState(null);
-  const [returnQty, setReturnQty] = useState({});
-  const [returnReason, setReturnReason] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
+  const [shown, setShown] = useState(50);
+  const [openKey, setOpenKey] = useState(null);
+  const [returning, setReturning] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [cancelling, setCancelling] = useState(null);
 
-  const sales = list('sale');
-  const saleItems = list('sale_item');
-  const customers = list('customer');
-  const payments = list('customer_payment');
-  const saleReturns = list('sale_return');
-  const products = list('product');
+  const store = useMemo(() => {
+    const local = getReceiptSettings(); const synced = list('settings')?.[0] || {};
+    return {
+      store_name: local.store_name || synced.store_name || user?.store_name || 'My Store',
+      store_address: local.store_address || synced.store_address || '',
+      store_phone: local.store_phone || synced.store_phone || '',
+    };
+  }, [list, user]);
 
-  const customerById = useMemo(() => {
-    const m = new Map();
-    for (const c of customers) m.set(String(c.id), c);
-    return m;
-  }, [customers]);
-
-  const rows = useMemo(() => {
-    const itemsBySale = new Map();
-    for (const it of saleItems) {
-      const k = String(it.sale_id);
-      if (!itemsBySale.has(k)) itemsBySale.set(k, []);
-      itemsBySale.get(k).push(it);
-    }
-    const paidBySale = new Map();
-    for (const p of payments) {
-      if (p.sale_id == null) continue;
-      const k = String(p.sale_id);
-      paidBySale.set(k, (paidBySale.get(k) || 0) + Number(p.amount || 0));
-    }
-    const returnedBySale = new Map();
-    for (const r of saleReturns) {
-      const k = String(r.sale_id);
-      returnedBySale.set(k, (returnedBySale.get(k) || 0) + Number(r.total_returned || 0));
-    }
-    return sales.map((s) => {
-      const k = String(s.id);
-      const items = itemsBySale.get(k) || [];
-      const customer = s.customer_id != null ? customerById.get(String(s.customer_id)) : null;
-      const returned = returnedBySale.get(k) || 0;
-      let paid = paidBySale.get(k) || 0;
-      // Walk-in sales never create customer_payment rows — a completed non-credit
-      // walk-in sale is fully paid by definition (same as the desktop).
-      if (!customer && !isCancelled(s)) paid = Number(s.total || 0);
-      // Desktop rules: walk-in = nothing owed; status 'paid' means settled (a unified smart-pay
-      // payment has no sale_id, so it can't be matched here); write-offs reduce what's owed.
-      // 'completed' is the DEFAULT status, not "paid".
-      const st = saleStatus(s);
-      const due = (isCancelled(s) || st === 'returned' || st === 'paid' || !customer)
-        ? 0
-        : Math.max(0, Number(s.total || 0) - paid - returned - Number(s.write_off_amount || 0));
-      const payLabel = isCancelled(s) ? null : due <= 0.5 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
-      return {
-        ...s, items, customer, paid, returned, due, payLabel,
-        invoiceNo: formatInvoiceId(s.id, s.date_created),
-        itemsSummary: items.map((i) => `${i.product_name} (x${i.quantity})`).join(','),
-      };
-    }).sort((a, b) => new Date(String(b.date_created || 0).replace(' ', 'T')) - new Date(String(a.date_created || 0).replace(' ', 'T')));
-  }, [sales, saleItems, payments, saleReturns, customerById]);
+  const inPeriod = useMemo(() => {
+    const [start, end] = range(period, from, to);
+    return rows.filter((r) => { const d = parseDate(r.date); if (!d) return !start && !end; return (!start || d >= start) && (!end || d <= end); });
+  }, [rows, period, from, to]);
 
   const filtered = useMemo(() => {
-    const now = new Date();
-    let start = null, end = null;
-    if (period === 'today') { start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); }
-    else if (period === 'weekly') { start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6); }
-    else if (period === 'monthly') { start = new Date(now.getFullYear(), now.getMonth(), 1); }
-    else if (period === 'custom') {
-      if (from) start = new Date(from);
-      if (to) end = new Date(new Date(to).getTime() + 86400000);
-    }
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (start || end) {
-        const d = new Date(String(r.date_created || 0).replace(' ', 'T'));
-        if (start && d < start) return false;
-        if (end && d > end) return false;
-      }
-      if (!q) return true;
-      return (
-        r.invoiceNo.toLowerCase().includes(q) ||
-        String(r.id).includes(q) ||
-        (r.payment_method || '').toLowerCase().includes(q) ||
-        (r.customer?.name || '').toLowerCase().includes(q) ||
-        r.itemsSummary.toLowerCase().includes(q)
-      );
-    });
-  }, [rows, search, period, from, to]);
+    return inPeriod.filter((r) => (status === 'all' || r.state === status) && (!q || r.search.includes(q)));
+  }, [inPeriod, status, search]);
+  useEffect(() => setShown(50), [period, from, to, search, status]);
 
-  const { paged, page, pageCount, setPage } = usePagination(filtered, 30);
+  // Same figures as the desktop's Transactions header, for the chosen period
+  const kpi = useMemo(() => {
+    const live = inPeriod.filter((r) => r.state !== 'cancelled' && r.state !== 'returned');
+    const cheques = inPeriod.filter((r) => r.state !== 'cancelled' && isCheque(r.method));
+    return {
+      completed: live.length,
+      revenue: live.reduce((s, r) => s + Math.max(0, r.total - r.returned), 0),
+      discounts: inPeriod.filter((r) => r.state !== 'cancelled').reduce((s, r) => s + r.discount, 0),
+      pending: inPeriod.reduce((s, r) => s + r.remaining, 0),
+      pendingCount: inPeriod.filter((r) => r.remaining > 0.5).length,
+      chequeCount: cheques.length, chequeTotal: cheques.reduce((s, r) => s + r.total, 0),
+    };
+  }, [inPeriod]);
 
-  const stats = useMemo(() => ({
-    completed: filtered.filter((r) => isActiveSale(r)).length,
-    revenue: filtered.filter((r) => !isCancelled(r)).reduce((s, r) => s + Number(r.total || 0), 0),
-    discounts: filtered.filter((r) => !isCancelled(r)).reduce((s, r) => s + Number(r.discount || 0), 0),
-    pending: filtered.filter((r) => !isCancelled(r) && r.due > 0.5).length,
-  }), [filtered]);
-
-  const invoiceDataFor = (r) => {
+  const invoiceData = (r) => {
     const settings = getReceiptSettings();
     return {
-      saleId: r.id,
-      items: r.items.map((i) => ({ name: i.product_name, qty: Number(i.quantity), price: Number(i.price) })),
-      subtotal: Number(r.subtotal ?? r.total),
-      discount: Number(r.discount || 0),
-      total: Number(r.total),
-      paymentMethod: r.payment_method || 'cash',
-      settings: { ...settings, store_name: settings.store_name || user?.store_name || 'My Store' },
-      date: new Date(String(r.date_created || Date.now()).replace(' ', 'T')).toLocaleString('en-PK', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      customerName: r.customer?.name,
-      customerPhone: r.customer?.phone,
-      amountPaid: r.paid,
-      balance: r.due > 0.5 ? r.due : 0,
+      saleId: r.id, items: r.lines.map((i) => ({ name: i.product_name, qty: Number(i.quantity), price: Number(i.price), lineTotal: i.view.amount })),
+      subtotal: r.subtotal, discount: r.discount, total: r.total, paymentMethod: r.method || 'cash',
+      settings: { ...settings, ...store }, date: `${fmtDay(r.date)} ${fmtTime(r.date)}`,
+      customerName: r.customer?.name, customerPhone: r.customer?.phone, amountPaid: r.paid, balance: r.remaining,
     };
   };
-
-  // ── Cancel / restore a sale ──────────────────────────────────────────────────
-  const setSaleStatus = async (r, newStatus) => {
-    if (r.status === newStatus) { setStatusMenuId(null); return; }
-    // Desktop cancel-sale is final (it deletes the sale's payments) — un-cancelling here would
-    // re-deduct stock and re-bill without those payments.
-    if (isCancelled(r)) { showToast("A cancelled sale cannot be restored — create a new sale instead", 'error'); setStatusMenuId(null); return; }
-    if (newStatus !== 'Cancelled') { setStatusMenuId(null); return; }
-    setBusy(true);
-    try {
-      const now = new Date().toISOString();
-      const events = buildCancelSaleEvents({
-        sale: r, items: r.items || [], customer: r.customer, products,
-        payments, returns: saleReturns, returnItems: list('sale_return_item'), now,
-      });
-      if (!events) { setStatusMenuId(null); return; }
-      await pushBatch(events);
-      showToast(newStatus === 'Cancelled' ? 'Sale cancelled — stock restored' : 'Sale restored to Completed');
-    } catch (err) {
-      showToast(err?.message || 'Failed to update status', 'error');
-    } finally {
-      setBusy(false);
-      setStatusMenuId(null);
-    }
+  const pdf = async (r) => { try { await downloadInvoicePdf(invoiceData(r)); } catch { showToast('Could not create the PDF', 'error'); } };
+  const doCancel = async () => {
+    const r = cancelling; setCancelling(null);
+    if (r) { try { await cancelSale(r); } catch (e) { showToast(e?.message || 'Could not cancel', 'error'); } }
   };
-
-  // ── Item return ──────────────────────────────────────────────────────────────
-  const openReturn = (r) => {
-    setReturnSale(r);
-    setReturnQty({});
-    setReturnReason('');
-    setActionMenuId(null);
-  };
-
-  const submitReturn = async () => {
-    const r = returnSale;
-    const picked = r.items.filter((i) => Number(returnQty[i.id] || 0) > 0);
-    if (picked.length === 0) { showToast('Select at least one item quantity', 'error'); return; }
-    setBusy(true);
-    try {
-      const now = new Date().toISOString();
-      // Quantity already returned per line (older rows have no sale_item_id — fall back to product)
-      const priorReturnIds = new Set(saleReturns.filter((x) => String(x.sale_id) === String(r.id)).map((x) => String(x.id)));
-      const priorItems = list('sale_return_item').filter((ri) => priorReturnIds.has(String(ri.return_id)));
-      const alreadyReturned = (it) => priorItems
-        .filter((ri) => (ri.sale_item_id != null ? String(ri.sale_item_id) === String(it.id) : String(ri.product_id) === String(it.product_id)))
-        .reduce((a, ri) => a + Number(ri.quantity || 0), 0);
-      for (const it of picked) {
-        const left = Number(it.quantity || 0) - alreadyReturned(it);
-        if (Number(returnQty[it.id]) > left + 1e-9) {
-          showToast(`${it.product_name}: only ${Math.max(0, left)} left to return`, 'error');
-          return;
-        }
-      }
-      // Line prices ignore the invoice discount — never credit more than what's left of the bill.
-      const lineTotal = picked.reduce((s, i) => s + Number(returnQty[i.id]) * Number(i.price || 0), 0);
-      const totalRefund = Math.max(0, Math.min(lineTotal, Number(r.total || 0) - Number(r.returned || 0)));
-      // Part that comes off the customer's debt; the rest is handed back in cash (desktop rule).
-      const reduce = r.customer ? Math.min(Math.max(0, r.due), totalRefund) : 0;
-      const returnId = nextId();
-      const cashRefunded = Math.round((totalRefund - reduce) * 100) / 100;
-      const refund = buildSaleRefundTxn({ saleId: r.id, amount: cashRefunded, accounts: list('account'), accountTxns: list('account_txn'), now });
-      const events = [{
-        entityType: 'sale_return', operation: 'create',
-        payload: { id: returnId, sale_id: r.id, customer_id: r.customer_id ?? null, date_created: now, reason: returnReason || '',
-          total_returned: totalRefund, cash_refunded: cashRefunded, refund_account_id: refund?.accountId ?? null },
-      }];
-      if (refund) events.push(refund.event);
-      for (const it of picked) {
-        const qty = Number(returnQty[it.id]);
-        events.push({
-          entityType: 'sale_return_item', operation: 'create',
-          payload: { return_id: returnId, sale_item_id: it.id, product_id: it.product_id, product_name: it.product_name, quantity: qty, price: it.price, date_created: now },
-        });
-        const product = products.find((p) => String(p.id) === String(it.product_id));
-        if (product) {
-          events.push({ entityType: 'product', operation: 'update', payload: { ...product, stock: Number(product.stock || 0) + qty, updated_at: now } });
-        }
-      }
-      if (r.customer && reduce > 0.009) {
-        events.push({
-          entityType: 'customer', operation: 'update',
-          payload: { ...r.customer, outstanding_balance: Math.max(0, Number(r.customer.outstanding_balance || 0) - reduce), updated_at: now },
-        });
-      }
-      await pushBatch(events);
-      showToast(`Return recorded — ${fmtPKR(totalRefund)} · stock restored`);
-      setReturnSale(null);
-    } catch (err) {
-      showToast(err?.message || 'Failed to record return', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDownloadPdf = async (r) => {
-    showToast('Generating PDF…');
-    try { await downloadInvoicePdf(invoiceDataFor(r)); }
-    catch (err) { showToast(err?.message || 'PDF failed', 'error'); }
-  };
-
-  // ── Edit sale — same event flow as Sales History's editor ───────────────────
-  const cleanSalePayload = (r) => {
-    const clean = { ...r };
-    ['items', 'customer', 'paid', 'returned', 'due', 'payLabel', 'invoiceNo', 'itemsSummary'].forEach((f) => delete clean[f]);
-    return clean;
-  };
-
-  const handleSaveEdit = async ({ lines, subtotal, discount, total }) => {
-    const r = editSale;
-    const now = new Date().toISOString();
-    const originalItems = r.items || [];
-    const originalById = new Map(originalItems.map((i) => [i.id, i]));
-    const keptIds = new Set(lines.filter((l) => l.saleItemId != null).map((l) => l.saleItemId));
-
-    const events = [{
-      entityType: 'sale', operation: 'update',
-      payload: { ...cleanSalePayload(r), subtotal, discount, total, edited_at: now },
-    }];
-
-    // Stock deltas: removed/reduced lines restock, new/increased lines destock.
-    const stockDelta = new Map();
-    for (const orig of originalItems) {
-      if (orig.product_id == null) continue;
-      if (!keptIds.has(orig.id)) {
-        stockDelta.set(orig.product_id, (stockDelta.get(orig.product_id) || 0) + Number(orig.quantity || 0));
-        events.push({ entityType: 'sale_item', operation: 'delete', payload: { id: orig.id } });
-      }
-    }
-    for (const line of lines) {
-      if (line.product_id == null) continue;
-      const original = line.saleItemId != null ? originalById.get(line.saleItemId) : null;
-      const oldQty = original ? Number(original.quantity || 0) : 0;
-      const delta = oldQty - line.qty;
-      if (delta !== 0) stockDelta.set(line.product_id, (stockDelta.get(line.product_id) || 0) + delta);
-      events.push({
-        entityType: 'sale_item',
-        operation: line.saleItemId != null ? 'update' : 'create',
-        payload: {
-          id: line.saleItemId ?? undefined,
-          sale_id: r.id,
-          product_id: line.product_id,
-          product_name: line.name,
-          quantity: line.qty,
-          price: line.price,
-          purchase_price: line.purchase_price,
-          is_custom: line.isCustom,
-          created_at: original?.created_at || now,
-        },
-      });
-    }
-    for (const [productId, delta] of stockDelta.entries()) {
-      if (delta === 0) continue;
-      const product = products.find((p) => String(p.id) === String(productId));
-      if (!product) continue;
-      events.push({
-        entityType: 'product', operation: 'update',
-        payload: { ...product, stock: Math.max(0, Number(product.stock || 0) + delta), updated_at: now },
-      });
-    }
-    await pushBatch(events);
-    showToast('Sale updated — items and stock have been adjusted');
-  };
+  const live = (r) => r.state !== 'cancelled';
+  const canReturn = (r) => live(r) && r.state !== 'returned' && r.lines.length > 0;
+  const canEdit = (r) => live(r) && r.state !== 'returned' && r.returned <= 0 && r.lines.length > 0;
 
   return (
-    <div className="flex flex-col gap-6" onClick={() => { setStatusMenuId(null); setActionMenuId(null); }}>
-
+    <div className="flex flex-col gap-5">
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-        className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><ReceiptText size={20} /></div>
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
-          <p className="text-sm text-muted-foreground">{filtered.length} of {rows.length} transactions loaded</p>
+          <h1 className="font-display text-[26px] leading-tight font-extrabold tracking-tight text-foreground">Transactions</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">Every sale with its payment, returns and actions</p>
         </div>
-      </motion.div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-border bg-card p-1" role="tablist" aria-label="Period">
+            {PERIODS.map(([k, l]) => (
+              <button key={k} type="button" role="tab" aria-selected={period === k} onClick={() => setPeriod(k)}
+                className={cn('h-8 px-3 rounded-lg text-sm font-medium transition-colors', period === k ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')}>{l}</button>
+            ))}
+          </div>
+          {period === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From" className="h-10 rounded-xl border border-border bg-card px-2.5 text-sm" />
+              <span className="text-muted-foreground text-sm">to</span>
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To" className="h-10 rounded-xl border border-border bg-card px-2.5 text-sm" />
+            </div>
+          )}
+        </div>
+      </header>
 
-      {/* Stats */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={1} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Figures */}
+      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/70 bg-border/70 sm:grid-cols-3 xl:grid-cols-6">
         {[
-          { label: 'Completed Sales', value: stats.completed, icon: ReceiptText, color: 'text-primary bg-primary/10', valueCls: '' },
-          { label: 'Revenue (Loaded)', value: fmtPKR(stats.revenue), icon: TrendingUp, color: 'text-emerald-600 bg-emerald-500/10', valueCls: 'text-emerald-600' },
-          { label: 'Total Discounts', value: fmtPKR(stats.discounts), icon: Tag, color: 'text-amber-600 bg-amber-500/10', valueCls: 'text-amber-600' },
-          { label: 'Pending Payments', value: stats.pending, icon: AlertCircle, color: 'text-rose-600 bg-rose-500/10', valueCls: 'text-rose-600' },
-        ].map(({ label, value, icon: Icon, color, valueCls }) => (
-          <div key={label} className="rounded-2xl border border-border/50 bg-card shadow-sm p-5">
-            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center mb-3', color)}><Icon size={18} /></div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
-            <p className={cn('text-xl font-black font-mono mt-1', valueCls)}>{value}</p>
+          ['Completed sales', kpi.completed.toLocaleString('en-PK'), 'Not returned or cancelled'],
+          ['Net revenue', rs(kpi.revenue), 'After returns'],
+          ['Discounts', rs(kpi.discounts), 'Given on these sales'],
+          ['Pending loans', rs(kpi.pending), `${kpi.pendingCount} sale${kpi.pendingCount === 1 ? '' : 's'} not fully paid`, kpi.pending > 0.5 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'],
+          ['Cheques received', kpi.chequeCount.toLocaleString('en-PK'), 'Sales paid by cheque'],
+          ['Cheque amount', rs(kpi.chequeTotal), 'Total of those sales'],
+        ].map(([l, v, sub, tone]) => (
+          <div key={l} className="bg-card px-4 py-3.5 min-w-0">
+            <dt className="text-xs text-muted-foreground">{l}</dt>
+            <dd className={cn('mt-1 text-lg font-bold tabular-nums tracking-tight text-foreground truncate', tone)}>{v}</dd>
+            <dd className="text-[11px] text-muted-foreground truncate">{sub}</dd>
           </div>
         ))}
-      </motion.div>
-
-      {/* Search + period */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2} className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[240px] max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by ID, payment method, or item name…"
-            className="w-full h-10 pl-9 pr-8 text-sm rounded-xl border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X size={13} /></button>}
-        </div>
-        <div className="flex rounded-xl bg-muted/40 border border-border/30 p-0.5 gap-0.5">
-          {[['today', 'Today'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom']].map(([val, lbl]) => (
-            <button key={val} onClick={() => setPeriod(val)}
-              className={cn('px-4 h-9 rounded-lg text-sm font-semibold transition-all', period === val ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-              {lbl}
-            </button>
-          ))}
-        </div>
-        {period === 'custom' && (
-          <div className="flex items-center gap-2">
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 px-2.5 rounded-lg border border-border bg-background text-xs" />
-            <span className="text-muted-foreground text-xs">—</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 px-2.5 rounded-lg border border-border bg-background text-xs" />
-          </div>
-        )}
-      </motion.div>
+      </dl>
 
       {/* Table */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={3}>
-        <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-visible">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-muted/20 border-b border-border/40">
-                {['Invoice No', 'Date & Time', 'Items', 'Method', 'Status', 'Subtotal', 'Disc.', 'Total', 'Actions'].map((h, i) => (
-                  <th key={h} className={cn('text-xs font-semibold text-muted-foreground uppercase tracking-wide py-3',
-                    i === 0 ? 'text-left pl-5' : i >= 5 ? 'text-right' : 'text-left', i === 8 && 'text-right pr-5')}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {paged.length === 0 ? (
-                  <tr><td colSpan={9} className="h-40 text-center">
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground"><ReceiptText size={28} className="opacity-20" /><p className="text-sm">No transactions found</p></div>
-                  </td></tr>
-                ) : paged.map((r) => (
-                  <tr key={r.id} className="border-b border-border/20 last:border-0 hover:bg-muted/15 transition-colors">
-                    {/* Invoice */}
-                    <td className="py-4 pl-5">
-                      <span className="font-mono text-xs font-bold bg-muted/60 px-2 py-1 rounded-md">{r.invoiceNo}</span>
-                      <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
-                        <User size={10} /> {r.customer ? <span className="text-primary font-semibold">{r.customer.name}</span> : 'Walk-in'}
-                      </p>
-                    </td>
-                    {/* Date */}
-                    <td className="py-4">
-                      <p className="text-xs font-semibold">{fmtDate(r.date_created)}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{fmtTime(r.date_created)}</p>
-                    </td>
-                    {/* Items */}
-                    <td className="py-4 max-w-[220px]">
-                      <p className="text-xs text-muted-foreground truncate">{r.itemsSummary || '—'}</p>
-                    </td>
-                    {/* Method */}
-                    <td className="py-4">
-                      <span className={cn('inline-block text-[10px] font-bold px-3 py-1.5 rounded-full uppercase', METHOD_STYLE[(r.payment_method || 'cash').toLowerCase()] || 'bg-slate-600 text-white')}>
-                        {r.payment_method || 'cash'}
-                      </span>
-                    </td>
-                    {/* Status dropdown + payment badge */}
-                    <td className="py-4" onClick={(e) => e.stopPropagation()}>
-                      <div className="relative inline-block">
-                        <button
-                          onClick={() => setStatusMenuId(statusMenuId === r.id ? null : r.id)}
-                          disabled={busy}
-                          className={cn('flex items-center gap-1.5 text-[11px] font-bold px-3.5 py-1.5 rounded-full text-white transition-transform hover:scale-[1.03]',
-                            isCancelled(r) ? 'bg-rose-600' : 'bg-emerald-600')}
-                        >
-                          {isCancelled(r) ? 'Cancelled' : 'Completed'} <ChevronDown size={11} />
-                        </button>
-                        {statusMenuId === r.id && (
-                          <div className="absolute top-full left-0 mt-1 w-40 bg-popover border border-border rounded-xl shadow-xl overflow-hidden z-50">
-                            <button onClick={() => setSaleStatus(r, 'Completed')} className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium">
-                              <CheckCircle2 size={12} className="text-emerald-600" /> Completed
-                            </button>
-                            <button onClick={() => setSaleStatus(r, 'Cancelled')} className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40">
-                              <Ban size={12} className="text-rose-600" /> Cancelled
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      {r.payLabel && <div className="mt-1.5"><PayBadge label={r.payLabel} /></div>}
-                    </td>
-                    {/* Subtotal */}
-                    <td className="py-4 text-right font-mono text-xs">{fmtPKR(r.subtotal ?? r.total)}</td>
-                    {/* Discount */}
-                    <td className="py-4 text-right font-mono text-xs">
-                      {Number(r.discount) > 0 ? <span className="text-rose-600">−{fmtPKR(r.discount)}</span> : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    {/* Total */}
-                    <td className="py-4 text-right">
-                      <p className="font-mono font-black text-sm text-primary">{fmtPKR(r.total)}</p>
-                      {r.due > 0.5 && !isCancelled(r) && <p className="text-[10px] font-bold text-rose-600 mt-0.5">Owed: {fmtPKR(r.due)}</p>}
-                    </td>
-                    {/* Actions */}
-                    <td className="py-4 pr-5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1">
-                        <button title="Direct Print" onClick={() => printInvoice(invoiceDataFor(r))}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-blue-600 hover:bg-blue-500/10 transition-colors"><Printer size={14} /></button>
-                        <button title="Open in Browser" onClick={() => openInvoiceInTab(invoiceDataFor(r))}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-violet-600 hover:bg-violet-500/10 transition-colors"><Monitor size={14} /></button>
-                        <button title="Download PDF" onClick={() => handleDownloadPdf(r)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-600 hover:bg-emerald-500/10 transition-colors"><Download size={14} /></button>
-                        <button title="Return Items" onClick={() => openReturn(r)} disabled={isCancelled(r)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-amber-600 hover:bg-amber-500/10 transition-colors disabled:opacity-30"><Undo2 size={14} /></button>
-                        <div className="relative">
-                          <button onClick={() => setActionMenuId(actionMenuId === r.id ? null : r.id)}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"><MoreVertical size={14} /></button>
-                          {actionMenuId === r.id && (
-                            <div className="absolute top-full right-0 mt-1 w-48 bg-popover border border-border rounded-xl shadow-xl overflow-hidden z-50">
-                              <button onClick={() => { setDetailSale(r); setActionMenuId(null); }}
-                                className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium">
-                                <Eye size={12} className="text-violet-500" /> View Details
-                              </button>
-                              <button onClick={() => { setEditSale(r); setActionMenuId(null); }} disabled={isCancelled(r)}
-                                className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40 disabled:opacity-40">
-                                <Pencil size={12} className="text-blue-500" /> Edit Sale
-                              </button>
-                              {r.customer?.phone && (
-                                <button onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(r)); if (url) window.open(url, '_blank'); setActionMenuId(null); }}
-                                  className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40">
-                                  <MessageCircle size={12} className="text-emerald-500" /> WhatsApp to Customer
-                                </button>
-                              )}
-                              <button onClick={() => { openReturn(r); }} disabled={isCancelled(r)}
-                                className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40 disabled:opacity-40">
-                                <Undo2 size={12} className="text-amber-500" /> Return Items
-                              </button>
-                              <button onClick={() => { setActionMenuId(null); setSaleStatus(r, isCancelled(r) ? 'Completed' : 'Cancelled'); }}
-                                className="w-full px-3 py-2.5 text-xs text-left hover:bg-muted flex items-center gap-2 font-medium border-t border-border/40">
-                                {isCancelled(r)
-                                  ? <><CheckCircle2 size={12} className="text-emerald-600" /> Restore Sale</>
-                                  : <><Ban size={12} className="text-rose-600" /> Cancel Sale</>}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <section className="rounded-2xl border border-border/70 bg-card overflow-hidden">
+        <div className="flex flex-col gap-2.5 border-b border-border/70 p-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1 min-w-0 sm:max-w-md">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search invoice no, customer, method or item" aria-label="Search transactions"
+              className="w-full h-10 rounded-xl border border-border bg-background pl-9 pr-8 text-sm outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary" />
+            {search && <button type="button" onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded inline-flex items-center justify-center text-muted-foreground hover:bg-muted" aria-label="Clear search"><X size={14} /></button>}
           </div>
-          {pageCount > 1 && (
-            <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 bg-muted/20">
-              <span className="text-xs text-muted-foreground">{filtered.length} records · page {page} of {pageCount}</span>
-              <div className="flex gap-1">
-                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-                  className="h-7 w-7 rounded-lg border border-border flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
-                <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page === pageCount}
-                  className="h-7 w-7 rounded-lg border border-border flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
-              </div>
-            </div>
-          )}
-          {pageCount <= 1 && filtered.length > 0 && (
-            <p className="text-center text-xs text-muted-foreground py-3 border-t border-border/30">All {filtered.length} transactions loaded.</p>
-          )}
+          <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] sm:ml-auto">
+            {STATUS_FILTERS.map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setStatus(k)}
+                className={cn('h-7 shrink-0 rounded-full px-2.5 text-xs font-medium border transition-colors',
+                  status === k ? 'bg-foreground text-background border-foreground' : 'border-border text-muted-foreground hover:text-foreground')}>{l}</button>
+            ))}
+          </div>
         </div>
-      </motion.div>
 
-      {/* ── Detail modal (eye) — mirrors the Electron sale detail ── */}
-      {detailSale && createPortal(
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setDetailSale(null)}>
-          <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.2 }}
-            className="w-full max-w-lg bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden flex flex-col" style={{ maxHeight: '90vh' }}
-            onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b shrink-0">
-              <div>
-                <h2 className="text-lg font-bold flex items-center gap-2"><ReceiptText size={17} className="text-primary" /> Sale #{detailSale.id}</h2>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                  <span>{fmtDate(detailSale.date_created)}, {fmtTime(detailSale.date_created)}</span>
-                  <span className="bg-muted px-2 py-0.5 rounded-full font-semibold">{detailSale.payment_method || 'cash'}</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Grand Total</p>
-                <p className="text-xl font-black text-rose-600 font-mono">{fmtPKR(detailSale.total)}</p>
-                {detailSale.due > 0.5 && <p className="text-[11px] font-bold text-rose-500">Due: {fmtPKR(detailSale.due)}</p>}
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {/* Payment logs */}
-              <div className="px-6 py-4 bg-emerald-500/5 border-b border-border/40">
-                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5 mb-2"><RefreshCw size={11} /> Payment Logs</p>
-                {payments.filter((p) => String(p.sale_id) === String(detailSale.id)).length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">No payments collected for this bill yet.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {payments.filter((p) => String(p.sale_id) === String(detailSale.id)).map((p) => (
-                      <div key={p.id} className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">{fmtDate(p.date_added)}{p.notes ? ` · ${p.notes}` : ''}</span>
-                        <span className="font-bold text-emerald-600 font-mono">{fmtPKR(p.amount)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* Items table */}
+        {filtered.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <Receipt size={20} className="mx-auto mb-2 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">{inPeriod.length ? 'No sale matches' : `No sales ${period === 'today' ? 'today yet' : 'in this period'}`}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{inPeriod.length ? 'Try another search or status.' : 'Pick another period to see older sales.'}</p>
+          </div>
+        ) : (
+          <>
+            {/* Wide screens: the desktop's columns */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-border/40 bg-muted/10">
-                  <th className="text-left text-[10px] font-bold text-muted-foreground uppercase py-2.5 pl-6 w-10">#</th>
-                  <th className="text-left text-[10px] font-bold text-muted-foreground uppercase py-2.5">Item</th>
-                  <th className="text-center text-[10px] font-bold text-muted-foreground uppercase py-2.5 w-14">Qty</th>
-                  <th className="text-right text-[10px] font-bold text-muted-foreground uppercase py-2.5 w-24">Unit Price</th>
-                  <th className="text-right text-[10px] font-bold text-muted-foreground uppercase py-2.5 pr-6 w-28">Subtotal</th>
-                </tr></thead>
+                <thead>
+                  <tr className="border-b border-border/70 text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                    <th className="w-8" />
+                    <th className="py-2.5 pr-3 font-medium">Invoice no</th>
+                    <th className="py-2.5 pr-3 font-medium">Date &amp; time</th>
+                    <th className="py-2.5 pr-3 font-medium">Customer &amp; items</th>
+                    <th className="py-2.5 pr-3 font-medium">Method</th>
+                    <th className="py-2.5 pr-3 font-medium">Status</th>
+                    <th className="py-2.5 px-3 font-medium text-right hidden xl:table-cell">Subtotal</th>
+                    <th className="py-2.5 px-3 font-medium text-right hidden xl:table-cell">Disc.</th>
+                    <th className="py-2.5 px-3 font-medium text-right">Total</th>
+                    <th className="py-2.5 pr-3 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {detailSale.items.map((it, idx) => (
-                    <tr key={it.id ?? idx} className={cn('border-b border-border/20', idx % 2 === 1 && 'bg-muted/10')}>
-                      <td className="py-2.5 pl-6 text-xs text-muted-foreground">{idx + 1}</td>
-                      <td className="py-2.5 text-xs font-semibold">{it.product_name}</td>
-                      <td className="py-2.5 text-center text-xs font-mono">{it.quantity}</td>
-                      <td className="py-2.5 text-right text-xs font-mono text-muted-foreground">{fmtPKR(it.price)}</td>
-                      <td className="py-2.5 pr-6 text-right text-xs font-mono font-bold text-primary">{fmtPKR(Number(it.price) * Number(it.quantity))}</td>
-                    </tr>
-                  ))}
+                  {filtered.slice(0, shown).map((r) => {
+                    const open = openKey === r.key; const [bl, bc] = badgeFor(r);
+                    return (
+                      <Fragment key={r.key}>
+                        <tr onClick={() => setOpenKey(open ? null : r.key)} className={cn('border-b border-border/50 cursor-pointer transition-colors', open ? 'bg-muted/40' : 'hover:bg-muted/30', r.state === 'cancelled' && 'opacity-60')}>
+                          <td className="pl-3"><ChevronRight size={15} className={cn('text-muted-foreground transition-transform', open && 'rotate-90')} /></td>
+                          <td className="py-3 pr-3 whitespace-nowrap">
+                            <span className="font-medium text-foreground tabular-nums">{r.no}</span>
+                            {r.edited && <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-sky-500/10 px-1 py-px text-[10px] font-semibold text-sky-700 dark:text-sky-300" title={`Edited ${fmtDay(r.raw.edited_at)}`}><History size={9} /> Edited</span>}
+                          </td>
+                          <td className="py-3 pr-3 whitespace-nowrap tabular-nums"><span className="text-foreground">{fmtDay(r.date)}</span><span className="block text-xs text-muted-foreground">{fmtTime(r.date)}</span></td>
+                          <td className="py-3 pr-3 max-w-[320px]">
+                            <span className="block truncate font-medium text-foreground">{r.party}</span>
+                            <span className="block truncate text-xs text-muted-foreground" title={r.itemsSummary}>{r.itemsSummary || '—'}</span>
+                          </td>
+                          <td className="py-3 pr-3">{r.method && <span className={cn('rounded-md px-1.5 py-0.5 text-[11px] font-semibold capitalize', methodTone(r.method))}>{String(r.method).toLowerCase()}</span>}</td>
+                          <td className="py-3 pr-3 whitespace-nowrap">
+                            <span className={cn('rounded-md px-1.5 py-0.5 text-[11px] font-semibold', bc)}>{bl}</span>
+                            {r.state === 'partial' && <span className="block mt-0.5 text-[11px] text-amber-700 dark:text-amber-400 tabular-nums">{rs(r.remaining)} due</span>}
+                          </td>
+                          <td className="py-3 px-3 text-right tabular-nums text-muted-foreground hidden xl:table-cell">{rs(r.subtotal)}</td>
+                          <td className="py-3 px-3 text-right tabular-nums text-muted-foreground hidden xl:table-cell">{r.discount > 0 ? rs(r.discount) : '—'}</td>
+                          <td className={cn('py-3 px-3 text-right font-semibold tabular-nums whitespace-nowrap text-foreground', r.state === 'cancelled' && 'line-through')}>{rs(r.total)}</td>
+                          <td className="py-2 pr-2" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end">
+                              <IconBtn label="Print receipt" onClick={() => printInvoice(invoiceData(r))}><Printer size={15} /></IconBtn>
+                              <IconBtn label="Save PDF" onClick={() => pdf(r)}><FileDown size={15} /></IconBtn>
+                              <IconBtn label="Return items" onClick={() => setReturning(r)} disabled={!canReturn(r)}><Undo2 size={15} /></IconBtn>
+                              <RowMenu r={r} canEdit={canEdit(r)} onEdit={() => setEditing(r)} onCancel={() => setCancelling(r)} onWhatsApp={() => window.open(buildWhatsAppLink(invoiceData(r)), '_blank', 'noopener')} navigate={navigate} />
+                            </div>
+                          </td>
+                        </tr>
+                        {open && <tr className="bg-muted/40 border-b border-border/50"><td /><td colSpan={9} className="pb-3 pr-4"><Detail r={r} /></td></tr>}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            {/* Footer actions */}
-            <div className="px-6 py-4 border-t shrink-0 space-y-3">
-              <div className="flex gap-3">
-                <button onClick={() => setDetailSale(null)} className="flex-1 h-10 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold">Close</button>
-                <button onClick={() => { openReturn(detailSale); setDetailSale(null); }} disabled={isCancelled(detailSale)}
-                  className="flex-1 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40">
-                  <Undo2 size={14} /> Return Items
-                </button>
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Print Options</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => printInvoice(invoiceDataFor(detailSale))}
-                  className="h-9 rounded-xl border border-blue-400/40 text-blue-600 hover:bg-blue-500/10 text-xs font-semibold flex items-center justify-center gap-1.5"><Printer size={12} /> Direct Print</button>
-                <button onClick={() => openInvoiceInTab(invoiceDataFor(detailSale))}
-                  className="h-9 rounded-xl border border-violet-400/40 text-violet-600 hover:bg-violet-500/10 text-xs font-semibold flex items-center justify-center gap-1.5"><Monitor size={12} /> Browser</button>
-                <button onClick={() => handleDownloadPdf(detailSale)}
-                  className="h-9 rounded-xl border border-emerald-400/40 text-emerald-600 hover:bg-emerald-500/10 text-xs font-semibold flex items-center justify-center gap-1.5"><Download size={12} /> Save PDF</button>
-                {detailSale.customer?.phone ? (
-                  <button onClick={() => { const url = buildWhatsAppLink(invoiceDataFor(detailSale)); if (url) window.open(url, '_blank'); }}
-                    className="h-9 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5"><MessageCircle size={12} /> WhatsApp to Customer</button>
-                ) : (
-                  <button disabled className="h-9 rounded-xl border border-border text-muted-foreground/50 text-xs font-semibold flex items-center justify-center gap-1.5"><MessageCircle size={12} /> No customer phone</button>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        </div>,
-        document.body
-      )}
-
-      {/* ── Edit sale modal ── */}
-      <EditSaleModal
-        open={Boolean(editSale)}
-        onClose={() => setEditSale(null)}
-        sale={editSale}
-        items={editSale?.items || []}
-        products={products}
-        onSave={handleSaveEdit}
-      />
-
-      {/* ── Return modal ── */}
-      {returnSale && createPortal(
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => !busy && setReturnSale(null)}>
-          <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.2 }}
-            className="w-full max-w-md bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden flex flex-col" style={{ maxHeight: '88vh' }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
-              <h2 className="font-bold flex items-center gap-2"><Undo2 size={16} className="text-amber-500" /> Return Items — {returnSale.invoiceNo}</h2>
-              <button onClick={() => setReturnSale(null)} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5 space-y-2">
-              {returnSale.items.map((it) => {
-                const q = Number(returnQty[it.id] || 0);
+            {/* Phones: cards */}
+            <ul className="md:hidden divide-y divide-border/60">
+              {filtered.slice(0, shown).map((r) => {
+                const open = openKey === r.key; const [bl, bc] = badgeFor(r);
                 return (
-                  <div key={it.id} className="rounded-xl border border-border/50 px-4 py-3 flex items-center gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold truncate">{it.product_name}</p>
-                      <p className="text-[11px] text-muted-foreground">Sold: {it.quantity} × {fmtPKR(it.price)}</p>
-                    </div>
-                    <input
-                      type="number" min="0" max={it.quantity} value={returnQty[it.id] ?? ''}
-                      placeholder="0"
-                      onChange={(e) => setReturnQty((m) => ({ ...m, [it.id]: Math.min(Number(it.quantity), Math.max(0, Number(e.target.value) || 0)) }))}
-                      className="w-20 h-9 text-center text-sm font-bold rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-                    />
-                    <span className="w-24 text-right text-xs font-mono font-bold">{q > 0 ? fmtPKR(q * Number(it.price || 0)) : '—'}</span>
-                  </div>
+                  <li key={r.key} className={cn('px-4 py-3', r.state === 'cancelled' && 'opacity-60')}>
+                    <button type="button" onClick={() => setOpenKey(open ? null : r.key)} className="flex w-full items-start gap-3 text-left" aria-expanded={open}>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">{r.party}</span>
+                        <span className="block truncate text-xs text-muted-foreground tabular-nums">{r.no} · {fmtTime(r.date)}{period !== 'today' ? ` · ${fmtDay(r.date)}` : ''}</span>
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          <span className={cn('rounded px-1.5 py-px text-[10px] font-semibold', bc)}>{bl}</span>
+                          {r.method && <span className={cn('rounded px-1.5 py-px text-[10px] font-semibold capitalize', methodTone(r.method))}>{String(r.method).toLowerCase()}</span>}
+                          {r.edited && <span className="rounded bg-sky-500/10 px-1.5 py-px text-[10px] font-semibold text-sky-700 dark:text-sky-300">Edited</span>}
+                        </span>
+                      </span>
+                      <span className="text-right shrink-0">
+                        <span className={cn('block text-sm font-semibold tabular-nums text-foreground', r.state === 'cancelled' && 'line-through')}>{rs(r.total)}</span>
+                        {r.remaining > 0.5 && <span className="block text-[11px] text-amber-700 dark:text-amber-400 tabular-nums">{rs(r.remaining)} due</span>}
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="mt-3 grid gap-2">
+                        <Detail r={r} />
+                        <div className="flex items-center gap-1">
+                          <button type="button" onClick={() => printInvoice(invoiceData(r))} className="h-9 flex-1 rounded-lg border border-border text-xs font-medium inline-flex items-center justify-center gap-1.5"><Printer size={14} /> Print</button>
+                          <button type="button" onClick={() => pdf(r)} className="h-9 flex-1 rounded-lg border border-border text-xs font-medium inline-flex items-center justify-center gap-1.5"><FileDown size={14} /> PDF</button>
+                          <button type="button" onClick={() => setReturning(r)} disabled={!canReturn(r)} className="h-9 flex-1 rounded-lg border border-border text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-40"><Undo2 size={14} /> Return</button>
+                          <RowMenu r={r} canEdit={canEdit(r)} onEdit={() => setEditing(r)} onCancel={() => setCancelling(r)} onWhatsApp={() => window.open(buildWhatsAppLink(invoiceData(r)), '_blank', 'noopener')} navigate={navigate} />
+                        </div>
+                      </div>
+                    )}
+                  </li>
                 );
               })}
-              <input value={returnReason} onChange={(e) => setReturnReason(e.target.value)} placeholder="Reason (optional)"
-                className="w-full h-9 px-3 text-sm rounded-lg border border-border bg-background focus:outline-none" />
+            </ul>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3 text-xs text-muted-foreground">
+              <span className="tabular-nums">Showing {Math.min(shown, filtered.length).toLocaleString('en-PK')} of {filtered.length.toLocaleString('en-PK')}</span>
+              {filtered.length > shown && <button type="button" onClick={() => setShown((n) => n + 50)} className="h-8 px-3 rounded-lg border border-border font-medium hover:text-foreground">Show more</button>}
             </div>
-            <div className="px-5 py-4 border-t flex items-center justify-between shrink-0">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Refund Total</p>
-                <p className="text-lg font-black font-mono text-amber-600">
-                  {fmtPKR(returnSale.items.reduce((s, i) => s + Number(returnQty[i.id] || 0) * Number(i.price || 0), 0))}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setReturnSale(null)} disabled={busy} className="h-10 px-4 rounded-xl border border-border bg-background hover:bg-muted text-sm font-semibold">Cancel</button>
-                <button onClick={submitReturn} disabled={busy}
-                  className="h-10 px-5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold flex items-center gap-2 disabled:opacity-50">
-                  {busy ? <RefreshCw size={13} className="animate-spin" /> : <Undo2 size={14} />} Confirm Return
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>,
-        document.body
-      )}
+          </>
+        )}
+      </section>
+
+      {returning && <ReturnDialog row={returning} onClose={() => setReturning(null)} />}
+      <EditSaleModal open={!!editing} onClose={() => setEditing(null)} sale={editing?.raw} items={editing?.lines || []} products={list('product')} onSave={(p) => saveEdit(editing, p)} />
+      <CancelSaleDialog row={cancelling} onClose={() => setCancelling(null)} onConfirm={doCancel} />
     </div>
   );
 }
