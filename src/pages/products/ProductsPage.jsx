@@ -1,24 +1,22 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePagination } from '../../hooks/usePagination';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import JsBarcode from 'jsbarcode';
 import {
-  Plus, Pencil, Trash2, Search, Package, Layers, BarChart2,
-  TrendingUp, TrendingDown, AlertCircle, X, Upload, Download,
-  FileSpreadsheet, CheckCircle2, ChevronDown, ChevronRight,
-  Archive, Eye, ShoppingCart, Printer, Tag,
+  Plus, Trash2, Package, Layers, BarChart2, TrendingUp, TrendingDown, AlertCircle, X, Upload, Download, FileSpreadsheet, CheckCircle2, ChevronDown,
 } from 'lucide-react';
 import BarcodeLabelModal from '../../components/products/BarcodeLabelModal';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '../../store/dataStore';
 import { useToast } from '../../context/ToastContext';
-import { formatCurrency } from '../../utils/format';
 import { useModuleSettings, getModuleSettings } from '../../hooks/useModuleSettings';
 import { Switch } from '@/components/ui/switch';
 import { isCancelled } from '@/lib/ledger';
+import { Dialog as UiDialog, DialogContent as UiDialogContent, DialogTitle as UiDialogTitle, DialogDescription as UiDialogDescription } from '@/components/ui/dialog';
+import { Search as SearchIcon, X as XIcon, Plus as PlusIcon, Upload as UploadIcon, Download as DownloadIcon, Tag as TagIcon, Eye as EyeIcon, Pencil as PencilIcon, Printer as PrinterIcon, Trash2 as TrashIcon, ChevronDown as ChevronDownIcon, Package as PackageIcon, Scale as ScaleIcon, Boxes as BoxesIcon } from 'lucide-react';
+import { useStoreFeatures } from '../../hooks/useStoreFeatures';
 
 // ─── Format helper ────────────────────────────────────────────────────────────
 const fmtPKR = (n) => 'PKR ' + Math.round(n ?? 0).toLocaleString('en-PK');
@@ -32,36 +30,6 @@ const fadeUp = {
   }),
 };
 
-// ─── Sparkline ───────────────────────────────────────────────────────────────
-const SPARKLINE_PATH = 'M0,14 L8,10 L16,16 L24,6 L32,12 L40,4 L48,10 L56,2';
-function Sparkline({ color }) {
-  return (
-    <svg width="56" height="20" viewBox="0 0 56 20" fill="none" className="shrink-0">
-      <path d={SPARKLINE_PATH} stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-// ─── KPI Stat Card ────────────────────────────────────────────────────────────
-function StatCard({ icon: Icon, label, value, sub, tint }) {
-  return (
-    <div className="rounded-2xl border border-border/50 bg-card p-5">
-      <div className="flex items-center gap-3 mb-3">
-        <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', tint.bg)}>
-          <Icon size={16} className={tint.icon} />
-        </div>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
-      </div>
-      <p className="text-2xl font-black text-foreground tracking-tight tabular-nums">{value}</p>
-      <div className="flex items-center justify-between mt-2">
-        <p className="text-xs text-muted-foreground">{sub}</p>
-        <Sparkline color={tint.spark} />
-      </div>
-    </div>
-  );
-}
-
-// ─── Excel Import field definitions ──────────────────────────────────────────
 const IMPORTABLE_FIELDS = [
   { key: 'name', label: 'Product Name ✱' },
   { key: 'price', label: 'Selling Price ✱' },
@@ -1019,6 +987,33 @@ function ProductDetailModal({ product, onClose }) {
 }
 
 // ─── Main Products Page ───────────────────────────────────────────────────────
+/* Stock and price in the product's own unit: weighed items in kg, wholesale in cartons + boxes. */
+const pnum = (v) => Number(v) || 0;
+const prs = (n) => 'Rs. ' + Math.round(pnum(n)).toLocaleString('en-PK');
+const isGramP = (p) => String(p.unit_type || '').toLowerCase() === 'gram';
+const isWholesaleP = (p) => pnum(p.carton_qty) > 0;
+function stockText(p) {
+  const st = pnum(p.stock);
+  if (isGramP(p)) return `${(st / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} kg`;
+  if (isWholesaleP(p)) {
+    const per = pnum(p.carton_qty); const neg = st < 0; const a = Math.abs(st);
+    const ctn = Math.floor(a / per); const box = Math.round((a - ctn * per) * 1000) / 1000;
+    const parts = [ctn ? `${ctn} ctn` : '', box ? `${box.toLocaleString('en-PK')} ${p.box_name || 'box'}` : ''].filter(Boolean);
+    return (neg ? '−' : '') + (parts.join(' · ') || '0 ctn');
+  }
+  const unit = p.unit && !['pcs', 'piece', 'pieces'].includes(String(p.unit).toLowerCase()) ? ` ${p.unit}` : '';
+  return `${st.toLocaleString('en-PK', { maximumFractionDigits: 3 })}${unit}`;
+}
+const priceUnit = (p) => (isGramP(p) ? '/kg' : isWholesaleP(p) ? '/ctn' : '');
+/** Stock value at cost — wholesale cost is per carton, weighed cost per kg (same as the dashboard). */
+function stockValue(p) {
+  const st = Math.max(0, pnum(p.stock)); const cost = Math.min(pnum(p.purchase_price) || pnum(p.price), 5_000_000);
+  if (isWholesaleP(p)) return (st / pnum(p.carton_qty)) * cost;
+  if (isGramP(p)) return (st / 1000) * cost;
+  return st * cost;
+}
+const STOCK_FILTERS = [['all', 'All'], ['low', 'Low stock'], ['out', 'Out of stock'], ['negative', 'Negative'], ['healthy', 'In stock']];
+
 export default function ProductsPage() {
   const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
@@ -1026,6 +1021,11 @@ export default function ProductsPage() {
   const { modules } = useModuleSettings();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [stockFilter, setStockFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('name');
+  const [shownCount, setShownCount] = useState(60);
+  const features = useStoreFeatures();
   const [showDialog, setShowDialog] = useState(false);
   const [initialProduct, setInitialProduct] = useState({});
   const [isEditing, setIsEditing] = useState(false);
@@ -1059,23 +1059,26 @@ export default function ProductsPage() {
 
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(
-      (p) => p.name?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
-    );
-  }, [products, searchTerm]);
-
-  const { paged: pagedProducts, page: prodPage, pageCount: prodPageCount, setPage: setProdPage } = usePagination(filtered, 50);
-
-  // Grouped by category (from current page only)
-  const grouped = useMemo(() => {
-    return pagedProducts.reduce((acc, p) => {
-      const cat = p.category || 'Uncategorized';
-      if (!acc[cat]) acc[cat] = [];
-      acc[cat].push(p);
-      return acc;
-    }, {});
-  }, [pagedProducts]);
+    let r = products.filter((p) => !q || p.name?.toLowerCase().includes(q) || String(p.barcode || '').toLowerCase().includes(q)
+      || String(p.barcode2 || '').toLowerCase().includes(q) || p.category?.toLowerCase().includes(q) || String(p.urdu_name || '').includes(searchTerm.trim())
+      || String(p.generic_name || '').toLowerCase().includes(q));
+    if (catFilter) r = r.filter((p) => (p.category || '') === catFilter);
+    const st = (p) => pnum(p.stock);
+    if (stockFilter === 'low') r = r.filter((p) => st(p) >= 0 && st(p) < 10);
+    if (stockFilter === 'out') r = r.filter((p) => st(p) === 0);
+    if (stockFilter === 'negative') r = r.filter((p) => st(p) < 0);
+    if (stockFilter === 'healthy') r = r.filter((p) => st(p) >= 10);
+    const marginOf = (p) => (pnum(p.price) > 0 && pnum(p.purchase_price) > 0 ? (pnum(p.price) - pnum(p.purchase_price)) / pnum(p.price) : -Infinity);
+    const sorters = {
+      name: (a, b) => String(a.name || '').localeCompare(String(b.name || '')),
+      stockLow: (a, b) => st(a) - st(b),
+      priceHigh: (a, b) => pnum(b.price) - pnum(a.price),
+      margin: (a, b) => marginOf(b) - marginOf(a),
+      value: (a, b) => stockValue(b) - stockValue(a),
+    };
+    return [...r].sort(sorters[sortBy] || sorters.name);
+  }, [products, searchTerm, catFilter, stockFilter, sortBy]);
+  React.useEffect(() => setShownCount(60), [searchTerm, catFilter, stockFilter, sortBy]);
 
   // KPI stats
   const stats = useMemo(() => {
@@ -1087,8 +1090,11 @@ export default function ProductsPage() {
         const st = Math.max(0, p.stock || 0);
         return s + (p.unit_type === 'gram' ? st / 1000 : st);
       }, 0),
-      lowStock: products.filter((p) => (p.stock || 0) > 0 && (p.stock || 0) <= LOW).length,
+      lowStock: products.filter((p) => (p.stock || 0) >= 0 && (p.stock || 0) < LOW).length,
       negativeStock: products.filter((p) => (p.stock || 0) < 0).length,
+      inStock: products.filter((p) => (p.stock || 0) > 0).length,
+      outOfStock: products.filter((p) => (p.stock || 0) === 0).length,
+      value: products.reduce((sum, p) => sum + stockValue(p), 0),
     };
   }, [products, categories]);
 
@@ -1340,221 +1346,195 @@ export default function ProductsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full">
+    <div className="flex flex-col gap-5 w-full">
 
-      {/* ── Page Header ── */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
+      {/* ── Header ── */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
-            <span>Home</span><ChevronRight size={12} /><span className="text-foreground font-medium">Products</span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Products</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Manage products, categories and inventory</p>
+          <h1 className="font-display text-[26px] leading-tight font-extrabold tracking-tight text-foreground">Products</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">Your catalogue — prices, margins and stock in each item’s own unit</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => navigate('/wholesale')} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors" title="Wholesale Price List">
-            <Tag size={15} />
-            <span className="hidden sm:inline">Price List</span>
-          </button>
-          <button onClick={() => setShowImportDialog(true)} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors" title="Import Excel">
-            <Upload size={15} />
-            <span className="hidden sm:inline">Import</span>
-          </button>
-          <button onClick={exportToExcel} className="flex items-center gap-1.5 h-9 px-3 text-sm rounded-lg border border-border bg-background hover:bg-muted transition-colors" title="Export Excel">
-            <Download size={15} />
-            <span className="hidden sm:inline">Export</span>
-          </button>
-          <button onClick={openAdd} className="flex items-center gap-1.5 h-9 px-3 sm:px-4 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
-            <Plus size={15} />
-            <span className="hidden sm:inline">Add Product</span>
-            <span className="sm:hidden">Add</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {features.wholesale && (
+            <button type="button" onClick={() => navigate('/wholesale')} className="h-10 px-3.5 rounded-xl border border-border bg-card text-sm font-medium inline-flex items-center gap-2 hover:bg-muted"><TagIcon size={15} /> Price list</button>
+          )}
+          <button type="button" onClick={() => setShowImportDialog(true)} className="h-10 px-3.5 rounded-xl border border-border bg-card text-sm font-medium inline-flex items-center gap-2 hover:bg-muted"><UploadIcon size={15} /> <span className="hidden sm:inline">Import Excel</span><span className="sm:hidden">Import</span></button>
+          <button type="button" onClick={exportToExcel} className="h-10 px-3.5 rounded-xl border border-border bg-card text-sm font-medium inline-flex items-center gap-2 hover:bg-muted"><DownloadIcon size={15} /> <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span></button>
+          <button type="button" onClick={openAdd} className="ml-auto sm:ml-0 h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-2 shadow-sm hover:opacity-95"><PlusIcon size={16} /> Add product</button>
         </div>
-      </motion.div>
+      </header>
 
-      {/* ── Stats Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* ── Figures (desktop rules: low = 0–9, negative replaces low when any) ── */}
+      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/70 bg-border/70 sm:grid-cols-3 xl:grid-cols-5">
         {[
-          { icon: Package, label: 'Total Products', value: products.length.toLocaleString(), sub: 'All time', tint: { icon: 'text-muted-foreground', bg: 'bg-muted/60', spark: '#94a3b8' }, delay: 1 },
-          { icon: Layers, label: 'Categories', value: stats.categories, sub: 'All time', tint: { icon: 'text-muted-foreground', bg: 'bg-muted/60', spark: '#94a3b8' }, delay: 2 },
-          { icon: Archive, label: 'In Stock', value: stats.totalStock.toLocaleString(), sub: 'Total units', tint: { icon: 'text-emerald-500', bg: 'bg-emerald-500/10', spark: '#10b981' }, delay: 3 },
+          ['Total products', stats.total.toLocaleString('en-PK'), `${stats.categories} categor${stats.categories === 1 ? 'y' : 'ies'}`, null, () => { setStockFilter('all'); setCatFilter(''); }],
+          ['In stock', stats.inStock.toLocaleString('en-PK'), `${stats.outOfStock} out of stock`, null, () => setStockFilter('healthy')],
           stats.negativeStock > 0
-            ? { icon: TrendingDown, label: 'Negative Stock', value: stats.negativeStock, sub: 'Needs attention', tint: { icon: 'text-red-500', bg: 'bg-red-500/10', spark: '#ef4444' }, delay: 4 }
-            : { icon: AlertCircle, label: 'Low Stock', value: stats.lowStock, sub: stats.lowStock > 0 ? 'Needs attention' : 'All good', tint: stats.lowStock > 0 ? { icon: 'text-amber-500', bg: 'bg-amber-500/10', spark: '#f59e0b' } : { icon: 'text-muted-foreground', bg: 'bg-muted/40', spark: '#94a3b8' }, delay: 4 },
-        ].map((card) => (
-          <motion.div key={card.label} variants={fadeUp} initial="hidden" animate="visible" custom={card.delay}>
-            <StatCard icon={card.icon} label={card.label} value={card.value} sub={card.sub} tint={card.tint} />
-          </motion.div>
-        ))}
-      </div>
+            ? ['Negative stock', stats.negativeStock.toLocaleString('en-PK'), 'Oversold — restock to fix', 'text-rose-700 dark:text-rose-400', () => setStockFilter('negative')]
+            : ['Low stock', stats.lowStock.toLocaleString('en-PK'), stats.lowStock ? 'Below 10 — reorder soon' : 'All good', stats.lowStock ? 'text-amber-700 dark:text-amber-400' : null, () => setStockFilter('low')],
+          ['Stock value', prs(stats.value), 'At cost price', null, null],
+          ['Categories', stats.categories.toLocaleString('en-PK'), catFilter ? `Showing ${catFilter}` : 'Filter below', null, null],
+        ].map(([l, v, sub, tone, onClick], i) => {
+          const Tag = onClick ? 'button' : 'div';
+          return (
+            <Tag key={l} type={onClick ? 'button' : undefined} onClick={onClick || undefined}
+              className={cn('bg-card px-4 py-3.5 text-left min-w-0', onClick && 'hover:bg-muted/40 transition-colors', i === 4 && 'hidden xl:block')}>
+              <dt className="text-xs text-muted-foreground">{l}</dt>
+              <dd className={cn('mt-1 text-lg font-bold tabular-nums tracking-tight text-foreground truncate', tone)}>{v}</dd>
+              <dd className="text-[11px] text-muted-foreground truncate">{sub}</dd>
+            </Tag>
+          );
+        })}
+      </dl>
 
-      {/* ── Products Table ── */}
-      <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={5}>
-        <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
-          {/* Table header / search */}
-          <div className="p-5 border-b bg-muted/10">
-            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={15} />
-                <input
-                  placeholder="Search by name, category, barcode..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full h-9 pl-9 pr-9 text-sm rounded-lg border border-border bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-                {searchTerm && (
-                  <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    <X size={13} />
-                  </button>
-                )}
+      {/* ── Catalogue ── */}
+      <section className="rounded-2xl border border-border/70 bg-card overflow-hidden">
+        <div className="flex flex-col gap-2.5 border-b border-border/70 p-3">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1 min-w-0">
+              <SearchIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} aria-label="Search products"
+                placeholder={modules.pharmacy ? 'Search name, generic name, barcode or category' : 'Search name, barcode or category'}
+                className="w-full h-10 rounded-xl border border-border bg-background pl-9 pr-8 text-sm outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary" />
+              {searchTerm && <button type="button" onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded inline-flex items-center justify-center text-muted-foreground hover:bg-muted" aria-label="Clear search"><XIcon size={14} /></button>}
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1 sm:flex-none">
+                <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} aria-label="Category"
+                  className="w-full sm:w-44 h-10 appearance-none rounded-xl border border-border bg-background pl-3 pr-8 text-sm outline-none">
+                  <option value="">All categories</option>
+                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <ChevronDownIcon size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               </div>
-              <p className="text-xs text-muted-foreground shrink-0">
-                <span className="font-semibold text-foreground">{filtered.length}</span> of <span className="font-semibold text-foreground">{products.length}</span> products
-              </p>
+              <div className="relative flex-1 sm:flex-none">
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort"
+                  className="w-full sm:w-40 h-10 appearance-none rounded-xl border border-border bg-background pl-3 pr-8 text-sm outline-none">
+                  <option value="name">Name A–Z</option>
+                  <option value="stockLow">Lowest stock</option>
+                  <option value="priceHigh">Highest price</option>
+                  <option value="margin">Best margin</option>
+                  <option value="value">Most stock value</option>
+                </select>
+                <ChevronDownIcon size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              </div>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 gap-1 overflow-x-auto [scrollbar-width:none]">
+              {STOCK_FILTERS.map(([k, l]) => (
+                <button key={k} type="button" onClick={() => setStockFilter(k)}
+                  className={cn('h-7 shrink-0 rounded-full px-2.5 text-xs font-medium border transition-colors',
+                    stockFilter === k ? 'bg-foreground text-background border-foreground' : 'border-border text-muted-foreground hover:text-foreground')}>{l}</button>
+              ))}
+            </div>
+            <span className="hidden sm:inline text-xs text-muted-foreground tabular-nums shrink-0">{filtered.length.toLocaleString('en-PK')} of {products.length.toLocaleString('en-PK')}</span>
+          </div>
+        </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-muted/25 border-b border-border">
-                  <th className="text-left font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3 pl-5">Product</th>
-                  <th className="text-left font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3">Category</th>
-                  <th className="text-left font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3">Unit</th>
-                  <th className="text-right font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3">Cost</th>
-                  <th className="text-right font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3">Price</th>
-                  <th className="text-right font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3">Margin</th>
-                  <th className="text-right font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3">Stock</th>
-                  <th className="text-right font-semibold text-muted-foreground text-xs uppercase tracking-wide py-3 pr-5">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="h-40 text-center">
-                      <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                        <div className="bg-muted/40 p-4 rounded-2xl"><Package size={28} className="opacity-40" /></div>
-                        <div>
-                          <p className="font-medium text-sm">{searchTerm ? 'No matching products' : 'No products yet'}</p>
-                          <p className="text-xs mt-0.5 opacity-70">{searchTerm ? 'Try adjusting your search' : 'Click "Add Product" or import an Excel file'}</p>
-                        </div>
-                      </div>
-                    </td>
+        {filtered.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <PackageIcon size={20} className="mx-auto mb-2 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">{products.length ? 'No product matches' : 'No products yet'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{products.length ? 'Try another search, category or stock filter.' : 'Add your first product or import them from Excel.'}</p>
+            {!products.length && <button type="button" onClick={openAdd} className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-2"><PlusIcon size={15} /> Add product</button>}
+          </div>
+        ) : (
+          <>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/70 text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                    <th className="py-2.5 pl-4 pr-3 font-medium">Product</th>
+                    <th className="py-2.5 pr-3 font-medium">Category</th>
+                    <th className="py-2.5 px-3 font-medium text-right">Cost</th>
+                    <th className="py-2.5 px-3 font-medium text-right">Price</th>
+                    <th className="py-2.5 px-3 font-medium text-right">Margin</th>
+                    <th className="py-2.5 px-3 font-medium text-right">Stock</th>
+                    <th className="py-2.5 pr-3 font-medium text-right">Actions</th>
                   </tr>
-                ) : (
-                  Object.entries(grouped).map(([cat, prods]) => (
-                    <React.Fragment key={cat}>
-                      {/* Category Row */}
-                      <tr className="bg-gradient-to-r from-primary/5 via-primary/3 to-transparent border-y border-primary/10">
-                        <td colSpan={8} className="py-2.5 pl-5">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-1 h-4 rounded-full bg-primary/50" />
-                            <span className="font-bold text-primary/70 uppercase tracking-wider text-[11px]">{cat}</span>
-                            <span className="text-[10px] font-mono border border-primary/20 text-primary/50 rounded px-1.5 py-0.5">{prods.length}</span>
+                </thead>
+                <tbody>
+                  {filtered.slice(0, shownCount).map((p) => {
+                    const m = margin(p); const st = pnum(p.stock);
+                    const tone = st < 0 ? 'bg-rose-500/12 text-rose-700 dark:text-rose-400' : st === 0 ? 'bg-rose-500/8 text-rose-600 dark:text-rose-400' : st < 10 ? 'bg-amber-500/12 text-amber-800 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400';
+                    return (
+                      <tr key={p.id} className="group border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors">
+                        <td className="py-3 pl-4 pr-3 max-w-[340px]">
+                          <button type="button" onClick={() => setViewProduct(p)} className="flex items-center gap-3 text-left min-w-0">
+                            <span className={cn('h-9 w-9 rounded-lg inline-flex items-center justify-center shrink-0',
+                              isGramP(p) ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : isWholesaleP(p) ? 'bg-violet-500/10 text-violet-700 dark:text-violet-300' : 'bg-sky-500/10 text-sky-700 dark:text-sky-300')}>
+                              {isGramP(p) ? <ScaleIcon size={16} /> : isWholesaleP(p) ? <BoxesIcon size={16} /> : <PackageIcon size={16} />}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium text-foreground group-hover:underline underline-offset-2">{p.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground font-mono">
+                                {[p.barcode, isWholesaleP(p) ? `${pnum(p.carton_qty)} ${p.box_name || 'box'}/ctn` : isGramP(p) ? 'Sold by weight' : (p.unit && p.unit !== 'pcs' ? p.unit : '')].filter(Boolean).join(' · ') || '—'}
+                              </span>
+                            </span>
+                          </button>
+                        </td>
+                        <td className="py-3 pr-3">{p.category ? <button type="button" onClick={() => setCatFilter(p.category)} className="rounded-md bg-muted px-1.5 py-0.5 text-xs text-foreground/80 hover:bg-muted/70">{p.category}</button> : <span className="text-muted-foreground">—</span>}</td>
+                        <td className="py-3 px-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">{pnum(p.purchase_price) > 0 ? <>{prs(p.purchase_price)}<span className="text-[10px]">{priceUnit(p)}</span></> : '—'}</td>
+                        <td className="py-3 px-3 text-right tabular-nums font-semibold text-foreground whitespace-nowrap">{prs(p.price)}<span className="text-[10px] font-normal text-muted-foreground">{priceUnit(p)}</span></td>
+                        <td className="py-3 px-3 text-right">{m ? <span className={cn('rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums', Number(m) < 0 ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400' : Number(m) >= 20 ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/12 text-amber-800 dark:text-amber-400')}>{m}%</span> : <span className="text-muted-foreground">—</span>}</td>
+                        <td className="py-3 px-3 text-right whitespace-nowrap"><span className={cn('rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums', tone)} title={st < 0 ? 'Oversold — restock to fix' : undefined}>{st === 0 ? 'Out' : stockText(p)}</span></td>
+                        <td className="py-2 pr-3">
+                          <div className="flex justify-end">
+                            <button type="button" onClick={() => setViewProduct(p)} title="View details" aria-label={`View ${p.name}`} className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"><EyeIcon size={15} /></button>
+                            <button type="button" onClick={() => openEdit(p)} title="Edit" aria-label={`Edit ${p.name}`} className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"><PencilIcon size={15} /></button>
+                            <button type="button" onClick={() => setLabelProduct(p)} title="Print barcode label" aria-label={`Print label for ${p.name}`} className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"><PrinterIcon size={15} /></button>
+                            <button type="button" onClick={() => setDeleteConfirmId(p.id)} title="Delete" aria-label={`Delete ${p.name}`} className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600"><TrashIcon size={15} /></button>
                           </div>
                         </td>
                       </tr>
-                      {/* Product rows */}
-                      {prods.map((p) => {
-                        const m = margin(p);
-                        const stockVal = p.stock ?? 0;
-                        const isNeg = stockVal < 0;
-                        const isLow = !isNeg && stockVal <= 10 && stockVal > 0;
-                        const isOut = stockVal === 0;
-                        return (
-                          <tr key={p.id} className="hover:bg-muted/30 transition-colors group border-b border-border/30 last:border-0">
-                            <td className="py-3 pl-5">
-                              <div className="font-semibold text-sm text-foreground">{p.name}</div>
-                              {p.barcode && <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{p.barcode}</div>}
-                            </td>
-                            <td className="py-3">
-                              {p.category ? (
-                                <span className="inline-flex items-center rounded-md border bg-secondary px-2 py-0.5 text-xs font-mono">{p.category}</span>
-                              ) : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="py-3">
-                              {p.unit ? (
-                                <span className="inline-flex items-center rounded-md border border-blue-400/40 text-blue-600 px-2 py-0.5 text-xs font-mono">{p.unit}</span>
-                              ) : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="py-3 text-right text-muted-foreground font-mono text-sm">{p.purchase_price > 0 ? fmtPKR(p.purchase_price) : '—'}</td>
-                            <td className="py-3 text-right font-bold text-primary font-mono text-sm">{fmtPKR(p.price)}</td>
-                            <td className="py-3 text-right">
-                              {m ? (
-                                <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-mono',
-                                  Number(m) >= 20 ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25' : 'bg-orange-500/10 text-orange-600 border-orange-500/25'
-                                )}>{m}%</span>
-                              ) : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="py-3 text-right">
-                              {isNeg ? (
-                                <span className="inline-flex items-center gap-1 font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-red-600/15 text-red-600 border border-red-500/40">
-                                  <TrendingDown size={9} />{stockVal}
-                                </span>
-                              ) : isOut ? (
-                                <span className="inline-flex items-center font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/25 dark:text-red-400">OUT</span>
-                              ) : (
-                                <span className={cn('inline-flex items-center font-mono text-xs px-2 py-0.5 rounded-full border',
-                                  isLow ? 'bg-amber-500/10 text-amber-600 border-amber-500/25' : 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
-                                )}>{stockVal}</span>
-                              )}
-                            </td>
-                            <td className="py-3 pr-5">
-                              <div className="flex justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setViewProduct(p)} title="View details"
-                                  className="h-8 w-8 flex items-center justify-center rounded-lg text-violet-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors">
-                                  <Eye size={13} />
-                                </button>
-                                <button onClick={() => openEdit(p)}
-                                  className="h-8 w-8 flex items-center justify-center rounded-lg text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
-                                  <Pencil size={13} />
-                                </button>
-                                <button onClick={() => setLabelProduct(p)} title="Print barcode label"
-                                  className="h-8 w-8 flex items-center justify-center rounded-lg text-violet-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors">
-                                  <Printer size={13} />
-                                </button>
-                                {deleteConfirmId === p.id ? (
-                                  <div className="flex items-center gap-1 bg-destructive/8 px-2 rounded-lg border border-destructive/20 animate-in fade-in">
-                                    <span className="text-[11px] font-semibold text-destructive">Sure?</span>
-                                    <button onClick={() => handleDelete(p.id)} className="h-6 px-2 text-[10px] rounded bg-destructive text-white hover:bg-destructive/90">Yes</button>
-                                    <button onClick={() => setDeleteConfirmId(null)} className="h-6 px-2 text-[10px] rounded hover:bg-muted">No</button>
-                                  </div>
-                                ) : (
-                                  <button onClick={() => setDeleteConfirmId(p.id)}
-                                    className="h-8 w-8 flex items-center justify-center rounded-lg text-destructive hover:bg-destructive/10 transition-colors">
-                                    <Trash2 size={13} />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </React.Fragment>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          {prodPageCount > 1 && (
-            <div className="flex items-center justify-between px-5 py-2.5 border-t border-border/30 shrink-0 bg-muted/20">
-              <span className="text-xs text-muted-foreground">{filtered.length} products · page {prodPage} of {prodPageCount}</span>
-              <div className="flex gap-1">
-                <button onClick={() => setProdPage(p => Math.max(1, p - 1))} disabled={prodPage === 1}
-                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">‹</button>
-                <button onClick={() => setProdPage(p => Math.min(prodPageCount, p + 1))} disabled={prodPage === prodPageCount}
-                  className="h-7 w-7 rounded-lg border border-border text-base flex items-center justify-center disabled:opacity-30 hover:bg-muted transition-colors">›</button>
-              </div>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
-      </motion.div>
+
+            <ul className="md:hidden divide-y divide-border/60">
+              {filtered.slice(0, shownCount).map((p) => {
+                const st = pnum(p.stock); const m = margin(p);
+                const tone = st < 0 ? 'text-rose-700 dark:text-rose-400' : st === 0 ? 'text-rose-600 dark:text-rose-400' : st < 10 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400';
+                return (
+                  <li key={p.id} className="flex items-center gap-3 px-4 py-3">
+                    <button type="button" onClick={() => setViewProduct(p)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                      <span className={cn('h-10 w-10 rounded-lg inline-flex items-center justify-center shrink-0',
+                        isGramP(p) ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : isWholesaleP(p) ? 'bg-violet-500/10 text-violet-700 dark:text-violet-300' : 'bg-sky-500/10 text-sky-700 dark:text-sky-300')}>
+                        {isGramP(p) ? <ScaleIcon size={16} /> : isWholesaleP(p) ? <BoxesIcon size={16} /> : <PackageIcon size={16} />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground tabular-nums">{prs(p.price)}{priceUnit(p)}{m ? ` · ${m}% margin` : ''}{p.category ? ` · ${p.category}` : ''}</span>
+                      </span>
+                    </button>
+                    <span className={cn('text-xs font-semibold tabular-nums whitespace-nowrap', tone)}>{st === 0 ? 'Out' : stockText(p)}</span>
+                    <button type="button" onClick={() => openEdit(p)} aria-label={`Edit ${p.name}`} className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:bg-muted"><PencilIcon size={15} /></button>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3 text-xs text-muted-foreground">
+              <span className="tabular-nums">Showing {Math.min(shownCount, filtered.length).toLocaleString('en-PK')} of {filtered.length.toLocaleString('en-PK')}</span>
+              {filtered.length > shownCount && <button type="button" onClick={() => setShownCount((n) => n + 60)} className="h-8 px-3 rounded-lg border border-border font-medium hover:text-foreground">Show more</button>}
+            </div>
+          </>
+        )}
+      </section>
+
+      <UiDialog open={deleteConfirmId != null} onOpenChange={(v) => !v && setDeleteConfirmId(null)}>
+        <UiDialogContent className="max-w-sm">
+          <UiDialogTitle>Delete {products.find((x) => String(x.id) === String(deleteConfirmId))?.name || 'this product'}?</UiDialogTitle>
+          <UiDialogDescription>Past sales keep their lines, but the product leaves your catalogue and the Sales screen. This can’t be undone.</UiDialogDescription>
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setDeleteConfirmId(null)} className="h-9 px-4 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted">Keep it</button>
+            <button type="button" onClick={() => handleDelete(deleteConfirmId)} className="h-9 px-4 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700">Delete</button>
+          </div>
+        </UiDialogContent>
+      </UiDialog>
 
       {/* ── Analytics Toggle ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={6}>
