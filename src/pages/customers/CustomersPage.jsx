@@ -723,7 +723,7 @@ export default function CustomersPage() {
         <div>
           <h1 className="font-display text-[26px] leading-tight font-extrabold tracking-tight text-foreground">Customers</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {stats.total.toLocaleString('en-PK')} customers · <span className="text-amber-700 dark:text-amber-400 font-medium">{stats.owingCount} owe you {rs(stats.receivable)}</span>
+            {stats.total.toLocaleString('en-PK')} customer{stats.total === 1 ? '' : 's'} · <span className="text-amber-700 dark:text-amber-400 font-medium">{stats.owingCount} owe you {rs(stats.receivable)}</span>
           </p>
         </div>
         <div className="flex gap-2">
