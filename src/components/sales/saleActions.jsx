@@ -81,6 +81,20 @@ export function useSaleActions() {
       payments: list('customer_payment'), returns: list('sale_return'), returnItems: list('sale_return_item'), now: localStamp(),
     });
     if (!events) { showToast('This invoice is already cancelled', 'error'); return; }
+    // Desktop recomputeCustomerBalance after cancel: rebuild from the data as it will be, not from
+    // the stored (possibly stale) balance, and allow credit (negative).
+    if (row.customer) {
+      const gone = new Set(events.filter((e) => e.entityType === 'customer_payment' && e.operation === 'delete').map((e) => String(e.payload.id)));
+      const acct = buildCustomerAccount({
+        customer: row.customer,
+        sales: list('sale').map((s) => (String(s.id) === String(row.id) ? { ...s, status: 'Cancelled' } : s)),
+        payments: list('customer_payment').filter((p) => !gone.has(String(p.id))),
+        returns: list('sale_return'),
+      });
+      const ev = events.find((e) => e.entityType === 'customer' && String(e.payload.id) === String(row.customer.id));
+      if (ev) ev.payload = { ...ev.payload, outstanding_balance: r2(acct.totals.invoiceBalance) };
+      else events.push({ entityType: 'customer', operation: 'update', payload: { ...row.customer, outstanding_balance: r2(acct.totals.invoiceBalance), updated_at: localStamp() } });
+    }
     await pushBatch(events);
     showToast(`${row.no} cancelled · stock restored`);
   };
