@@ -22,6 +22,8 @@ export function AuthProvider({ children }) {
         );
       })
       .catch(() => {
+        // Same clean-up as a manual sign-out: the cached data and sync position belong to this account.
+        clearDataCache().catch(() => {});
         logoutShop();
         setSession(null);
       })
@@ -30,12 +32,16 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (mobile, password) => {
     const s = await loginShop({ mobile, password });
+    // Never start from a cache left by another account (or an expired session): its sync position
+    // would skip this shop's history and every page would show zero.
+    await clearDataCache().catch(() => {});
     setSession(s);
     return s;
   }, []);
 
   const register = useCallback(async (payload) => {
     const s = await registerShop(payload);
+    await clearDataCache().catch(() => {});
     setSession(s);
     return s;
   }, []);

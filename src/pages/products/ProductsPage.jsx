@@ -1014,6 +1014,23 @@ function stockValue(p) {
 }
 const STOCK_FILTERS = [['all', 'All'], ['low', 'Low stock'], ['out', 'Out of stock'], ['negative', 'Negative'], ['healthy', 'In stock']];
 
+/**
+ * Same "Cost problems" rule as the desktop Products filter: no cost, cost at/above the selling
+ * price, or stock on hand bought at/above the selling price (sales use that batch cost first).
+ * Price and cost are both per sell unit (per carton for wholesale); batch costs are per base unit,
+ * so batches are only checked for plain piece products.
+ */
+function costProblem(p, batchesByProduct) {
+  const price = pnum(p.price), cost = pnum(p.purchase_price);
+  if (cost <= 0) return 'No cost price';
+  if (price > 0 && cost >= price) return 'Cost is at or above the selling price';
+  const plain = !(pnum(p.carton_qty) > 0) && !['gram', 'kg'].includes(String(p.unit_type || ''));
+  if (plain && price > 0 && (batchesByProduct.get(String(p.id)) || []).some((b) => pnum(b.quantity_remaining) > 0 && pnum(b.purchase_price) >= price)) {
+    return 'Stock was bought at or above the selling price';
+  }
+  return null;
+}
+
 export default function ProductsPage() {
   const navigate = useNavigate();
   const { list, pushEntity } = useDataStore();
@@ -1051,6 +1068,14 @@ export default function ProductsPage() {
   const saleItems = list('sale_item');
   const sales = list('sale');
   const purchaseItems = list('purchase_item');
+  const batches = list('inventory_batch');
+  const costIssues = useMemo(() => {
+    const byProduct = new Map();
+    for (const b of batches) { const k = String(b.product_id); if (!byProduct.has(k)) byProduct.set(k, []); byProduct.get(k).push(b); }
+    const m = new Map();
+    for (const p of products) { const why = costProblem(p, byProduct); if (why) m.set(String(p.id), why); }
+    return m;
+  }, [products, batches]);
 
   const categories = useMemo(
     () => [...new Set(products.map((p) => p.category).filter(Boolean))].sort(),
@@ -1068,6 +1093,7 @@ export default function ProductsPage() {
     if (stockFilter === 'out') r = r.filter((p) => st(p) === 0);
     if (stockFilter === 'negative') r = r.filter((p) => st(p) < 0);
     if (stockFilter === 'healthy') r = r.filter((p) => st(p) >= 10);
+    if (stockFilter === 'cost') r = r.filter((p) => costIssues.has(String(p.id)));
     const marginOf = (p) => (pnum(p.price) > 0 && pnum(p.purchase_price) > 0 ? (pnum(p.price) - pnum(p.purchase_price)) / pnum(p.price) : -Infinity);
     const sorters = {
       name: (a, b) => String(a.name || '').localeCompare(String(b.name || '')),
@@ -1077,7 +1103,7 @@ export default function ProductsPage() {
       value: (a, b) => stockValue(b) - stockValue(a),
     };
     return [...r].sort(sorters[sortBy] || sorters.name);
-  }, [products, searchTerm, catFilter, stockFilter, sortBy]);
+  }, [products, searchTerm, catFilter, stockFilter, sortBy, costIssues]);
   React.useEffect(() => setShownCount(60), [searchTerm, catFilter, stockFilter, sortBy]);
 
   // KPI stats
@@ -1427,6 +1453,15 @@ export default function ProductsPage() {
                   className={cn('h-7 shrink-0 rounded-full px-2.5 text-xs font-medium border transition-colors',
                     stockFilter === k ? 'bg-foreground text-background border-foreground' : 'border-border text-muted-foreground hover:text-foreground')}>{l}</button>
               ))}
+              <button type="button" onClick={() => setStockFilter(stockFilter === 'cost' ? 'all' : 'cost')}
+                title="No cost price, cost at or above the selling price, or stock bought at or above the selling price"
+                className={cn('h-7 shrink-0 rounded-full px-2.5 text-xs font-medium border transition-colors inline-flex items-center gap-1.5',
+                  stockFilter === 'cost' ? 'bg-red-600 text-white border-red-600'
+                    : costIssues.size > 0 ? 'border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10'
+                      : 'border-border text-muted-foreground hover:text-foreground')}>
+                Cost problems
+                <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', stockFilter === 'cost' ? 'bg-white/25' : 'bg-muted')}>{costIssues.size}</span>
+              </button>
             </div>
             <span className="hidden sm:inline text-xs text-muted-foreground tabular-nums shrink-0">{filtered.length.toLocaleString('en-PK')} of {products.length.toLocaleString('en-PK')}</span>
           </div>
@@ -1435,8 +1470,8 @@ export default function ProductsPage() {
         {filtered.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <PackageIcon size={20} className="mx-auto mb-2 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">{products.length ? 'No product matches' : 'No products yet'}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{products.length ? 'Try another search, category or stock filter.' : 'Add your first product or import them from Excel.'}</p>
+            <p className="text-sm font-medium text-foreground">{stockFilter === 'cost' && !searchTerm && !catFilter ? 'No cost problems' : products.length ? 'No product matches' : 'No products yet'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{stockFilter === 'cost' && !searchTerm && !catFilter ? 'Every product has a cost price below its selling price.' : products.length ? 'Try another search, category or stock filter.' : 'Add your first product or import them from Excel.'}</p>
             {!products.length && <button type="button" onClick={openAdd} className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-2"><PlusIcon size={15} /> Add product</button>}
           </div>
         ) : (

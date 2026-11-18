@@ -76,7 +76,7 @@ function isInRange(dateStr, filter, fromDate, toDate) {
 ═══════════════════════════════════════════════════════════════════════════ */
 export default function ExpensesPage() {
   const navigate = useNavigate();
-  const { list, pushEntity } = useDataStore();
+  const { list, pushEntity, pushBatch } = useDataStore();
   const { showToast } = useToast();
 
   /* ── Form state ── */
@@ -171,8 +171,15 @@ export default function ExpensesPage() {
 
   const handleDelete = async () => {
     try {
-      await pushEntity('expense', 'delete', { id: deleteTarget.id });
-      showToast('Expense deleted');
+      // Expenses paid from an account (desktop) carry an [EID:id] movement — remove it too, like the desktop does,
+      // or the cash/bank balance would stay down for an expense that no longer exists.
+      const tag = `[EID:${deleteTarget.id}]`;
+      const txn = list('account_txn').find((t) => t.type === 'out' && String(t.note || '').includes(tag));
+      await pushBatch([
+        { entityType: 'expense', operation: 'delete', payload: { id: deleteTarget.id } },
+        ...(txn ? [{ entityType: 'account_txn', operation: 'delete', payload: { id: txn.id } }] : []),
+      ]);
+      showToast(txn ? 'Expense deleted — money returned to the account' : 'Expense deleted');
     } catch {
       showToast('Failed to delete expense', 'error');
     } finally {
