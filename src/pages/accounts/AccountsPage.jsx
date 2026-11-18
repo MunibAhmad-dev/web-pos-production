@@ -375,11 +375,11 @@ export default function AccountsPage() {
               <span className="inline-flex items-center gap-1.5"><Landmark size={14} /> Bank {rs(bankTotal)}</span>
             </p>
           </div>
-          <dl className="grid grid-cols-3 gap-6 sm:gap-10">
+          <dl className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-10">
             {[['Money in', stats.inn, 'text-emerald-600 dark:text-emerald-400'], ['Money out', stats.out, 'text-foreground'], ['Net change', stats.net, stats.net < 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400']].map(([l, v, c]) => (
-              <div key={l} className="min-w-0">
-                <dt className="text-[12px] text-muted-foreground whitespace-nowrap">{l}</dt>
-                <dd className={cn('mt-1 text-lg sm:text-xl font-semibold tabular-nums truncate', c)} title={rs(v)}>{l === 'Net change' ? signed(v) : rs(v)}</dd>
+              <div key={l} className="min-w-0 flex items-baseline justify-between gap-4 sm:block">
+                <dt className="text-[13px] sm:text-[12px] text-muted-foreground whitespace-nowrap">{l}</dt>
+                <dd className={cn('sm:mt-1 text-base sm:text-xl font-semibold tabular-nums whitespace-nowrap', c)}>{l === 'Net change' ? signed(v) : rs(v)}</dd>
               </div>
             ))}
           </dl>
@@ -465,7 +465,11 @@ export default function AccountsPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Segmented value={flow} onChange={setFlow} options={[['all', 'All'], ['in', 'In'], ['out', 'Out'], ['transfer', 'Transfers']]} />
-              <Segmented value={period} onChange={setPeriod} options={PERIODS.map(([k, l]) => [k, l])} />
+              <div className="hidden sm:block"><Segmented value={period} onChange={setPeriod} options={PERIODS.map(([k, l]) => [k, l])} /></div>
+              <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Period"
+                className="sm:hidden h-9 rounded-full bg-muted/70 border-0 px-3.5 text-[12px] font-medium text-foreground outline-none">
+                {PERIODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
             </div>
           </div>
           {period === 'custom' && (
