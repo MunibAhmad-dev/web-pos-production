@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   Plus, RefreshCw, ArrowUpRight, ArrowDownRight, Wallet, Users, Truck, Boxes, AlertTriangle,
-  ChevronRight, Receipt,
+  ChevronRight, Receipt, HandCoins, PackagePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isActiveSale, vendorBalances, khataBalances } from '@/lib/ledger';
@@ -222,6 +222,7 @@ export default function Dashboard() {
   const accountTxns = list('account_txn');
   const khatas = list('customer_khata');
   const khataPayments = list('customer_khata_payment');
+  const customerPayments = list('customer_payment');
 
   // Lookups built once per data change
   const lookups = useMemo(() => {
@@ -268,6 +269,20 @@ export default function Dashboard() {
       return { key: k, revenue: Math.round(b.revenue), gross: Math.round(b.revenue - b.cogs), count: b.count };
     });
   }, [cur, byHour, range]);
+
+  // Same definitions as the desktop dashboard: cash collected = customer payments received in the
+  // period; purchases = non-cancelled purchase bills in the period; discounts on counted sales.
+  const periodFlow = useMemo(() => {
+    const between = (raw, a, b) => { const d = parseDate(raw); return !!d && !isNaN(d) && d >= a && d <= b; };
+    const calc = (a, b) => {
+      let collected = 0, payments = 0, bought = 0, bills = 0, discounts = 0;
+      for (const p of customerPayments) if (between(p.date_added ?? p.date_created, a, b)) { collected += Number(p.amount) || 0; payments++; }
+      for (const p of purchases) if (String(p.status || '').toLowerCase() !== 'cancelled' && between(p.date_created, a, b)) { bought += Number(p.total) || 0; bills++; }
+      for (const x of sales) if (isActiveSale(x) && between(x.date_created, a, b)) discounts += Number(x.discount) || 0;
+      return { collected, payments, bought, bills, discounts };
+    };
+    return { cur: calc(range.start, range.end), prev: calc(range.prevStart, range.prevEnd) };
+  }, [customerPayments, purchases, sales, range]);
 
   const topProducts = useMemo(() => [...cur.productSales.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 6), [cur]);
   const methodRows = useMemo(() => {
@@ -391,6 +406,36 @@ export default function Dashboard() {
           </div></div>} />
         <Metric label="Number of sales" value={cur.count.toLocaleString('en-PK')} sub={`Average bill ${fmtPKR(avgTicket)}`}
           delta={<Delta now={cur.count} before={prev.count} />} spark={<Spark values={sparkOf('count')} />} />
+      </div>
+
+      {/* ── Money in and out, this period ────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { to: '/payment-ledger', icon: HandCoins, tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400', label: 'Cash collected',
+            value: fmtPKR(periodFlow.cur.collected), delta: <Delta now={periodFlow.cur.collected} before={periodFlow.prev.collected} />,
+            sub: `${periodFlow.cur.payments} customer payment${periodFlow.cur.payments === 1 ? '' : 's'}${cur.revenue > 0 ? ` · ${Math.round((periodFlow.cur.collected / cur.revenue) * 100)}% of sales` : ''}` },
+          { to: '/purchases', icon: PackagePlus, tone: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400', label: 'Purchases',
+            value: fmtPKR(periodFlow.cur.bought), delta: <Delta now={periodFlow.cur.bought} before={periodFlow.prev.bought} invert />,
+            sub: `${periodFlow.cur.bills} bill${periodFlow.cur.bills === 1 ? '' : 's'} ${periodWord}` },
+          { to: '/expenses', icon: Receipt, tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400', label: 'Expenses',
+            value: fmtPKR(cur.expenses), delta: <Delta now={cur.expenses} before={prev.expenses} invert />,
+            sub: `Discounts given ${fmtPKR(periodFlow.cur.discounts)}` },
+          { to: '/inventory', icon: AlertTriangle, tone: stock.low.length ? 'bg-amber-500/12 text-amber-700 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Low stock',
+            value: `${stock.low.length.toLocaleString('en-PK')} item${stock.low.length === 1 ? '' : 's'}`, delta: null,
+            sub: stock.out ? `${stock.out} out of stock · at or below ${threshold}` : `At or below ${threshold} units` },
+        ].map((t) => (
+          <Link key={t.label} to={t.to} className="group rounded-2xl border border-border/70 bg-card p-5 flex flex-col gap-3 hover:border-foreground/20 transition-colors">
+            <div className="flex items-center justify-between gap-3">
+              <span className={cn('h-9 w-9 rounded-xl inline-flex items-center justify-center shrink-0', t.tone)}><t.icon size={17} /></span>
+              {t.delta}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-muted-foreground">{t.label}</p>
+              <p className="mt-1 text-xl font-bold tabular-nums tracking-tight text-foreground truncate">{t.value}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground truncate">{t.sub}</p>
+            </div>
+          </Link>
+        ))}
       </div>
 
       {/* ── Trend + payment methods ──────────────────────────────────────── */}
