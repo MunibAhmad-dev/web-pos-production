@@ -97,23 +97,21 @@ export async function fetchInstanceStatus() {
   return data;
 }
 
-export function logoutShop() {
-  localStorage.removeItem(API_KEY);
-  localStorage.removeItem(SESSION_KEY);
+/**
+ * Display preferences that belong to this browser, not to a shop — everything else is wiped on
+ * sign-out (login, receipt/FBR/module settings, PIN, reminder snoozes, sync cursor, thresholds…),
+ * so the next account never sees anything from this one. A list of keys to delete always fell
+ * behind as features added new keys; keeping a short allow-list doesn't.
+ */
+const DEVICE_PREF_KEYS = new Set(['theme', 'sidebar_collapsed', 'pos_nav_closed_groups', 'pos_product_view']);
 
-  // Shop-specific settings — must be wiped so the next login starts clean
-  const shopKeys = [
-    'pos_module_settings',      // which modules are enabled
-    'osatech_receipt_settings', // store name, header, tax number on receipts
-    'pos_fbr_settings',         // FBR NTN / STRN
-    'pos_pin',                  // POS lock PIN
-    'pos_wa_template',          // WhatsApp message template
-    'mfg_user',                 // manufacturing sub-auth
-    'mfg_gd_token',             // Google Drive OAuth token (security)
-    'mfg_gd_meta',              // Google Drive folder binding
-    'mfg_printer_settings',     // printer config
-  ];
-  for (const key of shopKeys) localStorage.removeItem(key);
+export function logoutShop() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    for (const k of keys) if (k && !DEVICE_PREF_KEYS.has(k)) localStorage.removeItem(k);
+  } catch { /* storage blocked — nothing stored either */ }
+  try { sessionStorage.clear(); } catch { /* ignore */ }
 }
 
 export function hasApiKey() {

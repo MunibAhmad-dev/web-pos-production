@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
       .then((status) => {
         setSession((prev) =>
           prev
-            ? { ...prev, approval_status: status.approval_status, store_name: status.store_name || prev.store_name, cloud_blocked: status.cloud_blocked, days_remaining: status.days_remaining ?? prev.days_remaining }
+            ? { ...prev, approval_status: status.approval_status, store_name: status.store_name || prev.store_name, cloud_blocked: status.cloud_blocked, block_reason: status.block_reason || "", days_remaining: status.days_remaining ?? prev.days_remaining }
             : prev
         );
       })
@@ -46,17 +46,20 @@ export function AuthProvider({ children }) {
     return s;
   }, []);
 
-  const logout = useCallback(() => {
-    clearDataCache().catch(() => {}); // async IDB clear, fire and forget
+  // Sign-out leaves nothing of this shop behind: the local database is emptied (awaited), every
+  // shop key is removed, and the page reloads so no data stays in memory for the next account.
+  const logout = useCallback(async () => {
+    await clearDataCache().catch(() => {});
     logoutShop();
     setSession(null);
+    window.location.replace('/login');
   }, []);
 
   const refreshStatus = useCallback(async () => {
     const status = await fetchInstanceStatus();
     setSession((prev) =>
       prev
-        ? { ...prev, approval_status: status.approval_status, cloud_blocked: status.cloud_blocked, days_remaining: status.days_remaining ?? prev.days_remaining }
+        ? { ...prev, approval_status: status.approval_status, cloud_blocked: status.cloud_blocked, block_reason: status.block_reason || "", days_remaining: status.days_remaining ?? prev.days_remaining }
         : prev
     );
     return status;

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { ShieldAlert, LogOut, RefreshCw, Store, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import BlockedScreen from '../../components/cloud/BlockedScreen';
 
 const GRAD = 'linear-gradient(135deg, #FFCCE0 0%, #EDD9FF 30%, #D5EDFF 65%, #B8F2DA 100%)';
 const PINK = '#FF4E7D';
@@ -38,6 +39,18 @@ export default function PendingApproval() {
   if (user.approval_status === 'approved' && !user.cloud_blocked) return <Navigate to="/dashboard" replace />;
 
   const blocked = user.cloud_blocked || user.approval_status === 'blocked';
+
+  if (blocked) {
+    return (
+      <BlockedScreen
+        storeName={user.store_name}
+        reason={user.block_reason}
+        cloudOnly={Boolean(user.cloud_blocked) && user.approval_status !== 'blocked'}
+        onCheck={refreshStatus}
+        onSignOut={logout}
+      />
+    );
+  }
 
   async function handleCheck() {
     setChecking(true);

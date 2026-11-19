@@ -8,6 +8,7 @@ import { navGroups } from './navConfig';
 import UdharReminderModal, { useUdharReminder } from '../sales/UdharReminderModal';
 import { useAuth } from '@/context/AuthContext';
 import { AlertTriangle } from 'lucide-react';
+import CloudNotices from '@/components/cloud/CloudNotices';
 
 function LicenseBanner({ days }) {
   const isRed = days <= 3;
@@ -90,6 +91,7 @@ export default function Layout() {
         {licenseWarning && <LicenseBanner days={user.days_remaining} />}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto w-full max-w-screen-2xl">
+            <CloudNotices />
             <Outlet />
           </div>
         </main>
